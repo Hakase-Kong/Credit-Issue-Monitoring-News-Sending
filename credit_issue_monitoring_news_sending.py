@@ -3,7 +3,7 @@ import requests
 import hashlib
 import sqlite3
 import time
-import threading
+from datetime import datetime, timedelta
 
 # --- API 설정 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
@@ -62,76 +62,64 @@ def send_message(text, token, chat_id):
     try:
         res = requests.get(url, params=params)
         print("텔레그램 전송 상태:", res.status_code)
-        print("텔레그램 응답:", res.text)
         return res
     except Exception as e:
         print("❌ 전송 중 예외:", e)
 
-# --- 전역 로그 저장 변수 ---
-log_text_global = ""
-
-# --- 뉴스 모니터링 루프 ---
-def monitor_loop(keywords, stop_event, token, chat_id):
-    global log_text_global
-
-    while not stop_event.is_set():
-        log_lines = []
-
-        for kw in keywords:
-            news = search_news_naver(kw)
-            new_items = []
-
-            for item in news:
-                h = make_hash(item["title"])
-                if not is_sent(h):
-                    new_items.append(f"{item['title']}\n{item['link']}")
-                    mark_as_sent(h)
-
-            if new_items:
-                combined_msg = f"[{kw}] 새로운 뉴스\n" + "\n\n".join(new_items)
-                send_message(combined_msg, token, chat_id)
-                log_lines.append(f"[{kw}] {len(new_items)}개 전송됨")
-            else:
-                log_lines.append(f"[{kw}] 새 뉴스 없음")
-
-        log_text_global = "\n".join(log_lines)
-        time.sleep(60)
-
-# --- Streamlit 앱 시작 ---
+# --- 초기 설정 ---
 init_db()
 st.set_page_config(page_title="뉴스 모니터링 시스템", layout="wide")
 st.title("📰 뉴스 모니터링 자동화 시스템")
 
-# --- 상태 초기화 ---
+# --- 상태 관리 ---
 if "monitoring" not in st.session_state:
     st.session_state.monitoring = False
-if "stop_event" not in st.session_state:
-    st.session_state.stop_event = threading.Event()
+if "next_run" not in st.session_state:
+    st.session_state.next_run = datetime.now()
 
-# --- UI 입력 ---
+# --- 키워드 입력 ---
 keywords_input = st.text_input("키워드를 쉼표로 입력하세요", "ChatGPT,삼성전자")
+
 col1, col2 = st.columns(2)
 
-# --- 실행 버튼 ---
+# --- 시작 버튼 ---
 if col1.button("🟢 자동 실행 시작", disabled=st.session_state.monitoring):
-    keywords = [k.strip() for k in keywords_input.split(",")]
-    st.session_state.stop_event.clear()
-
-    threading.Thread(
-        target=monitor_loop,
-        args=(keywords, st.session_state.stop_event, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID),
-        daemon=True
-    ).start()
-
     st.session_state.monitoring = True
+    st.session_state.next_run = datetime.now()
     st.success("자동 실행 시작됨")
 
-# --- 정지 버튼 ---
+# --- 중지 버튼 ---
 if col2.button("🔴 자동 실행 정지", disabled=not st.session_state.monitoring):
-    st.session_state.stop_event.set()
     st.session_state.monitoring = False
     st.warning("자동 실행 중지됨")
 
-# --- 로그 표시 ---
+# --- 모니터링 로직 실행 ---
+log_lines = []
+if st.session_state.monitoring and datetime.now() >= st.session_state.next_run:
+    keywords = [k.strip() for k in keywords_input.split(",")]
+
+    for kw in keywords:
+        news = search_news_naver(kw)
+        new_items = []
+
+        for item in news:
+            h = make_hash(item["title"])
+            if not is_sent(h):
+                new_items.append(f"{item['title']}\n{item['link']}")
+                mark_as_sent(h)
+
+        if new_items:
+            combined_msg = f"[{kw}] 새로운 뉴스\n" + "\n\n".join(new_items)
+            send_message(combined_msg, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
+            log_lines.append(f"[{kw}] {len(new_items)}개 전송됨")
+        else:
+            log_lines.append(f"[{kw}] 새 뉴스 없음")
+
+    st.session_state.next_run = datetime.now() + timedelta(seconds=60)
+
+# --- 로그 출력 ---
 st.markdown("#### 📜 전송 로그")
-st.code(log_text_global)
+if log_lines:
+    st.code("\n".join(log_lines))
+else:
+    st.code("아직 전송된 뉴스가 없습니다. 1분마다 확인합니다.")
