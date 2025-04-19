@@ -4,8 +4,8 @@ import requests, hashlib, sqlite3, time, threading
 # --- API 설정 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
 NAVER_CLIENT_SECRET = "lZc2gScgNq"
-TELEGRAM_TOKEN = "여기_토큰"
-TELEGRAM_CHAT_ID = "여기_챗아이디"
+TELEGRAM_TOKEN = "7033950842:AAFk4pSb5qtNj435Gf2B5-rPlFrlNqhZFuQ"
+TELEGRAM_CHAT_ID = "-1002404027768"
 
 # --- DB 초기화 ---
 def init_db():
