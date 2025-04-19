@@ -89,9 +89,10 @@ def monitor_loop(keywords, stop_event, token, chat_id):
             else:
                 log_lines.append(f"[{kw}] 새 뉴스 없음")
 
-        # session_state로 로그 업데이트
+        # 로그를 세션 상태에 업데이트
         st.session_state["log_text"] = "\n".join(log_lines)
-        # 상태 변경 후 UI가 다시 렌더링될 수 있도록 session_state를 사용하여 강제 갱신
+        
+        # 상태가 갱신되면 UI에 반영되도록 하기 위해 sleep 후 rerun하지 않음
         time.sleep(60)
 
 # --- Streamlit 앱 시작 ---
