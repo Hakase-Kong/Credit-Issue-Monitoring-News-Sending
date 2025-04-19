@@ -60,7 +60,13 @@ def send_message(text):
         "text": text,
         "parse_mode": "HTML"
     }
-    return requests.get(url, params=params)
+    response = requests.get(url, params=params)
+
+    # 🔧 디버깅 로그
+    print("텔레그램 응답 상태:", response.status_code)
+    print("응답 내용:", response.text)
+
+    return response
 
 # --- 모니터링 루프 ---
 def monitor_loop(keywords, stop_event):
@@ -105,17 +111,20 @@ if "monitoring" not in st.session_state:
 if "stop_event" not in st.session_state:
     st.session_state.stop_event = threading.Event()
 
-# 시작 버튼
-if not st.session_state.monitoring and st.button("🟢 자동 실행 시작"):
-    keywords = [k.strip() for k in keywords_input.split(",")]
-    st.session_state.stop_event.clear()
-    t = threading.Thread(target=monitor_loop, args=(keywords, st.session_state.stop_event), daemon=True)
-    t.start()
-    st.session_state.monitoring = True
-    status_area.success("자동 실행 시작됨 (1분 주기)")
+# 🔘 버튼 나란히 배치
+col1, col2 = st.columns(2)
 
-# 정지 버튼
-if st.session_state.monitoring and st.button("🛑 자동 실행 정지"):
-    st.session_state.stop_event.set()
-    st.session_state.monitoring = False
-    status_area.info("정지 요청됨. 다음 루프 종료 시 중지됩니다.")
+with col1:
+    if not st.session_state.monitoring and st.button("🟢 자동 실행 시작"):
+        keywords = [k.strip() for k in keywords_input.split(",")]
+        st.session_state.stop_event.clear()
+        t = threading.Thread(target=monitor_loop, args=(keywords, st.session_state.stop_event), daemon=True)
+        t.start()
+        st.session_state.monitoring = True
+        status_area.success("자동 실행 시작됨 (1분 주기)")
+
+with col2:
+    if st.session_state.monitoring and st.button("🛑 자동 실행 정지"):
+        st.session_state.stop_event.set()
+        st.session_state.monitoring = False
+        status_area.info("정지 요청됨. 다음 루프 종료 시 중지됩니다.")
