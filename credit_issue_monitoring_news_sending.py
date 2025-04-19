@@ -83,6 +83,7 @@ def monitor_loop(keywords):
 # --- Streamlit UI ---
 init_db()
 st.title("📰 뉴스 모니터링 자동화 시스템 (통합버전)")
+
 keywords_input = st.text_input("키워드를 쉼표로 입력하세요", "ChatGPT,삼성전자")
 log_area = st.empty()
 status_area = st.empty()
@@ -90,4 +91,5 @@ status_area = st.empty()
 if st.button("🟢 자동 실행 시작"):
     keywords = [k.strip() for k in keywords_input.split(",")]
     status_area.success("자동 실행 시작됨 (1분 주기)")
-    threading.Thread
+    thread = threading.Thread(target=monitor_loop, args=(keywords,), daemon=True)
+    thread.start()
