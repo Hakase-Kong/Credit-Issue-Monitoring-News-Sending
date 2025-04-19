@@ -67,8 +67,13 @@ def send_message(text, token, chat_id):
     except Exception as e:
         print("❌ 전송 중 예외:", e)
 
+# --- 전역 로그 저장 변수 ---
+log_text_global = ""
+
 # --- 뉴스 모니터링 루프 ---
 def monitor_loop(keywords, stop_event, token, chat_id):
+    global log_text_global
+
     while not stop_event.is_set():
         log_lines = []
 
@@ -89,10 +94,7 @@ def monitor_loop(keywords, stop_event, token, chat_id):
             else:
                 log_lines.append(f"[{kw}] 새 뉴스 없음")
 
-        # 로그를 세션 상태에 업데이트
-        st.session_state["log_text"] = "\n".join(log_lines)
-        
-        # 상태가 갱신되면 UI에 반영되도록 하기 위해 sleep 후 rerun하지 않음
+        log_text_global = "\n".join(log_lines)
         time.sleep(60)
 
 # --- Streamlit 앱 시작 ---
@@ -105,15 +107,12 @@ if "monitoring" not in st.session_state:
     st.session_state.monitoring = False
 if "stop_event" not in st.session_state:
     st.session_state.stop_event = threading.Event()
-if "log_text" not in st.session_state:
-    st.session_state["log_text"] = ""
 
-# --- UI ---
+# --- UI 입력 ---
 keywords_input = st.text_input("키워드를 쉼표로 입력하세요", "ChatGPT,삼성전자")
-
 col1, col2 = st.columns(2)
 
-# 시작 버튼
+# --- 실행 버튼 ---
 if col1.button("🟢 자동 실행 시작", disabled=st.session_state.monitoring):
     keywords = [k.strip() for k in keywords_input.split(",")]
     st.session_state.stop_event.clear()
@@ -127,12 +126,12 @@ if col1.button("🟢 자동 실행 시작", disabled=st.session_state.monitoring
     st.session_state.monitoring = True
     st.success("자동 실행 시작됨")
 
-# 정지 버튼
+# --- 정지 버튼 ---
 if col2.button("🔴 자동 실행 정지", disabled=not st.session_state.monitoring):
     st.session_state.stop_event.set()
     st.session_state.monitoring = False
     st.warning("자동 실행 중지됨")
 
-# 로그 출력
+# --- 로그 표시 ---
 st.markdown("#### 📜 전송 로그")
-st.code(st.session_state["log_text"])
+st.code(log_text_global)
