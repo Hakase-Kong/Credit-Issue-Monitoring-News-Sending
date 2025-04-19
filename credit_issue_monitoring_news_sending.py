@@ -1,15 +1,11 @@
 import streamlit as st
-import requests
-import hashlib
-import sqlite3
-import time
-import threading
+import requests, hashlib, sqlite3, time, threading
 
 # --- API 설정 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
 NAVER_CLIENT_SECRET = "lZc2gScgNq"
-TELEGRAM_TOKEN = "7033950842:AAFk4pSb5qtNj435Gf2B5-rPllFrlNqhZFuQ"
-TELEGRAM_CHAT_ID = "-1002404027768"
+TELEGRAM_TOKEN = "여기_토큰"
+TELEGRAM_CHAT_ID = "여기_챗아이디"
 
 # --- DB 초기화 ---
 def init_db():
@@ -19,7 +15,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- 뉴스 전송 여부 확인 ---
 def is_sent(news_hash):
     conn = sqlite3.connect('news.db')
     c = conn.cursor()
@@ -28,7 +23,6 @@ def is_sent(news_hash):
     conn.close()
     return result is not None
 
-# --- 뉴스 전송 처리 ---
 def mark_as_sent(news_hash):
     conn = sqlite3.connect('news.db')
     c = conn.cursor()
@@ -36,11 +30,9 @@ def mark_as_sent(news_hash):
     conn.commit()
     conn.close()
 
-# --- 뉴스 해시 생성 ---
 def make_hash(text):
     return hashlib.md5(text.encode('utf-8')).hexdigest()
 
-# --- 뉴스 검색 ---
 def search_news_naver(keyword):
     url = "https://openapi.naver.com/v1/search/news.json"
     headers = {
@@ -52,7 +44,6 @@ def search_news_naver(keyword):
     items = response.json().get("items", [])
     return [{"title": item["title"], "link": item["link"]} for item in items]
 
-# --- 텔레그램 전송 ---
 def send_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     params = {
@@ -60,71 +51,64 @@ def send_message(text):
         "text": text,
         "parse_mode": "HTML"
     }
-    response = requests.get(url, params=params)
+    res = requests.get(url, params=params)
+    print("텔레그램 응답:", res.status_code, res.text)
+    return res
 
-    # 🔧 디버깅 로그
-    print("텔레그램 응답 상태:", response.status_code)
-    print("응답 내용:", response.text)
-
-    return response
-
-# --- 모니터링 루프 ---
 def monitor_loop(keywords, stop_event):
     while not stop_event.is_set():
         all_msgs = []
-        log_text = ""
+        log_lines = []
 
         for kw in keywords:
             news = search_news_naver(kw)
-            new_items = []
+            items_to_send = []
             for item in news:
                 h = make_hash(item["title"])
                 if not is_sent(h):
-                    new_items.append(f"🔸 <a href='{item['link']}'>{item['title']}</a>")
+                    items_to_send.append(f"🔸 <a href='{item['link']}'>{item['title']}</a>")
                     mark_as_sent(h)
-                    log_text += f"✅ {kw}: {item['title']}\n"
-            if new_items:
-                msg = f"<b>[{kw}] 최신 뉴스</b>\n" + "\n".join(new_items)
-                all_msgs.append(msg)
+                    log_lines.append(f"[{kw}] 전송됨: {item['title']}")
+
+            if items_to_send:
+                combined = f"<b>[{kw}] 뉴스</b>\n" + "\n".join(items_to_send)
+                all_msgs.append(combined)
 
         if all_msgs:
-            combined_msg = "\n\n".join(all_msgs)
-            send_message(combined_msg)
+            send_message("\n\n".join(all_msgs))
         else:
-            log_text = "새 뉴스 없음. 대기 중..."
+            log_lines.append("새 뉴스 없음.")
 
-        log_area.markdown(f"```\n{log_text}\n```")
+        # 👉 UI에서 읽어갈 수 있도록 session_state에 저장
+        st.session_state["log_text"] = "\n".join(log_lines)
         time.sleep(60)
-
-    status_area.warning("🛑 모니터링이 중지되었습니다.")
 
 # --- Streamlit UI ---
 init_db()
 st.title("📰 뉴스 모니터링 자동화 시스템")
 
 keywords_input = st.text_input("키워드를 쉼표로 입력하세요", "ChatGPT,삼성전자")
-log_area = st.empty()
-status_area = st.empty()
 
 if "monitoring" not in st.session_state:
     st.session_state.monitoring = False
 if "stop_event" not in st.session_state:
     st.session_state.stop_event = threading.Event()
+if "log_text" not in st.session_state:
+    st.session_state.log_text = ""
 
-# 🔘 버튼 나란히 배치
 col1, col2 = st.columns(2)
+if col1.button("🟢 자동 실행 시작", disabled=st.session_state.monitoring):
+    keywords = [k.strip() for k in keywords_input.split(",")]
+    st.session_state.stop_event.clear()
+    threading.Thread(target=monitor_loop, args=(keywords, st.session_state.stop_event), daemon=True).start()
+    st.session_state.monitoring = True
 
-with col1:
-    if not st.session_state.monitoring and st.button("🟢 자동 실행 시작"):
-        keywords = [k.strip() for k in keywords_input.split(",")]
-        st.session_state.stop_event.clear()
-        t = threading.Thread(target=monitor_loop, args=(keywords, st.session_state.stop_event), daemon=True)
-        t.start()
-        st.session_state.monitoring = True
-        status_area.success("자동 실행 시작됨 (1분 주기)")
+if col2.button("🛑 자동 실행 정지", disabled=not st.session_state.monitoring):
+    st.session_state.stop_event.set()
+    st.session_state.monitoring = False
 
-with col2:
-    if st.session_state.monitoring and st.button("🛑 자동 실행 정지"):
-        st.session_state.stop_event.set()
-        st.session_state.monitoring = False
-        status_area.info("정지 요청됨. 다음 루프 종료 시 중지됩니다.")
+# 🪵 로그 출력 계속 갱신
+log_area = st.empty()
+while True:
+    log_area.markdown(f"```\n{st.session_state['log_text']}\n```")
+    time.sleep(1)
