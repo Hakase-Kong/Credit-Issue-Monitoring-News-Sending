@@ -188,9 +188,6 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
         st.session_state.show_limit[k] = 5
         send_to_telegram(k, articles[:5])
 
-
-
-
 # --- Streamlit 설정 ---
 st.set_page_config(layout="wide")
 st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
@@ -250,4 +247,4 @@ if fav_search_clicked and fav_selected:
 
 # 6. 뉴스 결과 카드 컬럼 정렬
 if st.session_state.search_results:
-    render_articles_columnwise_with_summary(st.session_state.search_results, st.session_state.show_limit)
+render_articles_columnwise_with_summary(st.session_state.search_results, st.session_state.show_limit)
