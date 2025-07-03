@@ -329,4 +329,4 @@ if fav_search_clicked and fav_selected:
 
 # 6. 뉴스 결과 카드 컬럼 정렬
 if st.session_state.search_results:
-render_articles_columnwise_with_summary(st.session_state.search_results, st.session_state.show_limit)
+    render_articles_columnwise_with_summary(st.session_state.search_results, st.session_state.show_limit)
