@@ -60,13 +60,24 @@ def is_credit_risk_news(text, keywords):
             return True
     return False
 
-def filter_by_issues(title, desc, selected_keywords, enable_credit_filter, credit_filter_keywords):
-    content = title + " " + desc
-    if enable_credit_filter and not is_credit_risk_news(content, credit_filter_keywords):
+# 필터 함수 수정
+
+def filter_by_issues(title, desc, selected_keywords, enable_credit_filter, credit_filter_keywords, require_keyword_in_title=False):
+    # 제목에 키워드 포함 여부 확인 (옵션)
+    if require_keyword_in_title and selected_keywords:
+        if not any(kw.lower() in title.lower() for kw in selected_keywords):
+            return False
+
+    # 신용이슈 필터
+    if enable_credit_filter and not is_credit_risk_news(title + " " + desc, credit_filter_keywords):
         return False
+
     return True
 
-def fetch_naver_news(query, start_date=None, end_date=None, enable_credit_filter=True, credit_filter_keywords=None, limit=100):
+
+# fetch_naver_news 수정
+
+def fetch_naver_news(query, start_date=None, end_date=None, enable_credit_filter=True, credit_filter_keywords=None, limit=100, require_keyword_in_title=False):
     headers = {
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
@@ -92,7 +103,7 @@ def fetch_naver_news(query, start_date=None, end_date=None, enable_credit_filter
                 continue
             if end_date and pub_date > end_date:
                 continue
-            if not filter_by_issues(title, desc, [], enable_credit_filter, credit_filter_keywords):
+            if not filter_by_issues(title, desc, [query], enable_credit_filter, credit_filter_keywords, require_keyword_in_title):
                 continue
             articles.append({
                 "title": re.sub("<.*?>", "", title),
@@ -102,7 +113,10 @@ def fetch_naver_news(query, start_date=None, end_date=None, enable_credit_filter
             })
     return articles[:limit]
 
-def fetch_gnews_news(query, enable_credit_filter=True, credit_filter_keywords=None, limit=100):
+
+# fetch_gnews_news 수정
+
+def fetch_gnews_news(query, enable_credit_filter=True, credit_filter_keywords=None, limit=100, require_keyword_in_title=False):
     GNEWS_API_KEY = "b8c6d82bbdee9b61d2b9605f44ca8540"
     articles = []
     try:
@@ -121,7 +135,7 @@ def fetch_gnews_news(query, enable_credit_filter=True, credit_filter_keywords=No
         for item in data.get("articles", []):
             title = item.get("title", "")
             desc = item.get("description", "")
-            if not filter_by_issues(title, desc, [], enable_credit_filter, credit_filter_keywords):
+            if not filter_by_issues(title, desc, [query], enable_credit_filter, credit_filter_keywords, require_keyword_in_title):
                 continue
             pub_date = datetime.strptime(item["publishedAt"][:10], "%Y-%m-%d").date()
             articles.append({
@@ -178,15 +192,18 @@ def send_to_telegram(keyword, articles):
 def is_english(text):
     return all(ord(c) < 128 for c in text if c.isalpha())
 
-def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, credit_filter_keywords):
+# process_keywords 수정
+
+def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, credit_filter_keywords, require_keyword_in_title):
     for k in keyword_list:
         if is_english(k):
-            articles = fetch_gnews_news(k, enable_credit_filter, credit_filter_keywords)
+            articles = fetch_gnews_news(k, enable_credit_filter, credit_filter_keywords, require_keyword_in_title=require_keyword_in_title)
         else:
-            articles = fetch_naver_news(k, start_date, end_date, enable_credit_filter, credit_filter_keywords)
+            articles = fetch_naver_news(k, start_date, end_date, enable_credit_filter, credit_filter_keywords, require_keyword_in_title=require_keyword_in_title)
         st.session_state.search_results[k] = articles
         st.session_state.show_limit[k] = 5
         send_to_telegram(k, articles[:5])
+
 
 # --- 요약 API 호출 함수 (자동 언어 감지 포함 + 텔레그램 전송 포함) ---
 def detect_lang_from_title(title):
@@ -309,6 +326,9 @@ with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
         key="credit_filter"
     )
 
+with st.expander("🔍 키워드 필터 옵션", expanded=True):
+    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=True)    
+
 # 4. 즐겨찾기 검색 영역 (y축 맞춤)
 fav_col1, fav_col2 = st.columns([5, 1])
 with fav_col1:
@@ -324,11 +344,11 @@ if search_clicked and keywords_input:
         st.warning("키워드는 최대 10개까지 입력 가능합니다.")
     else:
         with st.spinner("뉴스 검색 중..."):
-            process_keywords(keyword_list, start_date, end_date, enable_credit_filter, credit_filter_keywords)
+            process_keywords(keyword_list, start_date, end_date, enable_credit_filter, credit_filter_keywords, require_keyword_in_title)
 
 if fav_search_clicked and fav_selected:
     with st.spinner("뉴스 검색 중..."):
-        process_keywords(fav_selected, start_date, end_date, enable_credit_filter, credit_filter_keywords)
+        process_keywords(fav_selected, start_date, end_date, enable_credit_filter, credit_filter_keywords, require_keyword_in_title)
 
 # 6. 뉴스 결과 카드 컬럼 정렬
 if st.session_state.search_results:
