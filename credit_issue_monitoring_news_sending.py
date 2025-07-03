@@ -189,6 +189,9 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
         send_to_telegram(k, articles[:5])
 
 # --- 요약 API 호출 함수 (자동 언어 감지 포함 + 텔레그램 전송 포함) ---
+def detect_lang_from_title(title):
+    return "ko" if re.search(r"[가-힣]", title) else "en"
+
 def summarize_article_from_url(article_url, title):
     try:
         api_url = "https://article-extractor-and-summarizer.p.rapidapi.com/summarize"
@@ -197,7 +200,7 @@ def summarize_article_from_url(article_url, title):
             "x-rapidapi-host": "article-extractor-and-summarizer.p.rapidapi.com"
         }
 
-        lang = "ko" if any(ord(c) > 127 for c in article_url) else "en"
+        lang = detect_lang_from_title(title)
         params = {
             "url": article_url,
             "lang": lang,
