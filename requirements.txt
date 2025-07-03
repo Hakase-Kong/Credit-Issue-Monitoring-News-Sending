@@ -1,2 +1,6 @@
 streamlit
 requests
+beautifulsoup4
+pytz
+telepot
+newsapi-python
