@@ -188,17 +188,15 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
         st.session_state.show_limit[k] = 5
         send_to_telegram(k, articles[:5])
 
-# --- 요약 API 호출 함수 (자동 언어 감지 포함) ---
-def summarize_article_from_url(article_url):
+# --- 요약 API 호출 함수 (자동 언어 감지 포함 + 텔레그램 전송 포함) ---
+def summarize_article_from_url(article_url, title):
     try:
-        # 언어 자동 감지용 API URL
         api_url = "https://article-extractor-and-summarizer.p.rapidapi.com/summarize"
         headers = {
             "x-rapidapi-key": "3558ef6abfmshba1bd48265c6fc4p101a63jsnb2c1ee3d33c4",
             "x-rapidapi-host": "article-extractor-and-summarizer.p.rapidapi.com"
         }
 
-        # 자동 언어 감지 및 요약 수행
         lang = "ko" if any(ord(c) > 127 for c in article_url) else "en"
         params = {
             "url": article_url,
@@ -209,9 +207,23 @@ def summarize_article_from_url(article_url):
         response = requests.get(api_url, headers=headers, params=params)
         response.raise_for_status()
         result = response.json()
-        return result.get("summary", "요약 결과 없음"), result.get("text", "본문 없음")
+
+        summary = result.get("summary", "요약 결과 없음")
+        full_text = result.get("text", "본문 없음")
+
+        # 텔레그램 전송
+        message = f"*[{title}]*\n{summary}"
+        Telegram().send_message(message)
+
+        return summary, full_text
+
     except Exception as e:
         return f"요약 오류: {e}", None
+
+# --- 기사 필터 정확도 개선 함수 (제목 + 설명 + 요약까지 조건 만족 시 노출) ---
+def is_relevant_article(title, description, summary, keywords):
+    text = f"{title} {description} {summary}"
+    return any(kw.lower() in text.lower() for kw in keywords)
 
 # --- 기사 카드 UI 수정: 요약 버튼 추가 ---
 def render_articles_columnwise_with_summary(results, show_limit):
@@ -244,7 +256,7 @@ def render_articles_columnwise_with_summary(results, show_limit):
                     # 요약 버튼
                     if st.button("요약", key=f"summary_{keyword}_{i}", use_container_width=True):
                         with st.spinner("기사 요약 중..."):
-                            summary, full_text = summarize_article_from_url(article['link'])
+                            summary, full_text = summarize_article_from_url(article['link'], article['title'])
                             if full_text:
                                 st.markdown("<div style='font-size:14px; font-weight:bold;'>🔍 본문 요약:</div>", unsafe_allow_html=True)
                                 st.write(summary)
