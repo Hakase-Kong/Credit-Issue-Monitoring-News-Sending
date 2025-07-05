@@ -65,7 +65,7 @@ def summarize_with_openai(text):
     lang = detect_lang(text)
     if lang == "ko":
         prompt = (
-            "아래 기사 본문을 3문장 이내로 요약해줘.\n"
+            "아래 기사 본문을 3문단 이내로 요약해줘.\n"
             "단, 기사와 직접적으로 관련 없는 광고, 배너, 추천기사, 서비스 안내, 사이트 공통 문구 등은 모두 요약에서 제외해줘.\n"
             "기사의 핵심 내용만 요약해줘.\n\n"
             f"[기사 본문]\n{text}"
