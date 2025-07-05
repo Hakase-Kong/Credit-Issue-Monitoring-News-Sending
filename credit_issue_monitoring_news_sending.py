@@ -12,8 +12,13 @@ from google.cloud import language_v1
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --- Google Cloud Natural Language API ---
-def analyze_sentiment_google(text, lang="ko"):
+# --- 언어 자동 감지 함수 ---
+def detect_lang(text):
+    return "ko" if re.search(r"[가-힣]", text) else "en"
+
+# --- Google Cloud 감성분석 (언어 자동 감지) ---
+def analyze_sentiment_google(text):
+    lang = detect_lang(text)
     try:
         client_gc = language_v1.LanguageServiceClient()
         document = language_v1.Document(
@@ -23,9 +28,10 @@ def analyze_sentiment_google(text, lang="ko"):
         )
         response = client_gc.analyze_sentiment(request={"document": document})
         score = response.document_sentiment.score
-        if score > 0.25:
+        # 중립 구간을 좁게 (예: -0.05 ~ +0.05)
+        if score > 0.05:
             return "긍정"
-        elif score < -0.25:
+        elif score < -0.05:
             return "부정"
         else:
             return "중립"
@@ -43,10 +49,11 @@ def extract_article_text(url):
         return f"본문 추출 오류: {e}"
 
 # --- OpenAI 최신 요약 함수 ---
-def summarize_with_openai(text, lang="ko"):
+def summarize_with_openai(text):
     try:
         if not OPENAI_API_KEY:
             return "OpenAI API 키가 설정되지 않았습니다.", None
+        lang = detect_lang(text)
         prompt = "아래 글을 3문장 이내로 요약해줘." if lang == "ko" else "Summarize the following text in 3 sentences."
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -94,10 +101,6 @@ class Telegram:
 
     def send_message(self, message):
         self.bot.sendMessage(self.chat_id, message, parse_mode="Markdown", disable_web_page_preview=True)
-
-# --- 감성분석 함수 (Google Cloud) ---
-def analyze_sentiment(text, lang):
-    return analyze_sentiment_google(text, lang)
 
 # --- 이하 기존 코드 동일 ---
 credit_keywords = ["신용등급", "신용하향", "신용상향", "등급조정", "부정적", "긍정적", "평가"]
@@ -248,13 +251,12 @@ def detect_lang_from_title(title):
 # --- 기사 요약 함수 (newspaper3k + OpenAI 최신) ---
 def summarize_article_from_url(article_url, title):
     try:
-        lang = detect_lang_from_title(title)
         # 1. newspaper3k로 기사 본문 크롤링
         full_text = extract_article_text(article_url)
         if full_text.startswith("본문 추출 오류"):
             return full_text, None
         # 2. OpenAI로 요약
-        summary, _ = summarize_with_openai(full_text, lang)
+        summary, _ = summarize_with_openai(full_text)
         return summary, full_text
     except Exception as e:
         return f"요약 오류: {e}", None
@@ -294,8 +296,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
             if full_text:
                 st.markdown("<div style='font-size:14px; font-weight:bold;'>🔍 본문 요약:</div>", unsafe_allow_html=True)
                 st.write(summary)
-                lang = detect_lang_from_title(selected_article['title'])
-                sentiment = analyze_sentiment(full_text, lang)
+                sentiment = analyze_sentiment_google(full_text)
                 st.markdown(f"<div style='font-size:14px; font-weight:bold;'>🧭 감성 분석: <span style='color:#d60000'>{sentiment}</span></div>", unsafe_allow_html=True)
             else:
                 st.warning(summary)
