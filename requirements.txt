@@ -7,3 +7,4 @@ newsapi-python
 google-cloud-language
 openai
 newspaper3k
+lxml_html_clean
