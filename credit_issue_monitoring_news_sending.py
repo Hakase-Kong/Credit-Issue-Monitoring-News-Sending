@@ -23,7 +23,6 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
-# --- newspaper4k로 기사 본문 추출 ---
 def extract_article_text(url):
     try:
         article = newspaper.article(url)
@@ -33,7 +32,6 @@ def extract_article_text(url):
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
-# --- OpenAI로 한 줄 요약 + 요약본 + 감성분석 ---
 def summarize_and_sentiment_with_openai(text):
     if not OPENAI_API_KEY:
         return "OpenAI API 키가 설정되지 않았습니다.", None, None, None
@@ -75,7 +73,6 @@ def summarize_and_sentiment_with_openai(text):
         temperature=0.3
     )
     answer = response.choices[0].message.content.strip()
-    # 한 줄 요약/요약본/감성 추출
     if lang == "ko":
         m1 = re.search(r"\[한 줄 요약\]:\s*(.+)", answer)
         m2 = re.search(r"\[요약본\]:\s*([\s\S]+?)(?:\[감성\]:|$)", answer)
@@ -88,6 +85,40 @@ def summarize_and_sentiment_with_openai(text):
     summary = m2.group(1).strip() if m2 else answer
     sentiment = m3.group(1).strip() if m3 else ""
     return one_line, summary, sentiment, text
+
+# --- 대분류(산업) & 소분류(필터 키워드) 구조 ---
+favorite_categories = {
+    "국/공채": [],
+    "공공기관": [],
+    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"],
+    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"],
+    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"],
+    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"],
+    "캐피탈": ["한국캐피탈", "현대캐피탈"],
+    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"],
+    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"],
+    "발전": ["GS파워", "GSEPS", "삼천리"],
+    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"],
+    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"],
+    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"],
+    "비철/철강": ["포스코", "현대제철", "고려아연"],
+    "석유화학": ["LG화학", "SK지오센트릭"],
+    "건설": ["포스코이앤씨"],
+    "특수채": ["주택도시보증공사", "기업은행"]
+}
+major_categories = list(favorite_categories.keys())
+# 소분류는 추후 확장 (현재는 빈 리스트)
+sub_categories = {cat: [] for cat in major_categories}
+
+# --- Streamlit UI: 산업 필터 옵션 ---
+st.markdown("### 산업 필터 옵션")
+selected_major = st.selectbox("대분류(산업)을 선택하세요.", major_categories)
+selected_sub = st.multiselect(
+    "소분류(필터 키워드)를 선택하세요.",
+    sub_categories[selected_major]
+)
+st.write(f"선택한 대분류(산업): {selected_major}")
+st.write(f"선택한 소분류(필터 키워드): {selected_sub}")
 
 # --- 이하 기존 코드 동일 ---
 st.markdown("""
@@ -127,26 +158,6 @@ default_credit_issue_patterns = [
     "재무위험", "부정적 전망", "긍정적 전망", "기업회생", "워크아웃", "구조조정", "자본잠식"
 ]
 
-favorite_categories = {
-    "국/공채": [],
-    "공공기관": [],
-    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"],
-    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"],
-    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"],
-    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"],
-    "캐피탈": ["한국캐피탈", "현대캐피탈"],
-    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"],
-    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"],
-    "발전": ["GS파워", "GSEPS", "삼천리"],
-    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"],
-    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"],
-    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"],
-    "비철/철강": ["포스코", "현대제철", "고려아연"],
-    "석유화학": ["LG화학", "SK지오센트릭"],
-    "건설": ["포스코이앤씨"],
-    "특수채": ["주택도시보증공사", "기업은행"]
-}
-
 if "favorite_keywords" not in st.session_state:
     st.session_state.favorite_keywords = set()
 if "search_results" not in st.session_state:
@@ -158,16 +169,6 @@ if "search_triggered" not in st.session_state:
 
 for category_keywords in favorite_categories.values():
     st.session_state.favorite_keywords.update(category_keywords)
-
-st.markdown("**즐겨찾기 카테고리 선택**")
-cat_col, btn_col = st.columns([5, 1])
-with cat_col:
-    selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", list(favorite_categories.keys()))
-    for cat in selected_categories:
-        st.session_state.favorite_keywords.update(favorite_categories[cat])
-with btn_col:
-    st.write("")
-    category_search_clicked = st.button("🔍 검색", use_container_width=True)
 
 def filter_by_issues(title, desc, selected_keywords, enable_credit_filter, credit_filter_keywords, require_keyword_in_title=False):
     if require_keyword_in_title and selected_keywords:
