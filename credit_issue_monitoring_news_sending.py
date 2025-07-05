@@ -8,15 +8,12 @@ from openai import OpenAI
 from bs4 import BeautifulSoup
 from google.cloud import language_v1
 
-# --- 환경변수에서 API 키 불러오기 ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --- 언어 자동 감지 함수 ---
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
-# --- Google Cloud 감성분석 (언어 자동 감지) ---
 def analyze_sentiment_google(text):
     lang = detect_lang(text)
     try:
@@ -37,7 +34,6 @@ def analyze_sentiment_google(text):
     except Exception as e:
         return f"분석실패: {e}"
 
-# --- BeautifulSoup로 기사 본문 추출 ---
 def extract_article_text(url):
     try:
         headers = {
@@ -48,7 +44,6 @@ def extract_article_text(url):
         soup = BeautifulSoup(resp.text, "html.parser")
         # 네이버 뉴스
         if "n.news.naver.com" in url or "news.naver.com" in url:
-            # 네이버 뉴스 본문
             main = soup.find("div", id="dic_area")
             if main:
                 return main.get_text(separator="\n", strip=True)
@@ -56,37 +51,44 @@ def extract_article_text(url):
         main = soup.find("article")
         if main:
             return main.get_text(separator="\n", strip=True)
-        # 혹은 class에 'article' 또는 'body'가 포함된 div
         main = soup.find("div", class_=lambda x: x and ("article" in x or "body" in x))
         if main:
             return main.get_text(separator="\n", strip=True)
-        # fallback: 전체 텍스트
         return soup.get_text(separator="\n", strip=True)
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
-# --- OpenAI 최신 요약 함수 ---
+# --- 광고/배너/추천기사 등은 요약에서 제외하라는 프롬프트 추가 ---
 def summarize_with_openai(text):
-    try:
-        if not OPENAI_API_KEY:
-            return "OpenAI API 키가 설정되지 않았습니다.", None
-        lang = detect_lang(text)
-        prompt = "아래 글을 3문장 이내로 요약해줘." if lang == "ko" else "Summarize the following text in 3 sentences."
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": text}
-            ],
-            max_tokens=256,
-            temperature=0.3
+    if not OPENAI_API_KEY:
+        return "OpenAI API 키가 설정되지 않았습니다.", None
+    lang = detect_lang(text)
+    if lang == "ko":
+        prompt = (
+            "아래 기사 본문을 3문장 이내로 요약해줘.\n"
+            "단, 기사와 직접적으로 관련 없는 광고, 배너, 추천기사, 서비스 안내, 사이트 공통 문구 등은 모두 요약에서 제외해줘.\n"
+            "기사의 핵심 내용만 요약해줘.\n\n"
+            f"[기사 본문]\n{text}"
         )
-        summary = response.choices[0].message.content.strip()
-        return summary, text
-    except Exception as e:
-        return f"요약 오류: {e}", None
+    else:
+        prompt = (
+            "Summarize the following news article in 3 sentences.\n"
+            "Exclude any content that is not directly related to the article itself, such as advertisements, banners, recommended articles, service notices, or site-wide generic messages.\n"
+            "Focus only on the main content of the article.\n\n"
+            f"[ARTICLE]\n{text}"
+        )
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": prompt}
+        ],
+        max_tokens=256,
+        temperature=0.3
+    )
+    summary = response.choices[0].message.content.strip()
+    return summary, text
 
-# --- 스타일 개선 ---
+# --- 이하 동일 ---
 st.markdown("""
     <style>
         .block-container {padding-top: 2rem; padding-bottom: 2rem;}
@@ -102,15 +104,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- API 키 설정 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
 NAVER_CLIENT_SECRET = "lZc2gScgNq"
-
-# --- 텔레그램 설정 ---
 TELEGRAM_TOKEN = "7033950842:AAFk4pSb5qtNj435Gf2B5-rPlFrlNqhZFuQ"
 TELEGRAM_CHAT_ID = "-1002404027768"
 
-# --- Telegram 클래스 정의 ---
 class Telegram:
     def __init__(self):
         self.bot = telepot.Bot(TELEGRAM_TOKEN)
@@ -119,7 +117,6 @@ class Telegram:
     def send_message(self, message):
         self.bot.sendMessage(self.chat_id, message, parse_mode="Markdown", disable_web_page_preview=True)
 
-# --- 이하 기존 코드 동일 ---
 credit_keywords = ["신용등급", "신용하향", "신용상향", "등급조정", "부정적", "긍정적", "평가"]
 finance_keywords = ["적자", "흑자", "부채", "차입금", "현금흐름", "영업손실", "순이익", "부도", "파산"]
 all_filter_keywords = sorted(set(credit_keywords + finance_keywords))
@@ -265,14 +262,11 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
 def detect_lang_from_title(title):
     return "ko" if re.search(r"[가-힣]", title) else "en"
 
-# --- 기사 요약 함수 (BeautifulSoup + OpenAI 최신) ---
 def summarize_article_from_url(article_url, title):
     try:
-        # 1. BeautifulSoup로 기사 본문 크롤링
         full_text = extract_article_text(article_url)
         if full_text.startswith("본문 추출 오류"):
             return full_text, None
-        # 2. OpenAI로 요약
         summary, _ = summarize_with_openai(full_text)
         return summary, full_text
     except Exception as e:
