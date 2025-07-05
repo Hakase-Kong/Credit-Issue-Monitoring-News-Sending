@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 import telepot
 from openai import OpenAI
-from bs4 import BeautifulSoup
+import newspaper  # newspaper4k
 from google.cloud import language_v1
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -34,38 +34,23 @@ def analyze_sentiment_google(text):
     except Exception as e:
         return f"분석실패: {e}"
 
+# --- newspaper4k로 기사 본문 추출 ---
 def extract_article_text(url):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # 네이버 뉴스
-        if "n.news.naver.com" in url or "news.naver.com" in url:
-            main = soup.find("div", id="dic_area")
-            if main:
-                return main.get_text(separator="\n", strip=True)
-        # 기타 뉴스: <article> 태그 우선
-        main = soup.find("article")
-        if main:
-            return main.get_text(separator="\n", strip=True)
-        main = soup.find("div", class_=lambda x: x and ("article" in x or "body" in x))
-        if main:
-            return main.get_text(separator="\n", strip=True)
-        return soup.get_text(separator="\n", strip=True)
+        article = newspaper.article(url)
+        article.download()
+        article.parse()
+        return article.text
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
-# --- 광고/배너/추천기사 등은 요약에서 제외하라는 프롬프트 추가 ---
 def summarize_with_openai(text):
     if not OPENAI_API_KEY:
         return "OpenAI API 키가 설정되지 않았습니다.", None
     lang = detect_lang(text)
     if lang == "ko":
         prompt = (
-            "아래 기사 본문을 3문단 이내로 요약해줘.\n"
+            "아래 기사 본문을 3문장 이내로 요약해줘.\n"
             "단, 기사와 직접적으로 관련 없는 광고, 배너, 추천기사, 서비스 안내, 사이트 공통 문구 등은 모두 요약에서 제외해줘.\n"
             "기사의 핵심 내용만 요약해줘.\n\n"
             f"[기사 본문]\n{text}"
@@ -88,7 +73,7 @@ def summarize_with_openai(text):
     summary = response.choices[0].message.content.strip()
     return summary, text
 
-# --- 이하 동일 ---
+# --- 이하 기존 코드 동일 ---
 st.markdown("""
     <style>
         .block-container {padding-top: 2rem; padding-bottom: 2rem;}
