@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 import telepot
 from openai import OpenAI
-from newspaper import Article
+from bs4 import BeautifulSoup
 from google.cloud import language_v1
 
 # --- 환경변수에서 API 키 불러오기 ---
@@ -28,7 +28,6 @@ def analyze_sentiment_google(text):
         )
         response = client_gc.analyze_sentiment(request={"document": document})
         score = response.document_sentiment.score
-        # 중립 구간을 좁게 (예: -0.05 ~ +0.05)
         if score > 0.05:
             return "긍정"
         elif score < -0.05:
@@ -38,13 +37,31 @@ def analyze_sentiment_google(text):
     except Exception as e:
         return f"분석실패: {e}"
 
-# --- 기사 본문 추출 함수 (newspaper3k) ---
+# --- BeautifulSoup로 기사 본문 추출 ---
 def extract_article_text(url):
     try:
-        article = Article(url)
-        article.download()
-        article.parse()
-        return article.text
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # 네이버 뉴스
+        if "n.news.naver.com" in url or "news.naver.com" in url:
+            # 네이버 뉴스 본문
+            main = soup.find("div", id="dic_area")
+            if main:
+                return main.get_text(separator="\n", strip=True)
+        # 기타 뉴스: <article> 태그 우선
+        main = soup.find("article")
+        if main:
+            return main.get_text(separator="\n", strip=True)
+        # 혹은 class에 'article' 또는 'body'가 포함된 div
+        main = soup.find("div", class_=lambda x: x and ("article" in x or "body" in x))
+        if main:
+            return main.get_text(separator="\n", strip=True)
+        # fallback: 전체 텍스트
+        return soup.get_text(separator="\n", strip=True)
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
@@ -248,10 +265,10 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
 def detect_lang_from_title(title):
     return "ko" if re.search(r"[가-힣]", title) else "en"
 
-# --- 기사 요약 함수 (newspaper3k + OpenAI 최신) ---
+# --- 기사 요약 함수 (BeautifulSoup + OpenAI 최신) ---
 def summarize_article_from_url(article_url, title):
     try:
-        # 1. newspaper3k로 기사 본문 크롤링
+        # 1. BeautifulSoup로 기사 본문 크롤링
         full_text = extract_article_text(article_url)
         if full_text.startswith("본문 추출 오류"):
             return full_text, None
