@@ -6,3 +6,4 @@ telepot
 newsapi-python
 google-cloud-language
 openai
+newspaper3k
