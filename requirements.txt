@@ -4,3 +4,4 @@ beautifulsoup4
 pytz
 telepot
 newsapi-python
+openai
