@@ -110,32 +110,32 @@ major_categories = list(favorite_categories.keys())
 # 소분류는 추후 확장 (현재는 빈 리스트)
 sub_categories = {cat: [] for cat in major_categories}
 
-# --- Streamlit UI: 산업 필터 옵션 ---
-st.markdown("### 산업 필터 옵션")
-selected_major = st.selectbox("대분류(산업)을 선택하세요.", major_categories)
-selected_sub = st.multiselect(
-    "소분류(필터 키워드)를 선택하세요.",
-    sub_categories[selected_major]
-)
+# --- 산업별 필터 옵션 (한 줄, 같은 y축) ---
+st.markdown("### 산업별 필터 옵션")
+col_major, col_sub = st.columns([1, 2])
+with col_major:
+    selected_major = st.selectbox("대분류(산업)", major_categories, key="industry_major")
+with col_sub:
+    selected_sub = st.multiselect(
+        "소분류(필터 키워드)",
+        sub_categories[selected_major],
+        key="industry_sub"
+    )
 st.write(f"선택한 대분류(산업): {selected_major}")
 st.write(f"선택한 소분류(필터 키워드): {selected_sub}")
 
-# --- 이하 기존 코드 동일 ---
-st.markdown("""
-    <style>
-        .block-container {padding-top: 2rem; padding-bottom: 2rem;}
-        .stButton button {margin-top: 6px; margin-bottom: 6px; border-radius: 8px;}
-        .stTextInput > div > div > input {font-size: 16px;}
-        .stMultiSelect [data-baseweb="tag"] {
-            background-color: #fff0f0 !important;
-            color: #d60000 !important;
-            border: 1px solid #d60000 !important;
-        }
-        .stMultiSelect label { color: #d60000 !important; font-weight: bold;}
-        .stSelectbox, .stDateInput, .stMultiSelect {margin-bottom: 0.5rem;}
-    </style>
-""", unsafe_allow_html=True)
+# --- 카테고리 검색(즐겨찾기 카테고리 + 검색 버튼) 원래대로 ---
+st.markdown("**즐겨찾기 카테고리 선택**")
+cat_col, btn_col = st.columns([5, 1])
+with cat_col:
+    selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", list(favorite_categories.keys()))
+    for cat in selected_categories:
+        st.session_state.favorite_keywords.update(favorite_categories[cat])
+with btn_col:
+    st.write("")
+    category_search_clicked = st.button("🔍 검색", use_container_width=True)
 
+# --- 이하 기존 코드 동일 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
 NAVER_CLIENT_SECRET = "lZc2gScgNq"
 TELEGRAM_TOKEN = "7033950842:AAFk4pSb5qtNj435Gf2B5-rPlFrlNqhZFuQ"
