@@ -4,25 +4,24 @@ import re
 import os
 from datetime import datetime
 import telepot
-import openai
+from openai import OpenAI
 from newspaper import Article
-
-# --- OpenAI API 키 환경변수에서 불러오기 ---
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
-
-# --- Google Cloud Natural Language API ---
 from google.cloud import language_v1
 
+# --- 환경변수에서 API 키 불러오기 ---
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# --- Google Cloud Natural Language API ---
 def analyze_sentiment_google(text, lang="ko"):
     try:
-        client = language_v1.LanguageServiceClient()
+        client_gc = language_v1.LanguageServiceClient()
         document = language_v1.Document(
             content=text,
             type_=language_v1.Document.Type.PLAIN_TEXT,
             language=lang
         )
-        response = client.analyze_sentiment(request={"document": document})
+        response = client_gc.analyze_sentiment(request={"document": document})
         score = response.document_sentiment.score
         if score > 0.25:
             return "긍정"
@@ -43,13 +42,13 @@ def extract_article_text(url):
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
-# --- OpenAI 요약 함수 ---
+# --- OpenAI 최신 요약 함수 ---
 def summarize_with_openai(text, lang="ko"):
     try:
         if not OPENAI_API_KEY:
             return "OpenAI API 키가 설정되지 않았습니다.", None
         prompt = "아래 글을 3문장 이내로 요약해줘." if lang == "ko" else "Summarize the following text in 3 sentences."
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": prompt},
@@ -58,7 +57,7 @@ def summarize_with_openai(text, lang="ko"):
             max_tokens=256,
             temperature=0.3
         )
-        summary = response['choices'][0]['message']['content'].strip()
+        summary = response.choices[0].message.content.strip()
         return summary, text
     except Exception as e:
         return f"요약 오류: {e}", None
@@ -246,7 +245,7 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
 def detect_lang_from_title(title):
     return "ko" if re.search(r"[가-힣]", title) else "en"
 
-# --- 기사 요약 함수 (newspaper3k + OpenAI) ---
+# --- 기사 요약 함수 (newspaper3k + OpenAI 최신) ---
 def summarize_article_from_url(article_url, title):
     try:
         lang = detect_lang_from_title(title)
