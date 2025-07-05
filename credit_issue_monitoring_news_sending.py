@@ -1,9 +1,17 @@
 import nltk
 
+# 'punkt' 다운로드
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
+
+# 'punkt_tab' 다운로드 (환경에 따라 필요)
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab')
+
 
 import streamlit as st
 import requests
