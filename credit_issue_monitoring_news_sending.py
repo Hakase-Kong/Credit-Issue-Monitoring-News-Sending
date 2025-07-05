@@ -33,30 +33,36 @@ def extract_article_text(url):
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
-# --- OpenAI로 요약 및 감성분석 ---
+# --- OpenAI로 한 줄 요약 + 요약본 + 감성분석 ---
 def summarize_and_sentiment_with_openai(text):
     if not OPENAI_API_KEY:
-        return "OpenAI API 키가 설정되지 않았습니다.", None, None
+        return "OpenAI API 키가 설정되지 않았습니다.", None, None, None
     lang = detect_lang(text)
     if lang == "ko":
         prompt = (
-            "아래 기사 본문을 먼저 3문장 이내로 요약해줘.\n"
-            "그리고 기사 전체의 감정을 긍정/부정/중립 중 하나로만 답해줘. "
+            "아래 기사 본문을 요약하고 감성분석을 해줘.\n\n"
+            "- [한 줄 요약]: 기사 전체 내용을 한 문장으로 요약\n"
+            "- [요약본]: 기사 내용을 2~3 문단(각 문단 2~4문장)으로, 핵심 내용을 충분히 파악할 수 있게 요약\n"
+            "- [감성]: 기사 전체의 감정을 긍정/부정/중립 중 하나로만 답해줘. "
             "만약 파산, 자금난, 회생, 적자, 구조조정, 영업손실, 부도, 채무불이행, 경영 위기 등 부정적 사건이 중심이면 반드시 '부정'으로 답해줘.\n"
-            "광고, 배너, 추천기사, 서비스 안내 등 기사 본문과 무관한 내용은 요약과 감성분석에서 제외해줘.\n"
+            "광고, 배너, 추천기사, 서비스 안내 등 기사 본문과 무관한 내용은 모두 요약과 감성분석에서 제외.\n\n"
             "아래 포맷으로 답변해줘:\n"
-            "[요약]: (여기에 요약)\n"
+            "[한 줄 요약]: (여기에 한 줄 요약)\n"
+            "[요약본]: (여기에 여러 문단 요약)\n"
             "[감성]: (긍정/부정/중립 중 하나만)\n\n"
             "[기사 본문]\n" + text
         )
     else:
         prompt = (
-            "First, summarize the following news article in up to 3 sentences.\n"
-            "Then, classify the overall sentiment of the article as one of: positive, negative, or neutral. "
+            "Summarize the following news article and analyze its sentiment.\n\n"
+            "- [One-line Summary]: Summarize the entire article in one sentence.\n"
+            "- [Summary]: Summarize the article in 2–3 paragraphs (each 2–4 sentences), so that the main content is well understood.\n"
+            "- [Sentiment]: Classify the overall sentiment as one of: positive, negative, or neutral. "
             "If the article centers on bankruptcy, financial distress, restructuring, insolvency, operating loss, default, or management crisis, you must answer 'negative'.\n"
-            "Exclude any content not directly related to the article itself, such as advertisements, banners, recommended articles, or service notices.\n"
-            "Respond in the following format:\n"
-            "[Summary]: (your summary here)\n"
+            "Exclude any advertisements, banners, recommended articles, or unrelated content.\n\n"
+            "Respond in this format:\n"
+            "[One-line Summary]: (your one-line summary)\n"
+            "[Summary]: (your multi-paragraph summary)\n"
             "[Sentiment]: (positive/negative/neutral only)\n\n"
             "[ARTICLE]\n" + text
         )
@@ -65,22 +71,23 @@ def summarize_and_sentiment_with_openai(text):
         messages=[
             {"role": "system", "content": prompt}
         ],
-        max_tokens=512,
+        max_tokens=1024,
         temperature=0.3
     )
     answer = response.choices[0].message.content.strip()
-    # 요약/감성 추출
-    summary, sentiment = None, None
-    m1 = re.search(r"\[요약\]:\s*(.+)", answer) if lang == "ko" else re.search(r"\[Summary\]:\s*(.+)", answer)
-    m2 = re.search(r"\[감성\]:\s*(.+)", answer) if lang == "ko" else re.search(r"\[Sentiment\]:\s*(.+)", answer)
-    if m1:
-        summary = m1.group(1).strip()
-    if m2:
-        sentiment = m2.group(1).strip()
-    # fallback: 그냥 답변 전체를 요약으로
-    if not summary:
-        summary = answer
-    return summary, sentiment, text
+    # 한 줄 요약/요약본/감성 추출
+    if lang == "ko":
+        m1 = re.search(r"\[한 줄 요약\]:\s*(.+)", answer)
+        m2 = re.search(r"\[요약본\]:\s*([\s\S]+?)(?:\[감성\]:|$)", answer)
+        m3 = re.search(r"\[감성\]:\s*(.+)", answer)
+    else:
+        m1 = re.search(r"\[One-line Summary\]:\s*(.+)", answer)
+        m2 = re.search(r"\[Summary\]:\s*([\s\S]+?)(?:\[Sentiment\]:|$)", answer)
+        m3 = re.search(r"\[Sentiment\]:\s*(.+)", answer)
+    one_line = m1.group(1).strip() if m1 else ""
+    summary = m2.group(1).strip() if m2 else answer
+    sentiment = m3.group(1).strip() if m3 else ""
+    return one_line, summary, sentiment, text
 
 # --- 이하 기존 코드 동일 ---
 st.markdown("""
@@ -260,11 +267,11 @@ def summarize_article_from_url(article_url, title):
     try:
         full_text = extract_article_text(article_url)
         if full_text.startswith("본문 추출 오류"):
-            return full_text, None, None
-        summary, sentiment, _ = summarize_and_sentiment_with_openai(full_text)
-        return summary, sentiment, full_text
+            return full_text, None, None, None
+        one_line, summary, sentiment, _ = summarize_and_sentiment_with_openai(full_text)
+        return one_line, summary, sentiment, full_text
     except Exception as e:
-        return f"요약 오류: {e}", None, None
+        return f"요약 오류: {e}", None, None, None
 
 def render_articles_with_single_summary_and_telegram(results, show_limit):
     all_articles = []
@@ -297,13 +304,15 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
 
     if st.button("🔍 선택 기사 요약 및 감성분석"):
         with st.spinner("기사 요약 및 감성분석 중..."):
-            summary, sentiment, full_text = summarize_article_from_url(selected_article['link'], selected_article['title'])
+            one_line, summary, sentiment, full_text = summarize_article_from_url(selected_article['link'], selected_article['title'])
             if full_text:
-                st.markdown("<div style='font-size:14px; font-weight:bold;'>🔍 본문 요약:</div>", unsafe_allow_html=True)
+                st.markdown("**[한 줄 요약]**")
+                st.write(one_line)
+                st.markdown("**[요약본]**")
                 st.write(summary)
-                st.markdown(f"<div style='font-size:14px; font-weight:bold;'>🧭 감성 분석: <span style='color:#d60000'>{sentiment}</span></div>", unsafe_allow_html=True)
+                st.markdown(f"**[감성 분석]**: :red[{sentiment}]")
             else:
-                st.warning(summary)
+                st.warning(one_line)
 
     if st.button("✈️ 선택 기사 텔레그램 전송"):
         try:
