@@ -97,31 +97,32 @@ def summarize_and_sentiment_with_openai(text):
     return one_line, summary, sentiment, text
 
 # --- 대분류(산업) & 소분류(필터 키워드) 구조 ---
-test_sub = ["테스트1", "테스트2", "테스트3"]
 favorite_categories = {
-    "국/공채": test_sub,
-    "공공기관": test_sub,
-    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"] + test_sub,
-    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"] + test_sub,
-    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"] + test_sub,
-    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"] + test_sub,
-    "캐피탈": ["한국캐피탈", "현대캐피탈"] + test_sub,
-    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"] + test_sub,
-    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"] + test_sub,
-    "발전": ["GS파워", "GSEPS", "삼천리"] + test_sub,
-    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"] + test_sub,
-    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"] + test_sub,
-    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"] + test_sub,
-    "비철/철강": ["포스코", "현대제철", "고려아연"] + test_sub,
-    "석유화학": ["LG화학", "SK지오센트릭"] + test_sub,
-    "건설": ["포스코이앤씨"] + test_sub,
-    "특수채": ["주택도시보증공사", "기업은행"] + test_sub
+    "국/공채": [],
+    "공공기관": [],
+    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"],
+    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"],
+    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"],
+    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"],
+    "캐피탈": ["한국캐피탈", "현대캐피탈"],
+    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"],
+    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"],
+    "발전": ["GS파워", "GSEPS", "삼천리"],
+    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"],
+    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"],
+    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"],
+    "비철/철강": ["포스코", "현대제철", "고려아연"],
+    "석유화학": ["LG화학", "SK지오센트릭"],
+    "건설": ["포스코이앤씨"],
+    "특수채": ["주택도시보증공사", "기업은행"]
 }
 major_categories = list(favorite_categories.keys())
 sub_categories = {cat: favorite_categories[cat] for cat in major_categories}
 
-# --- 모든 즐겨찾기 하위 키워드 61개 자동 선택
-all_fav_keywords = sorted(set(sum(favorite_categories.values(), [])))
+# --- 모든 즐겨찾기 하위 키워드 자동 리스트 (테스트1~3 제외) ---
+all_fav_keywords = sorted(set(
+    kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
+))
 
 # --- UI: 키워드 입력창 ---
 st.set_page_config(layout="wide")
@@ -143,10 +144,10 @@ with btn_col:
     st.write("")
     category_search_clicked = st.button("🔍 검색", use_container_width=True)
 
-# --- 즐겨찾기에서 검색 (모든 하위 키워드 61개 기본 선택) ---
+# --- 즐겨찾기에서 검색 (테스트1~3 없이, 기본 선택 없음) ---
 fav_col1, fav_col2 = st.columns([5, 1])
 with fav_col1:
-    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=all_fav_keywords)
+    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=[])
 with fav_col2:
     st.write("")
     fav_search_clicked = st.button("즐겨찾기로 검색", use_container_width=True)
@@ -160,6 +161,7 @@ with date_col2:
 
 # --- 신용위험 필터 옵션 ---
 with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
+    use_credit_filter = st.checkbox("이 필터 적용", value=False, key="use_credit_filter")
     credit_keywords = [
         "신용등급", "신용평가", "하향", "상향", "강등", "조정", "부도",
         "파산", "디폴트", "채무불이행", "적자", "영업손실", "현금흐름", "자금난",
@@ -176,8 +178,9 @@ with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
 with st.expander("🔍 키워드 필터 옵션", expanded=True):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
 
-# --- 산업별 필터 옵션 (박스형태, 한 줄에 배치, 태그 UI, 모두 선택) ---
+# --- 산업별 필터 옵션 (박스형태, 한 줄에 배치, 태그 UI, 모두 선택, 체크박스) ---
 with st.expander("🏭 산업별 필터 옵션", expanded=True):
+    use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
     col_major, col_sub = st.columns([1, 2])
     with col_major:
         selected_major = st.selectbox("대분류(산업)", major_categories, key="industry_major")
@@ -189,8 +192,9 @@ with st.expander("🏭 산업별 필터 옵션", expanded=True):
             key="industry_sub"
         )
 
-# --- 재무위험 필터 옵션 (모두 선택) ---
+# --- 재무위험 필터 옵션 (모두 선택, 체크박스) ---
 with st.expander("💰 재무위험 필터 옵션", expanded=True):
+    use_finance_filter = st.checkbox("이 필터 적용", value=False, key="use_finance_filter")
     finance_keywords = ["자산", "총자산", "부채", "자본", "매출", "비용", "영업이익", "순이익"]
     finance_filter_keywords = st.multiselect(
         "재무위험 관련 키워드",
@@ -199,8 +203,9 @@ with st.expander("💰 재무위험 필터 옵션", expanded=True):
         key="finance_filter"
     )
 
-# --- 법/정책 위험 필터 옵션 (모두 선택) ---
+# --- 법/정책 위험 필터 옵션 (모두 선택, 체크박스) ---
 with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
+    use_law_filter = st.checkbox("이 필터 적용", value=False, key="use_law_filter")
     law_keywords = ["테스트1", "테스트2", "테스트3"]
     law_filter_keywords = st.multiselect(
         "법/정책 위험 관련 키워드",
@@ -281,7 +286,7 @@ def fetch_naver_news(query, start_date=None, end_date=None, enable_credit_filter
                 continue
             if end_date and pub_date > end_date:
                 continue
-            if not filter_by_issues(title, desc, [query], enable_credit_filter, credit_filter_keywords, require_keyword_in_title):
+            if not filter_by_issues(title, desc, [query], use_credit_filter, credit_filter_keywords, require_keyword_in_title):
                 continue
             articles.append({
                 "title": re.sub("<.*?>", "", title),
@@ -310,7 +315,7 @@ def fetch_gnews_news(query, enable_credit_filter=True, credit_filter_keywords=No
         for item in data.get("articles", []):
             title = item.get("title", "")
             desc = item.get("description", "")
-            if not filter_by_issues(title, desc, [query], enable_credit_filter, credit_filter_keywords, require_keyword_in_title):
+            if not filter_by_issues(title, desc, [query], use_credit_filter, credit_filter_keywords, require_keyword_in_title):
                 continue
             pub_date = datetime.strptime(item["publishedAt"][:10], "%Y-%m-%d").date()
             articles.append({
@@ -412,12 +417,12 @@ if search_clicked or st.session_state.get("search_triggered"):
         st.warning("키워드는 최대 10개까지 입력 가능합니다.")
     else:
         with st.spinner("뉴스 검색 중..."):
-            process_keywords(keyword_list, start_date, end_date, True, credit_filter_keywords, require_keyword_in_title)
+            process_keywords(keyword_list, start_date, end_date, use_credit_filter, credit_filter_keywords, require_keyword_in_title)
     st.session_state.search_triggered = False
 
 if fav_search_clicked and fav_selected:
     with st.spinner("뉴스 검색 중..."):
-        process_keywords(fav_selected, start_date, end_date, True, credit_filter_keywords, require_keyword_in_title)
+        process_keywords(fav_selected, start_date, end_date, use_credit_filter, credit_filter_keywords, require_keyword_in_title)
 
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
@@ -428,23 +433,29 @@ if category_search_clicked and selected_categories:
             sorted(keywords),
             start_date,
             end_date,
-            True,
+            use_credit_filter,
             credit_filter_keywords,
             require_keyword_in_title
         )
 
-# --- 필터링: OR 조건(모든 필터 옵션 합산) ---
+# --- 필터링: OR 조건(필터별 체크박스에 따라 적용) ---
 def article_passes_all_filters(article):
-    return or_keyword_filter(
-        article,
-        credit_filter_keywords,
-        selected_sub,
-        finance_filter_keywords,
-        law_filter_keywords
-    )
+    filters = []
+    if use_credit_filter:
+        filters.append(credit_filter_keywords)
+    if use_industry_filter:
+        filters.append(selected_sub)
+    if use_finance_filter:
+        filters.append(finance_filter_keywords)
+    if use_law_filter:
+        filters.append(law_filter_keywords)
+    if filters:
+        return or_keyword_filter(article, *filters)
+    else:
+        # 필터 하나도 적용 안하면 모두 통과
+        return True
 
 if st.session_state.search_results:
-    # OR 조건 필터링 적용
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
