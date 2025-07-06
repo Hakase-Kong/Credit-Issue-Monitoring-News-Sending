@@ -23,7 +23,7 @@ import newspaper  # newspaper4k
 import openpyxl
 from openpyxl import load_workbook
 
-# --- CSS: 체크박스와 기사 사이 gap 최소화 ---
+# --- CSS: 체크박스와 기사 사이 gap 최소화 및 감성 뱃지 스타일 ---
 st.markdown("""
 <style>
 [data-testid="column"] > div {
@@ -87,7 +87,11 @@ all_fav_keywords = sorted(set(
 ))
 
 st.set_page_config(layout="wide")
-st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
+col_title, col_option = st.columns([0.8, 0.2])
+with col_title:
+    st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
+with col_option:
+    show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=True)
 
 # -- 검색창/검색 버튼 한 줄 배치
 search_col, button_col = st.columns([7, 1])
@@ -350,7 +354,9 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
         else:
             articles = fetch_naver_news(k, start_date, end_date, enable_credit_filter, credit_filter_keywords, require_keyword_in_title=require_keyword_in_title)
         st.session_state.search_results[k] = articles
-        st.session_state.show_limit[k] = 5
+        # 기본 5개, 더보기 누르면 10개씩 증가
+        if k not in st.session_state.show_limit:
+            st.session_state.show_limit[k] = 5
 
 def detect_lang_from_title(title):
     return "ko" if re.search(r"[가-힣]", title) else "en"
@@ -455,7 +461,7 @@ def update_excel(selected_data, template_path):
     return output
 
 # --- 요약/감성분석/기사선택/엑셀 저장 UI ---
-def render_articles_with_single_summary_and_telegram(results, show_limit):
+def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True):
     SENTIMENT_CLASS = {
         "긍정": "sentiment-positive",
         "부정": "sentiment-negative",
@@ -471,9 +477,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
     with col_list:
         st.markdown("### 기사 요약 결과 (엑셀 저장할 기사 선택)")
         for keyword, articles in results.items():
-            # 키워드별 그룹 헤더
             st.markdown(f"#### [{keyword}]")
-            # 현재 보여줄 기사 수
             limit = st.session_state.show_limit.get(keyword, 5)
             for idx, article in enumerate(articles[:limit]):
                 key = f"{keyword}_{idx}"
@@ -485,18 +489,23 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                     one_line, summary, sentiment, full_text = st.session_state[cache_key]
                 sentiment_label = sentiment if sentiment else "분석중"
                 sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
-                md_line = (
-                    f"[{article['title']}]({article['link']}) "
-                    f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
-                    f"({article['date']} | {article['source']})"
-                )
+                if show_sentiment_badge:
+                    md_line = (
+                        f"[{article['title']}]({article['link']}) "
+                        f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
+                        f"({article['date']} | {article['source']})"
+                    )
+                else:
+                    md_line = (
+                        f"[{article['title']}]({article['link']}) "
+                        f"({article['date']} | {article['source']})"
+                    )
                 cols = st.columns([0.04, 0.96])
                 with cols[0]:
                     checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
                 with cols[1]:
                     st.markdown(md_line, unsafe_allow_html=True)
                 st.session_state.article_checked[key] = checked
-
             # 더보기 버튼
             if limit < len(articles):
                 if st.button("더보기", key=f"more_{keyword}"):
@@ -526,10 +535,19 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                         "date": article['date'],
                         "source": article['source']
                     })
-                    st.markdown(f"#### [{article['title']}]({article['link']}) <span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>({sentiment})</span>", unsafe_allow_html=True)
+                    if show_sentiment_badge:
+                        st.markdown(
+                            f"#### [{article['title']}]({article['link']}) "
+                            f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>({sentiment})</span>",
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.markdown(f"#### [{article['title']}]({article['link']})", unsafe_allow_html=True)
                     st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
                     st.markdown(f"- **한 줄 요약:** {one_line}")
                     st.markdown(f"- **요약본:** {summary}")
+                    if not show_sentiment_badge:
+                        st.markdown(f"- **감성분석:** `{sentiment}`")
                     st.markdown("---")
         summary_data = selected_articles
 
@@ -549,11 +567,10 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
         elif uploaded_file is not None:
             st.info("엑셀로 저장할 기사를 먼저 선택하세요.")
 
-
 if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
-    render_articles_with_single_summary_and_telegram(filtered_results, st.session_state.show_limit)
+    render_articles_with_single_summary_and_telegram(filtered_results, st.session_state.show_limit, show_sentiment_badge)
