@@ -1,12 +1,8 @@
 streamlit
-requests
-beautifulsoup4
-pytz
-telepot
-newsapi-python
-google-cloud-language
 openai
-newspaper4k
-lxml_html_clean
+pandas
+requests
 nltk
-xlsxwriter
+openpyxl
+newspaper4k
+telepot
