@@ -38,7 +38,19 @@ def extract_article_text(url):
         article = newspaper.article(url)
         article.download()
         article.parse()
-        return article.text
+        text = article.text.strip()
+        # --- 본문 검증 및 후처리 ---
+        # 1. 너무 짧은 본문
+        if len(text) < 200:
+            return "본문 추출 오류: 기사 본문이 너무 짧습니다."
+        # 2. 광고/저작권/추천/타 기사/외국어 등 패턴 포함 시
+        noise_patterns = [
+            "무단전재", "더보기", "기자", "추천기사", "다른 기사", "Copyright", "All rights reserved",
+            "Tesla reports", "record profits", "third quarter", "Click here", "관련 기사", "관련뉴스"
+        ]
+        if any(pat in text for pat in noise_patterns):
+            return "본문 추출 오류: 기사 본문이 아닌 내용이 포함되어 있습니다."
+        return text
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
