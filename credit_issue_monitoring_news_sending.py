@@ -444,58 +444,78 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
     summary_data = []
     all_articles = []
     article_keys = []
-    for keyword, articles in results.items():
-        for idx, article in enumerate(articles[:show_limit.get(keyword, 5)]):
-            all_articles.append(f"[{keyword}] {article['title']} ({article['date']} | {article['source']})")
-            article_keys.append((keyword, idx))
+    checked_list = []
 
-    if not all_articles:
-        st.info("검색 결과가 없습니다.")
-        return
+    # 선택 상태를 세션에 저장 (체크박스 상태 유지)
+    if "article_checked" not in st.session_state:
+        st.session_state.article_checked = {}
 
-    # 1. 기사별 요약/감성분석 및 선택 체크박스
-    st.markdown("### 기사 요약 결과 (엑셀 저장할 기사 선택)")
-    selected_indices = []
-    for i, (keyword, idx) in enumerate(article_keys):
-        article = st.session_state.search_results[keyword][idx]
-        # [키워드] [기사명](링크) (날짜 | 출처) 형식의 마크다운 문자열 생성
-        md_line = f"[{keyword}] [{article['title']}]({article['link']}) ({article['date']} | {article['source']})"
-        # 체크박스와 하이퍼링크를 같은 줄에 배치
-        cols = st.columns([0.08, 0.92])
-        with cols[0]:
-            checked = st.checkbox("", value=False, key=f"news_{i}")
-        with cols[1]:
-            st.markdown(md_line, unsafe_allow_html=True)
-        if checked:
-            # 실제 요약/감성분석 실행
-            one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
-            summary_data.append({
-                "회사명": keyword,
-                "요약": one_line,
-                "full_summary": summary,
-                "sentiment": sentiment,
-                "링크": article['link'],
-                "date": article['date'],
-                "source": article['source']
-            })
-            selected_indices.append(i)
+    # 1. 2단 컬럼 레이아웃 생성 (왼쪽: 기사리스트, 오른쪽: 선택된 기사 요약/감성)
+    col_list, col_summary = st.columns([1, 1])
 
-    st.write(f"선택된 기사 개수: {len(selected_indices)}")
+    with col_list:
+        st.markdown("### 기사 요약 결과 (엑셀 저장할 기사 선택)")
+        for keyword, articles in results.items():
+            for idx, article in enumerate(articles[:show_limit.get(keyword, 5)]):
+                key = f"{keyword}_{idx}"
+                md_line = f"[{keyword}] [{article['title']}]({article['link']}) ({article['date']} | {article['source']})"
+                cols = st.columns([0.12, 0.88])
+                with cols[0]:
+                    checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
+                with cols[1]:
+                    st.markdown(md_line, unsafe_allow_html=True)
+                st.session_state.article_checked[key] = checked
 
-    # 2. 엑셀 템플릿 업로드
-    st.markdown("#### 기존 엑셀 템플릿 업로드")
-    uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요(기존 템플릿)", type=["xlsx"])
-    if uploaded_file is not None and summary_data:
-        if st.button("선택 기사 엑셀로 저장"):
-            excel_bytes = update_excel(summary_data, uploaded_file)
-            st.download_button(
-                label="📥 엑셀 파일 다운로드",
-                data=excel_bytes.getvalue(),
-                file_name="뉴스요약_업데이트.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-    elif uploaded_file is not None:
-        st.info("엑셀로 저장할 기사를 먼저 선택하세요.")
+    # 2. 오른쪽 컬럼: 선택된 기사들의 요약/감성분석 결과 모두 출력
+    with col_summary:
+        st.markdown("### 선택된 기사 요약/감성분석")
+        selected_articles = []
+        for keyword, articles in results.items():
+            for idx, article in enumerate(articles[:show_limit.get(keyword, 5)]):
+                key = f"{keyword}_{idx}"
+                if st.session_state.article_checked.get(key, False):
+                    # 이미 요약/감성분석을 했는지 세션에 저장(속도 최적화)
+                    cache_key = f"summary_{key}"
+                    if cache_key not in st.session_state:
+                        one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+                        st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+                    else:
+                        one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                    selected_articles.append({
+                        "회사명": keyword,
+                        "기사제목": article['title'],
+                        "요약": one_line,
+                        "full_summary": summary,
+                        "sentiment": sentiment,
+                        "링크": article['link'],
+                        "date": article['date'],
+                        "source": article['source']
+                    })
+                    # 요약/감성분석 결과 출력
+                    st.markdown(f"#### [{article['title']}]({article['link']})")
+                    st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
+                    st.markdown(f"- **한 줄 요약:** {one_line}")
+                    st.markdown(f"- **요약본:** {summary}")
+                    st.markdown(f"- **감성분석:** `{sentiment}`")
+                    st.markdown("---")
+        summary_data = selected_articles
+
+        st.write(f"선택된 기사 개수: {len(summary_data)}")
+
+        # 3. 엑셀 템플릿 업로드 및 저장
+        st.markdown("#### 기존 엑셀 템플릿 업로드")
+        uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요(기존 템플릿)", type=["xlsx"])
+        if uploaded_file is not None and summary_data:
+            if st.button("선택 기사 엑셀로 저장"):
+                excel_bytes = update_excel(summary_data, uploaded_file)
+                st.download_button(
+                    label="📥 엑셀 파일 다운로드",
+                    data=excel_bytes.getvalue(),
+                    file_name="뉴스요약_업데이트.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        elif uploaded_file is not None:
+            st.info("엑셀로 저장할 기사를 먼저 선택하세요.")
 
 if st.session_state.search_results:
     filtered_results = {}
