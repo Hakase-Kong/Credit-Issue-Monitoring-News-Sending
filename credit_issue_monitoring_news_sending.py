@@ -1,14 +1,7 @@
-import nltk
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-try:
-    nltk.data.find('tokenizers/punkt_tab')
-except LookupError:
-    nltk.download('punkt_tab')
-
 import streamlit as st
+import pandas as pd
+from io import BytesIO
+import nltk
 import requests
 import re
 import os
@@ -17,7 +10,7 @@ import telepot
 from openai import OpenAI
 import newspaper  # newspaper4k
 
-# --- 세션 상태 변수 초기화 (항상 위젯보다 먼저!) ---
+# 세션 상태 변수 초기화
 if "favorite_keywords" not in st.session_state:
     st.session_state.favorite_keywords = set()
 if "search_results" not in st.session_state:
@@ -27,12 +20,135 @@ if "show_limit" not in st.session_state:
 if "search_triggered" not in st.session_state:
     st.session_state.search_triggered = False
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+# 대분류/소분류 카테고리
+favorite_categories = {
+    "국/공채": [],
+    "공공기관": [],
+    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"],
+    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"],
+    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"],
+    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"],
+    "캐피탈": ["한국캐피탈", "현대캐피탈"],
+    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"],
+    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"],
+    "발전": ["GS파워", "GSEPS", "삼천리"],
+    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"],
+    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"],
+    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"],
+    "비철/철강": ["포스코", "현대제철", "고려아연"],
+    "석유화학": ["LG화학", "SK지오센트릭"],
+    "건설": ["포스코이앤씨"],
+    "특수채": ["주택도시보증공사", "기업은행"]
+}
+major_categories = list(favorite_categories.keys())
+sub_categories = {cat: favorite_categories[cat] for cat in major_categories}
+# 즐겨찾기 전체 키워드(테스트1~3 제외)
+all_fav_keywords = sorted(set(
+    kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
+))
 
-def detect_lang(text):
-    return "ko" if re.search(r"[가-힣]", text) else "en"
+st.set_page_config(layout="wide")
+st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
 
+# -- 검색창/검색 버튼 한 줄 배치
+search_col, button_col = st.columns([7, 1])
+with search_col:
+    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input")
+with button_col:
+    search_clicked = st.button("검색", use_container_width=True)
+
+# -- 즐겨찾기 카테고리 선택/검색 버튼 한 줄 배치
+st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
+cat_col, btn_col = st.columns([5, 1])
+with cat_col:
+    selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", major_categories)
+    for cat in selected_categories:
+        st.session_state.favorite_keywords.update(favorite_categories[cat])
+with btn_col:
+    category_search_clicked = st.button("🔍 검색", use_container_width=True)
+
+# -- 즐겨찾기에서 검색/버튼 한 줄 배치 (테스트1~3 없이, 기본 선택 없음)
+fav_col, fav_btn_col = st.columns([5, 1])
+with fav_col:
+    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=[])
+with fav_btn_col:
+    fav_search_clicked = st.button("⭐ 즐겨찾기로 검색", use_container_width=True)
+
+# 날짜 입력
+date_col1, date_col2 = st.columns([1, 1])
+with date_col1:
+    start_date = st.date_input("시작일")
+with date_col2:
+    end_date = st.date_input("종료일")
+
+# 신용위험 필터 옵션
+with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
+    use_credit_filter = st.checkbox("이 필터 적용", value=False, key="use_credit_filter")
+    credit_keywords = [
+        "신용등급", "신용평가", "하향", "상향", "강등", "조정", "부도",
+        "파산", "디폴트", "채무불이행", "적자", "영업손실", "현금흐름", "자금난",
+        "재무위험", "부정적 전망", "긍정적 전망", "기업회생", "워크아웃", "구조조정", "자본잠식"
+    ]
+    credit_filter_keywords = st.multiselect(
+        "신용위험 관련 키워드 (하나 이상 선택)",
+        options=credit_keywords,
+        default=credit_keywords,
+        key="credit_filter"
+    )
+
+# 키워드 필터 옵션 (기본 해제)
+with st.expander("🔍 키워드 필터 옵션", expanded=True):
+    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
+
+# 산업별 필터 옵션 (박스형태, 한 줄에 배치, 태그 UI, 모두 선택, 체크박스)
+with st.expander("🏭 산업별 필터 옵션", expanded=True):
+    use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
+    col_major, col_sub = st.columns([1, 2])
+    with col_major:
+        selected_major = st.selectbox("대분류(산업)", major_categories, key="industry_major")
+    with col_sub:
+        selected_sub = st.multiselect(
+            "소분류(필터 키워드)",
+            sub_categories[selected_major],
+            default=sub_categories[selected_major],
+            key="industry_sub"
+        )
+
+# 재무위험 필터 옵션 (모두 선택, 체크박스)
+with st.expander("💰 재무위험 필터 옵션", expanded=True):
+    use_finance_filter = st.checkbox("이 필터 적용", value=False, key="use_finance_filter")
+    finance_keywords = ["자산", "총자산", "부채", "자본", "매출", "비용", "영업이익", "순이익"]
+    finance_filter_keywords = st.multiselect(
+        "재무위험 관련 키워드",
+        options=finance_keywords,
+        default=finance_keywords,
+        key="finance_filter"
+    )
+
+# 법/정책 위험 필터 옵션 (모두 선택, 체크박스)
+with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
+    use_law_filter = st.checkbox("이 필터 적용", value=False, key="use_law_filter")
+    law_keywords = ["테스트1", "테스트2", "테스트3"]
+    law_filter_keywords = st.multiselect(
+        "법/정책 위험 관련 키워드",
+        options=law_keywords,
+        default=law_keywords,
+        key="law_filter"
+    )
+
+# CSS: 붉은색 태그 스타일
+st.markdown("""
+<style>
+.stMultiSelect [data-baseweb="tag"] {
+    background-color: #ff5c5c !important;
+    color: white !important;
+    border: none !important;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- 본문 추출 함수(요청대로 단순화) ---
 def extract_article_text(url):
     try:
         article = newspaper.article(url)
@@ -41,6 +157,13 @@ def extract_article_text(url):
         return article.text
     except Exception as e:
         return f"본문 추출 오류: {e}"
+
+# --- OpenAI 요약/감성분석 함수 ---
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+def detect_lang(text):
+    return "ko" if re.search(r"[가-힣]", text) else "en"
 
 def summarize_and_sentiment_with_openai(text):
     if not OPENAI_API_KEY:
@@ -95,144 +218,6 @@ def summarize_and_sentiment_with_openai(text):
     summary = m2.group(1).strip() if m2 else answer
     sentiment = m3.group(1).strip() if m3 else ""
     return one_line, summary, sentiment, text
-
-# --- 대분류(산업) & 소분류(필터 키워드) 구조 ---
-favorite_categories = {
-    "국/공채": [],
-    "공공기관": [],
-    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"],
-    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"],
-    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"],
-    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"],
-    "캐피탈": ["한국캐피탈", "현대캐피탈"],
-    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"],
-    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"],
-    "발전": ["GS파워", "GSEPS", "삼천리"],
-    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"],
-    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"],
-    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"],
-    "비철/철강": ["포스코", "현대제철", "고려아연"],
-    "석유화학": ["LG화학", "SK지오센트릭"],
-    "건설": ["포스코이앤씨"],
-    "특수채": ["주택도시보증공사", "기업은행"]
-}
-major_categories = list(favorite_categories.keys())
-sub_categories = {cat: favorite_categories[cat] for cat in major_categories}
-
-# --- 모든 즐겨찾기 하위 키워드 자동 리스트 (테스트1~3 제외) ---
-all_fav_keywords = sorted(set(
-    kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
-))
-
-# --- UI: 키워드 입력창 ---
-st.set_page_config(layout="wide")
-st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
-col1, col2 = st.columns([7, 1])
-with col1:
-    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", on_change=lambda: st.session_state.__setitem__('search_triggered', True))
-with col2:
-    search_clicked = st.button("검색", use_container_width=True)
-
-# --- 즐겨찾기 카테고리 선택 (키워드 입력창 바로 아래) ---
-st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
-cat_col, btn_col = st.columns([5, 1])
-with cat_col:
-    selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", major_categories)
-    for cat in selected_categories:
-        st.session_state.favorite_keywords.update(favorite_categories[cat])
-with btn_col:
-    st.write("")
-    category_search_clicked = st.button("🔍 검색", use_container_width=True)
-
-# --- 즐겨찾기에서 검색 (테스트1~3 없이, 기본 선택 없음) ---
-fav_col1, fav_col2 = st.columns([5, 1])
-with fav_col1:
-    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=[])
-with fav_col2:
-    st.write("")
-    fav_search_clicked = st.button("즐겨찾기로 검색", use_container_width=True)
-
-# --- 날짜 입력 ---
-date_col1, date_col2 = st.columns([1, 1])
-with date_col1:
-    start_date = st.date_input("시작일")
-with date_col2:
-    end_date = st.date_input("종료일")
-
-# --- 신용위험 필터 옵션 ---
-with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
-    use_credit_filter = st.checkbox("이 필터 적용", value=False, key="use_credit_filter")
-    credit_keywords = [
-        "신용등급", "신용평가", "하향", "상향", "강등", "조정", "부도",
-        "파산", "디폴트", "채무불이행", "적자", "영업손실", "현금흐름", "자금난",
-        "재무위험", "부정적 전망", "긍정적 전망", "기업회생", "워크아웃", "구조조정", "자본잠식"
-    ]
-    credit_filter_keywords = st.multiselect(
-        "신용위험 관련 키워드 (하나 이상 선택)",
-        options=credit_keywords,
-        default=credit_keywords,
-        key="credit_filter"
-    )
-
-# --- 키워드 필터 옵션 (기본 해제) ---
-with st.expander("🔍 키워드 필터 옵션", expanded=True):
-    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
-
-# --- 산업별 필터 옵션 (박스형태, 한 줄에 배치, 태그 UI, 모두 선택, 체크박스) ---
-with st.expander("🏭 산업별 필터 옵션", expanded=True):
-    use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
-    col_major, col_sub = st.columns([1, 2])
-    with col_major:
-        selected_major = st.selectbox("대분류(산업)", major_categories, key="industry_major")
-    with col_sub:
-        selected_sub = st.multiselect(
-            "소분류(필터 키워드)",
-            sub_categories[selected_major],
-            default=sub_categories[selected_major],
-            key="industry_sub"
-        )
-
-# --- 재무위험 필터 옵션 (모두 선택, 체크박스) ---
-with st.expander("💰 재무위험 필터 옵션", expanded=True):
-    use_finance_filter = st.checkbox("이 필터 적용", value=False, key="use_finance_filter")
-    finance_keywords = ["자산", "총자산", "부채", "자본", "매출", "비용", "영업이익", "순이익"]
-    finance_filter_keywords = st.multiselect(
-        "재무위험 관련 키워드",
-        options=finance_keywords,
-        default=finance_keywords,
-        key="finance_filter"
-    )
-
-# --- 법/정책 위험 필터 옵션 (모두 선택, 체크박스) ---
-with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
-    use_law_filter = st.checkbox("이 필터 적용", value=False, key="use_law_filter")
-    law_keywords = ["테스트1", "테스트2", "테스트3"]
-    law_filter_keywords = st.multiselect(
-        "법/정책 위험 관련 키워드",
-        options=law_keywords,
-        default=law_keywords,
-        key="law_filter"
-    )
-
-# --- CSS: 붉은색 태그 스타일 ---
-st.markdown("""
-<style>
-.stMultiSelect [data-baseweb="tag"] {
-    background-color: #ff5c5c !important;
-    color: white !important;
-    border: none !important;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# --- OR 조건 필터링 함수 ---
-def or_keyword_filter(article, *keyword_lists):
-    text = (article.get("title", "") + " " + article.get("description", "") + " " + article.get("full_text", ""))
-    for keywords in keyword_lists:
-        if any(kw in text for kw in keywords if kw):
-            return True
-    return False
 
 # --- 텔레그램 클래스 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
@@ -353,7 +338,68 @@ def summarize_article_from_url(article_url, title):
     except Exception as e:
         return f"요약 오류: {e}", None, None, None
 
+# OR 조건 필터링 함수
+def or_keyword_filter(article, *keyword_lists):
+    text = (article.get("title", "") + " " + article.get("description", "") + " " + article.get("full_text", ""))
+    for keywords in keyword_lists:
+        if any(kw in text for kw in keywords if kw):
+            return True
+    return False
+
+# 실제 뉴스 검색/필터링/요약/감성분석 실행
+search_clicked = False
+if keywords_input:
+    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
+    if len(keyword_list) > 10:
+        st.warning("키워드는 최대 10개까지 입력 가능합니다.")
+    else:
+        search_clicked = True
+
+if search_clicked or st.session_state.get("search_triggered"):
+    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
+    if len(keyword_list) > 10:
+        st.warning("키워드는 최대 10개까지 입력 가능합니다.")
+    else:
+        with st.spinner("뉴스 검색 중..."):
+            process_keywords(keyword_list, start_date, end_date, use_credit_filter, credit_filter_keywords, require_keyword_in_title)
+    st.session_state.search_triggered = False
+
+if fav_search_clicked and fav_selected:
+    with st.spinner("뉴스 검색 중..."):
+        process_keywords(fav_selected, start_date, end_date, use_credit_filter, credit_filter_keywords, require_keyword_in_title)
+
+if category_search_clicked and selected_categories:
+    with st.spinner("뉴스 검색 중..."):
+        keywords = set()
+        for cat in selected_categories:
+            keywords.update(favorite_categories[cat])
+        process_keywords(
+            sorted(keywords),
+            start_date,
+            end_date,
+            use_credit_filter,
+            credit_filter_keywords,
+            require_keyword_in_title
+        )
+
+# 필터링: OR 조건(필터별 체크박스에 따라 적용)
+def article_passes_all_filters(article):
+    filters = []
+    if use_credit_filter:
+        filters.append(credit_filter_keywords)
+    if use_industry_filter:
+        filters.append(selected_sub)
+    if use_finance_filter:
+        filters.append(finance_filter_keywords)
+    if use_law_filter:
+        filters.append(law_filter_keywords)
+    if filters:
+        return or_keyword_filter(article, *filters)
+    else:
+        return True
+
 def render_articles_with_single_summary_and_telegram(results, show_limit):
+    summary_data = []
     all_articles = []
     article_keys = []
     for keyword, articles in results.items():
@@ -391,6 +437,15 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                 st.markdown("**[요약본]**")
                 st.write(summary)
                 st.markdown(f"**[감성 분석]**: :red[{sentiment}]")
+                summary_data.append({
+                    "title": selected_article['title'],
+                    "summary": one_line,
+                    "full_summary": summary,
+                    "sentiment": sentiment,
+                    "url": selected_article['link'],
+                    "date": selected_article['date'],
+                    "source": selected_article['source']
+                })
             else:
                 st.warning(one_line)
 
@@ -402,58 +457,21 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
         except Exception as e:
             st.warning(f"텔레그램 전송 오류: {e}")
 
-# --- 실제 뉴스 검색/필터링/요약/감성분석 실행 ---
-search_clicked = False
-if keywords_input:
-    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
-    if len(keyword_list) > 10:
-        st.warning("키워드는 최대 10개까지 입력 가능합니다.")
-    else:
-        search_clicked = True
-
-if search_clicked or st.session_state.get("search_triggered"):
-    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
-    if len(keyword_list) > 10:
-        st.warning("키워드는 최대 10개까지 입력 가능합니다.")
-    else:
-        with st.spinner("뉴스 검색 중..."):
-            process_keywords(keyword_list, start_date, end_date, use_credit_filter, credit_filter_keywords, require_keyword_in_title)
-    st.session_state.search_triggered = False
-
-if fav_search_clicked and fav_selected:
-    with st.spinner("뉴스 검색 중..."):
-        process_keywords(fav_selected, start_date, end_date, use_credit_filter, credit_filter_keywords, require_keyword_in_title)
-
-if category_search_clicked and selected_categories:
-    with st.spinner("뉴스 검색 중..."):
-        keywords = set()
-        for cat in selected_categories:
-            keywords.update(favorite_categories[cat])
-        process_keywords(
-            sorted(keywords),
-            start_date,
-            end_date,
-            use_credit_filter,
-            credit_filter_keywords,
-            require_keyword_in_title
+    # 엑셀 다운로드 버튼 (요약 결과 있을 때만)
+    if summary_data:
+        summary_df = pd.DataFrame(summary_data)
+        def to_excel(df):
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='Summary')
+            return output.getvalue()
+        excel_bytes = to_excel(summary_df)
+        st.download_button(
+            label="📥 요약 기사 엑셀 다운로드",
+            data=excel_bytes,
+            file_name="summary_articles.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-# --- 필터링: OR 조건(필터별 체크박스에 따라 적용) ---
-def article_passes_all_filters(article):
-    filters = []
-    if use_credit_filter:
-        filters.append(credit_filter_keywords)
-    if use_industry_filter:
-        filters.append(selected_sub)
-    if use_finance_filter:
-        filters.append(finance_filter_keywords)
-    if use_law_filter:
-        filters.append(law_filter_keywords)
-    if filters:
-        return or_keyword_filter(article, *filters)
-    else:
-        # 필터 하나도 적용 안하면 모두 통과
-        return True
 
 if st.session_state.search_results:
     filtered_results = {}
