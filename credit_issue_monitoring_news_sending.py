@@ -482,31 +482,36 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
             for idx, article in enumerate(articles[:limit]):
                 key = f"{keyword}_{idx}"
                 cache_key = f"summary_{key}"
-                if cache_key not in st.session_state:
-                    one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
-                    st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
-                else:
-                    one_line, summary, sentiment, full_text = st.session_state[cache_key]
-                sentiment_label = sentiment if sentiment else "분석중"
-                sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
+
+                # 감성분석 뱃지 표시 옵션에 따라 분기
                 if show_sentiment_badge:
+                    # 감성분석 결과를 미리 캐싱/실행
+                    if cache_key not in st.session_state:
+                        one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+                        st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+                    else:
+                        one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                    sentiment_label = sentiment if sentiment else "분석중"
+                    sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
                     md_line = (
                         f"[{article['title']}]({article['link']}) "
                         f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
                         f"({article['date']} | {article['source']})"
                     )
                 else:
+                    # 감성분석 미실행, 기사 리스트만 출력
                     md_line = (
                         f"[{article['title']}]({article['link']}) "
                         f"({article['date']} | {article['source']})"
                     )
+
                 cols = st.columns([0.04, 0.96])
                 with cols[0]:
                     checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
                 with cols[1]:
                     st.markdown(md_line, unsafe_allow_html=True)
                 st.session_state.article_checked[key] = checked
-            # 더보기 버튼
+
             if limit < len(articles):
                 if st.button("더보기", key=f"more_{keyword}"):
                     st.session_state.show_limit[keyword] += 10
@@ -520,7 +525,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 key = f"{keyword}_{idx}"
                 cache_key = f"summary_{key}"
                 if st.session_state.article_checked.get(key, False):
-                    if cache_key not in st.session_state:
+                    # 감성분석 뱃지 미표시 옵션일 때만 이 시점에 요약/감성분석 실행
+                    if (not show_sentiment_badge) or (cache_key not in st.session_state):
                         one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
                         st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
                     else:
