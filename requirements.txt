@@ -7,3 +7,4 @@ openpyxl
 newspaper4k
 telepot
 lxml_html_clean
+xlswriter
