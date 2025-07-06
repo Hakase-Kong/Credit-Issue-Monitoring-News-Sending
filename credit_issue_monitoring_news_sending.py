@@ -97,47 +97,43 @@ def summarize_and_sentiment_with_openai(text):
     return one_line, summary, sentiment, text
 
 # --- 대분류(산업) & 소분류(필터 키워드) 구조 ---
+test_sub = ["테스트1", "테스트2", "테스트3"]
 favorite_categories = {
-    "국/공채": [],
-    "공공기관": [],
-    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"],
-    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"],
-    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"],
-    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"],
-    "캐피탈": ["한국캐피탈", "현대캐피탈"],
-    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"],
-    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"],
-    "발전": ["GS파워", "GSEPS", "삼천리"],
-    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"],
-    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"],
-    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"],
-    "비철/철강": ["포스코", "현대제철", "고려아연"],
-    "석유화학": ["LG화학", "SK지오센트릭"],
-    "건설": ["포스코이앤씨"],
-    "특수채": ["주택도시보증공사", "기업은행"]
+    "국/공채": test_sub,
+    "공공기관": test_sub,
+    "보험사": ["현대해상", "농협생명", "메리츠화재", "교보생명", "삼성화재", "삼성생명", "신한라이프", "흥국생명", "동양생명", "미래에셋생명"] + test_sub,
+    "5대금융지주": ["신한금융", "하나금융", "KB금융", "농협금융", "우리금융"] + test_sub,
+    "5대시중은행": ["농협은행", "국민은행", "신한은행", "우리은행", "하나은행"] + test_sub,
+    "카드사": ["KB국민카드", "현대카드", "신한카드", "비씨카드", "삼성카드"] + test_sub,
+    "캐피탈": ["한국캐피탈", "현대캐피탈"] + test_sub,
+    "지주사": ["SK이노베이션", "GS에너지", "SK", "GS"] + test_sub,
+    "에너지": ["SK가스", "GS칼텍스", "S-Oil", "SK에너지", "SK앤무브", "코리아에너지터미널"] + test_sub,
+    "발전": ["GS파워", "GSEPS", "삼천리"] + test_sub,
+    "자동차": ["LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어"] + test_sub,
+    "전기/전자": ["SK하이닉스", "LG이노텍", "LG전자", "LS일렉트릭"] + test_sub,
+    "소비재": ["이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"] + test_sub,
+    "비철/철강": ["포스코", "현대제철", "고려아연"] + test_sub,
+    "석유화학": ["LG화학", "SK지오센트릭"] + test_sub,
+    "건설": ["포스코이앤씨"] + test_sub,
+    "특수채": ["주택도시보증공사", "기업은행"] + test_sub
 }
 major_categories = list(favorite_categories.keys())
 sub_categories = {cat: favorite_categories[cat] for cat in major_categories}
 
+# --- 모든 즐겨찾기 하위 키워드 61개 자동 선택
+all_fav_keywords = sorted(set(sum(favorite_categories.values(), [])))
+
 # --- UI: 키워드 입력창 ---
 st.set_page_config(layout="wide")
 st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
-col1, col2, col3 = st.columns([6, 1, 1])
+col1, col2 = st.columns([7, 1])
 with col1:
     keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", on_change=lambda: st.session_state.__setitem__('search_triggered', True))
 with col2:
-    st.write("")
     search_clicked = st.button("검색", use_container_width=True)
-with col3:
-    st.write("")
-    fav_add_clicked = st.button("⭐ 즐겨찾기 추가", use_container_width=True)
-    if fav_add_clicked:
-        new_keywords = {kw.strip() for kw in keywords_input.split(",") if kw.strip()}
-        st.session_state.favorite_keywords.update(new_keywords)
-        st.success("즐겨찾기에 추가되었습니다.")
 
 # --- 즐겨찾기 카테고리 선택 (키워드 입력창 바로 아래) ---
-st.markdown("**즐겨찾기 카테고리 선택**")
+st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
 cat_col, btn_col = st.columns([5, 1])
 with cat_col:
     selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", major_categories)
@@ -147,10 +143,10 @@ with btn_col:
     st.write("")
     category_search_clicked = st.button("🔍 검색", use_container_width=True)
 
-# --- 즐겨찾기에서 검색 (즐겨찾기 카테고리 선택 바로 아래) ---
+# --- 즐겨찾기에서 검색 (모든 하위 키워드 61개 기본 선택) ---
 fav_col1, fav_col2 = st.columns([5, 1])
 with fav_col1:
-    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", sorted(st.session_state.favorite_keywords))
+    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=all_fav_keywords)
 with fav_col2:
     st.write("")
     fav_search_clicked = st.button("즐겨찾기로 검색", use_container_width=True)
@@ -180,7 +176,7 @@ with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
 with st.expander("🔍 키워드 필터 옵션", expanded=True):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
 
-# --- 산업별 필터 옵션 (박스형태, 한 줄에 배치, 태그 UI) ---
+# --- 산업별 필터 옵션 (박스형태, 한 줄에 배치, 태그 UI, 모두 선택) ---
 with st.expander("🏭 산업별 필터 옵션", expanded=True):
     col_major, col_sub = st.columns([1, 2])
     with col_major:
@@ -189,26 +185,27 @@ with st.expander("🏭 산업별 필터 옵션", expanded=True):
         selected_sub = st.multiselect(
             "소분류(필터 키워드)",
             sub_categories[selected_major],
+            default=sub_categories[selected_major],
             key="industry_sub"
         )
 
-# --- 재무위험 필터 옵션 ---
+# --- 재무위험 필터 옵션 (모두 선택) ---
 with st.expander("💰 재무위험 필터 옵션", expanded=True):
     finance_keywords = ["자산", "총자산", "부채", "자본", "매출", "비용", "영업이익", "순이익"]
     finance_filter_keywords = st.multiselect(
         "재무위험 관련 키워드",
         options=finance_keywords,
-        default=[],
+        default=finance_keywords,
         key="finance_filter"
     )
 
-# --- 법/정책 위험 필터 옵션 ---
+# --- 법/정책 위험 필터 옵션 (모두 선택) ---
 with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
     law_keywords = ["테스트1", "테스트2", "테스트3"]
     law_filter_keywords = st.multiselect(
         "법/정책 위험 관련 키워드",
         options=law_keywords,
-        default=[],
+        default=law_keywords,
         key="law_filter"
     )
 
