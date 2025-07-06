@@ -458,8 +458,14 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
     selected_indices = []
     for i, (keyword, idx) in enumerate(article_keys):
         article = st.session_state.search_results[keyword][idx]
-        display_text = f"[{article['title']}] ({article['date']} | {article['source']})"
-        checked = st.checkbox(display_text, value=False, key=f"news_{i}")
+        # [키워드] [기사명](링크) (날짜 | 출처) 형식의 마크다운 문자열 생성
+        md_line = f"[{keyword}] [{article['title']}]({article['link']}) ({article['date']} | {article['source']})"
+        # 체크박스와 하이퍼링크를 같은 줄에 배치
+        cols = st.columns([0.08, 0.92])
+        with cols[0]:
+            checked = st.checkbox("", value=False, key=f"news_{i}")
+        with cols[1]:
+            st.markdown(md_line, unsafe_allow_html=True)
         if checked:
             # 실제 요약/감성분석 실행
             one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
