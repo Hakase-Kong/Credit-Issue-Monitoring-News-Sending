@@ -462,22 +462,22 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
         "중립": "sentiment-neutral"
     }
     summary_data = []
-    checked_list = []
 
-    # 선택 상태를 세션에 저장 (체크박스 상태 유지)
     if "article_checked" not in st.session_state:
         st.session_state.article_checked = {}
 
-    # 2단 컬럼 레이아웃 (왼쪽: 기사리스트, 오른쪽: 선택된 기사 요약/감성)
     col_list, col_summary = st.columns([1, 1])
 
     with col_list:
         st.markdown("### 기사 요약 결과 (엑셀 저장할 기사 선택)")
         for keyword, articles in results.items():
-            for idx, article in enumerate(articles[:show_limit.get(keyword, 5)]):
+            # 키워드별 그룹 헤더
+            st.markdown(f"#### [{keyword}]")
+            # 현재 보여줄 기사 수
+            limit = st.session_state.show_limit.get(keyword, 5)
+            for idx, article in enumerate(articles[:limit]):
                 key = f"{keyword}_{idx}"
                 cache_key = f"summary_{key}"
-                # 감성분석 캐싱 (기사 리스트에 바로 보여주기 위해)
                 if cache_key not in st.session_state:
                     one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
                     st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
@@ -485,9 +485,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                     one_line, summary, sentiment, full_text = st.session_state[cache_key]
                 sentiment_label = sentiment if sentiment else "분석중"
                 sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
-                # 기사 제목 옆에 감성 결과를 괄호+색상 뱃지로 바로 표시
                 md_line = (
-                    f"[{keyword}] "
                     f"[{article['title']}]({article['link']}) "
                     f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
                     f"({article['date']} | {article['source']})"
@@ -499,11 +497,17 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                     st.markdown(md_line, unsafe_allow_html=True)
                 st.session_state.article_checked[key] = checked
 
+            # 더보기 버튼
+            if limit < len(articles):
+                if st.button("더보기", key=f"more_{keyword}"):
+                    st.session_state.show_limit[keyword] += 10
+
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         selected_articles = []
         for keyword, articles in results.items():
-            for idx, article in enumerate(articles[:show_limit.get(keyword, 5)]):
+            limit = st.session_state.show_limit.get(keyword, 5)
+            for idx, article in enumerate(articles[:limit]):
                 key = f"{keyword}_{idx}"
                 cache_key = f"summary_{key}"
                 if st.session_state.article_checked.get(key, False):
@@ -522,7 +526,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                         "date": article['date'],
                         "source": article['source']
                     })
-                    # 요약/감성분석 결과 출력
                     st.markdown(f"#### [{article['title']}]({article['link']}) <span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>({sentiment})</span>", unsafe_allow_html=True)
                     st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
                     st.markdown(f"- **한 줄 요약:** {one_line}")
@@ -532,7 +535,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
 
         st.write(f"선택된 기사 개수: {len(summary_data)}")
 
-        # 3. 엑셀 템플릿 업로드 및 저장
         st.markdown("#### 기존 엑셀 템플릿 업로드")
         uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요(기존 템플릿)", type=["xlsx"])
         if uploaded_file is not None and summary_data:
@@ -546,6 +548,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                 )
         elif uploaded_file is not None:
             st.info("엑셀로 저장할 기사를 먼저 선택하세요.")
+
 
 if st.session_state.search_results:
     filtered_results = {}
