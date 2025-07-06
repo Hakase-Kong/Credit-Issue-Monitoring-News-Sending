@@ -110,21 +110,24 @@ major_categories = list(favorite_categories.keys())
 # 소분류는 추후 확장 (현재는 빈 리스트)
 sub_categories = {cat: [] for cat in major_categories}
 
-# --- 산업별 필터 옵션 (한 줄, 같은 y축) ---
-st.markdown("### 산업별 필터 옵션")
-col_major, col_sub = st.columns([1, 2])
-with col_major:
-    selected_major = st.selectbox("대분류(산업)", major_categories, key="industry_major")
-with col_sub:
-    selected_sub = st.multiselect(
-        "소분류(필터 키워드)",
-        sub_categories[selected_major],
-        key="industry_sub"
-    )
-st.write(f"선택한 대분류(산업): {selected_major}")
-st.write(f"선택한 소분류(필터 키워드): {selected_sub}")
+# --- UI: 키워드 입력창 ---
+st.set_page_config(layout="wide")
+st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
+col1, col2, col3 = st.columns([6, 1, 1])
+with col1:
+    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", on_change=lambda: st.session_state.__setitem__('search_triggered', True))
+with col2:
+    st.write("")
+    search_clicked = st.button("검색", use_container_width=True)
+with col3:
+    st.write("")
+    fav_add_clicked = st.button("⭐ 즐겨찾기 추가", use_container_width=True)
+    if fav_add_clicked:
+        new_keywords = {kw.strip() for kw in keywords_input.split(",") if kw.strip()}
+        st.session_state.favorite_keywords.update(new_keywords)
+        st.success("즐겨찾기에 추가되었습니다.")
 
-# --- 카테고리 검색(즐겨찾기 카테고리 + 검색 버튼) 원래대로 ---
+# --- 즐겨찾기 카테고리 선택 (키워드 입력창 바로 아래) ---
 st.markdown("**즐겨찾기 카테고리 선택**")
 cat_col, btn_col = st.columns([5, 1])
 with cat_col:
@@ -134,6 +137,57 @@ with cat_col:
 with btn_col:
     st.write("")
     category_search_clicked = st.button("🔍 검색", use_container_width=True)
+
+# --- 즐겨찾기에서 검색 (즐겨찾기 카테고리 선택 바로 아래) ---
+fav_col1, fav_col2 = st.columns([5, 1])
+with fav_col1:
+    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", sorted(st.session_state.favorite_keywords))
+with fav_col2:
+    st.write("")
+    fav_search_clicked = st.button("즐겨찾기로 검색", use_container_width=True)
+
+# --- 날짜 입력 ---
+date_col1, date_col2 = st.columns([1, 1])
+with date_col1:
+    start_date = st.date_input("시작일")
+with date_col2:
+    end_date = st.date_input("종료일")
+
+# --- 신용위험 필터 옵션 ---
+with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
+    enable_credit_filter = st.checkbox("신용위험 뉴스만 필터링", value=False)
+    credit_filter_keywords = st.multiselect(
+        "신용위험 관련 키워드 (하나 이상 선택)",
+        options=[
+            "신용등급", "신용평가", "하향", "상향", "강등", "조정", "부도",
+            "파산", "디폴트", "채무불이행", "적자", "영업손실", "현금흐름", "자금난",
+            "재무위험", "부정적 전망", "긍정적 전망", "기업회생", "워크아웃", "구조조정", "자본잠식"
+        ],
+        default=[
+            "신용등급", "신용평가", "하향", "상향", "강등", "조정", "부도",
+            "파산", "디폴트", "채무불이행", "적자", "영업손실", "현금흐름", "자금난",
+            "재무위험", "부정적 전망", "긍정적 전망", "기업회생", "워크아웃", "구조조정", "자본잠식"
+        ],
+        key="credit_filter"
+    )
+
+# --- 키워드 필터 옵션 (기본 해제) ---
+with st.expander("🔍 키워드 필터 옵션", expanded=True):
+    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
+
+# --- 산업별 필터 옵션 (키워드 필터 옵션 아래, 박스형태, 한 줄에 배치) ---
+with st.expander("🏭 산업별 필터 옵션", expanded=True):
+    col_major, col_sub = st.columns([1, 2])
+    with col_major:
+        selected_major = st.selectbox("대분류(산업)", major_categories, key="industry_major")
+    with col_sub:
+        selected_sub = st.multiselect(
+            "소분류(필터 키워드)",
+            sub_categories[selected_major],
+            key="industry_sub"
+        )
+    st.write(f"선택한 대분류(산업): {selected_major}")
+    st.write(f"선택한 소분류(필터 키워드): {selected_sub}")
 
 # --- 이하 기존 코드 동일 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
@@ -322,50 +376,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
             st.success("텔레그램으로 전송되었습니다!")
         except Exception as e:
             st.warning(f"텔레그램 전송 오류: {e}")
-
-st.set_page_config(layout="wide")
-st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns([6, 1, 1])
-with col1:
-    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", on_change=lambda: st.session_state.__setitem__('search_triggered', True))
-with col2:
-    st.write("")
-    search_clicked = st.button("검색", use_container_width=True)
-with col3:
-    st.write("")
-    fav_add_clicked = st.button("⭐ 즐겨찾기 추가", use_container_width=True)
-    if fav_add_clicked:
-        new_keywords = {kw.strip() for kw in keywords_input.split(",") if kw.strip()}
-        st.session_state.favorite_keywords.update(new_keywords)
-        st.success("즐겨찾기에 추가되었습니다.")
-
-date_col1, date_col2 = st.columns([1, 1])
-with date_col1:
-    start_date = st.date_input("시작일")
-with date_col2:
-    end_date = st.date_input("종료일")
-
-with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
-    enable_credit_filter = st.checkbox("신용위험 뉴스만 필터링", value=False)
-    credit_filter_keywords = st.multiselect(
-        "신용위험 관련 키워드 (하나 이상 선택)",
-        options=default_credit_issue_patterns,
-        default=default_credit_issue_patterns,
-        key="credit_filter"
-    )
-
-with st.expander("🔍 키워드 필터 옵션", expanded=True):
-    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=True)
-
-fav_col1, fav_col2 = st.columns([5, 1])
-with fav_col1:
-    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", sorted(st.session_state.favorite_keywords))
-with fav_col2:
-    st.write("")
-    fav_search_clicked = st.button("즐겨찾기로 검색", use_container_width=True)
-
-search_clicked = False
 
 if keywords_input:
     keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
