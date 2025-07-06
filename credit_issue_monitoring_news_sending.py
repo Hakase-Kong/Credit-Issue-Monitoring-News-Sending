@@ -17,6 +17,16 @@ import telepot
 from openai import OpenAI
 import newspaper  # newspaper4k
 
+# --- 세션 상태 변수 초기화 (항상 위젯보다 먼저!) ---
+if "favorite_keywords" not in st.session_state:
+    st.session_state.favorite_keywords = set()
+if "search_results" not in st.session_state:
+    st.session_state.search_results = {}
+if "show_limit" not in st.session_state:
+    st.session_state.show_limit = {}
+if "search_triggered" not in st.session_state:
+    st.session_state.search_triggered = False
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -107,7 +117,6 @@ favorite_categories = {
     "특수채": ["주택도시보증공사", "기업은행"]
 }
 major_categories = list(favorite_categories.keys())
-# 소분류는 추후 확장 (현재는 빈 리스트)
 sub_categories = {cat: [] for cat in major_categories}
 
 # --- UI: 키워드 입력창 ---
@@ -211,15 +220,6 @@ default_credit_issue_patterns = [
     "파산", "디폴트", "채무불이행", "적자", "영업손실", "현금흐름", "자금난",
     "재무위험", "부정적 전망", "긍정적 전망", "기업회생", "워크아웃", "구조조정", "자본잠식"
 ]
-
-if "favorite_keywords" not in st.session_state:
-    st.session_state.favorite_keywords = set()
-if "search_results" not in st.session_state:
-    st.session_state.search_results = {}
-if "show_limit" not in st.session_state:
-    st.session_state.show_limit = {}
-if "search_triggered" not in st.session_state:
-    st.session_state.search_triggered = False
 
 for category_keywords in favorite_categories.values():
     st.session_state.favorite_keywords.update(category_keywords)
