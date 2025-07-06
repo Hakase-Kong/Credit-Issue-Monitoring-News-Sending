@@ -20,8 +20,6 @@ from datetime import datetime
 import telepot
 from openai import OpenAI
 import newspaper  # newspaper4k
-import openpyxl
-from openpyxl import load_workbook
 
 # --- CSS: 체크박스와 기사 사이 gap 최소화 및 감성 뱃지 스타일 ---
 st.markdown("""
@@ -47,6 +45,14 @@ st.markdown("""
 .sentiment-positive { background: #2ecc40; color: #fff; }
 .sentiment-neutral { background: #0074d9; color: #fff; }
 .sentiment-negative { background: #ff4136; color: #fff; }
+.stBox {
+    background: #fcfcfc;
+    border-radius: 0.7em;
+    border: 1.5px solid #e0e2e6;
+    margin-bottom: 1.2em;
+    padding: 1.1em 1.2em 1.2em 1.2em;
+    box-shadow: 0 2px 8px 0 rgba(0,0,0,0.03);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,7 +66,6 @@ if "show_limit" not in st.session_state:
 if "search_triggered" not in st.session_state:
     st.session_state.search_triggered = False
 
-# 대분류/소분류 카테고리
 favorite_categories = {
     "국/공채": [],
     "공공기관": [],
@@ -93,28 +98,25 @@ with col_title:
 with col_option:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=True)
 
-# -- 검색창/검색 버튼 한 줄 배치
-search_col, button_col = st.columns([7, 1])
-with search_col:
+# 1. 키워드 입력/검색 버튼 (아래 정렬)
+with st.container():
     keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input")
-with button_col:
+    st.write("")  # 여백
     search_clicked = st.button("검색", use_container_width=True)
 
-# -- 즐겨찾기 카테고리 선택/검색 버튼 한 줄 배치
+# 2. 즐겨찾기 카테고리 선택/검색 버튼 (아래 정렬)
 st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
-cat_col, btn_col = st.columns([5, 1])
-with cat_col:
+with st.container():
     selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", major_categories)
     for cat in selected_categories:
         st.session_state.favorite_keywords.update(favorite_categories[cat])
-with btn_col:
-    category_search_clicked = st.button("🔍 검색", use_container_width=True)
+    st.write("")
+    category_search_clicked = st.button("🔍 검색", use_container_width=True, key="cat_search_btn")
 
-# -- 즐겨찾기에서 검색/버튼 한 줄 배치
-fav_col, fav_btn_col = st.columns([5, 1])
-with fav_col:
+# 3. 즐겨찾기에서 검색/버튼 (아래 정렬)
+with st.container():
     fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=[])
-with fav_btn_col:
+    st.write("")
     fav_search_clicked = st.button("⭐ 즐겨찾기로 검색", use_container_width=True)
 
 # 날짜 입력
@@ -139,11 +141,9 @@ with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
         key="credit_filter"
     )
 
-# 키워드 필터 옵션 (기본 해제)
 with st.expander("🔍 키워드 필터 옵션", expanded=True):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
 
-# 산업별 필터 옵션 (박스형태, 한 줄에 배치, 태그 UI, 모두 선택, 체크박스)
 with st.expander("🏭 산업별 필터 옵션", expanded=True):
     use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
     col_major, col_sub = st.columns([1, 2])
@@ -157,7 +157,6 @@ with st.expander("🏭 산업별 필터 옵션", expanded=True):
             key="industry_sub"
         )
 
-# 재무위험 필터 옵션 (모두 선택, 체크박스)
 with st.expander("💰 재무위험 필터 옵션", expanded=True):
     use_finance_filter = st.checkbox("이 필터 적용", value=False, key="use_finance_filter")
     finance_keywords = ["자산", "총자산", "부채", "자본", "매출", "비용", "영업이익", "순이익"]
@@ -168,7 +167,6 @@ with st.expander("💰 재무위험 필터 옵션", expanded=True):
         key="finance_filter"
     )
 
-# 법/정책 위험 필터 옵션 (모두 선택, 체크박스)
 with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
     use_law_filter = st.checkbox("이 필터 적용", value=False, key="use_law_filter")
     law_keywords = ["테스트1", "테스트2", "테스트3"]
@@ -250,7 +248,6 @@ def summarize_and_sentiment_with_openai(text):
     sentiment = m3.group(1).strip() if m3 else ""
     return one_line, summary, sentiment, text
 
-# --- 텔레그램 클래스 ---
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
 NAVER_CLIENT_SECRET = "lZc2gScgNq"
 TELEGRAM_TOKEN = "7033950842:AAFk4pSb5qtNj435Gf2B5-rPlFrlNqhZFuQ"
@@ -264,7 +261,6 @@ class Telegram:
     def send_message(self, message):
         self.bot.sendMessage(self.chat_id, message, parse_mode="Markdown", disable_web_page_preview=True)
 
-# --- 뉴스 API 함수 (네이버/GNews) ---
 def filter_by_issues(title, desc, selected_keywords, enable_credit_filter, credit_filter_keywords, require_keyword_in_title=False):
     if require_keyword_in_title and selected_keywords:
         if not any(kw.lower() in title.lower() for kw in selected_keywords):
@@ -354,7 +350,6 @@ def process_keywords(keyword_list, start_date, end_date, enable_credit_filter, c
         else:
             articles = fetch_naver_news(k, start_date, end_date, enable_credit_filter, credit_filter_keywords, require_keyword_in_title=require_keyword_in_title)
         st.session_state.search_results[k] = articles
-        # 기본 5개, 더보기 누르면 10개씩 증가
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
 
@@ -371,7 +366,6 @@ def summarize_article_from_url(article_url, title):
     except Exception as e:
         return f"요약 오류: {e}", None, None, None
 
-# OR 조건 필터링 함수
 def or_keyword_filter(article, *keyword_lists):
     text = (article.get("title", "") + " " + article.get("description", "") + " " + article.get("full_text", ""))
     for keywords in keyword_lists:
@@ -379,7 +373,6 @@ def or_keyword_filter(article, *keyword_lists):
             return True
     return False
 
-# 실제 뉴스 검색/필터링/요약/감성분석 실행
 search_clicked = False
 if keywords_input:
     keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
@@ -415,7 +408,6 @@ if category_search_clicked and selected_categories:
             require_keyword_in_title
         )
 
-# 필터링: OR 조건(필터별 체크박스에 따라 적용)
 def article_passes_all_filters(article):
     filters = []
     if use_credit_filter:
@@ -431,32 +423,12 @@ def article_passes_all_filters(article):
     else:
         return True
 
-# --- 엑셀 업데이트 함수 (openpyxl) ---
-def update_excel(selected_data, template_path):
-    wb = load_workbook(template_path)
-    ws = wb.active
-    # 회사명 → 행번호 매핑 (엑셀의 3행부터 데이터 시작, 회사명은 D열(5번째))
-    company_col = 4  # D열(0부터 시작)
-    company_to_row = {}
-    for row in range(3, ws.max_row + 1):
-        name = ws.cell(row=row, column=company_col).value
-        if name:
-            company_to_row[name.replace(" ", "")] = row
-    # J(10), L(12)열에 하이퍼링크 업데이트
-    for item in selected_data:
-        name = item["회사명"].replace(" ", "")
-        if name in company_to_row and item["요약"] and item["링크"]:
-            if item["sentiment"] == "긍정":
-                cell = ws.cell(row=company_to_row[name], column=10)  # J열
-            elif item["sentiment"] == "부정":
-                cell = ws.cell(row=company_to_row[name], column=12)  # L열
-            else:
-                continue
-            cell.value = item["요약"]
-            cell.hyperlink = item["링크"]
-            cell.style = "Hyperlink"
+# --- 엑셀 다운로드 함수 (선택 기사 요약을 DataFrame으로 바로 변환) ---
+def get_excel_download(summary_data):
+    df = pd.DataFrame(summary_data)
     output = BytesIO()
-    wb.save(output)
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='뉴스요약')
     output.seek(0)
     return output
 
@@ -477,101 +449,93 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
     with col_list:
         st.markdown("### 기사 요약 결과 (엑셀 저장할 기사 선택)")
         for keyword, articles in results.items():
-            st.markdown(f"#### [{keyword}]")
-            limit = st.session_state.show_limit.get(keyword, 5)
-            for idx, article in enumerate(articles[:limit]):
-                key = f"{keyword}_{idx}"
-                cache_key = f"summary_{key}"
-
-                # 감성분석 뱃지 표시 옵션에 따라 분기
-                if show_sentiment_badge:
-                    # 감성분석 결과를 미리 캐싱/실행
-                    if cache_key not in st.session_state:
-                        one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
-                        st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+            with st.container(border=True):
+                st.markdown(f"**[{keyword}]**")
+                limit = st.session_state.show_limit.get(keyword, 5)
+                for idx, article in enumerate(articles[:limit]):
+                    key = f"{keyword}_{idx}"
+                    cache_key = f"summary_{key}"
+                    if show_sentiment_badge:
+                        if cache_key not in st.session_state:
+                            one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+                            st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+                        else:
+                            one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                        sentiment_label = sentiment if sentiment else "분석중"
+                        sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
+                        md_line = (
+                            f"[{article['title']}]({article['link']}) "
+                            f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
+                            f"({article['date']} | {article['source']})"
+                        )
                     else:
-                        one_line, summary, sentiment, full_text = st.session_state[cache_key]
-                    sentiment_label = sentiment if sentiment else "분석중"
-                    sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
-                    md_line = (
-                        f"[{article['title']}]({article['link']}) "
-                        f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
-                        f"({article['date']} | {article['source']})"
-                    )
-                else:
-                    # 감성분석 미실행, 기사 리스트만 출력
-                    md_line = (
-                        f"[{article['title']}]({article['link']}) "
-                        f"({article['date']} | {article['source']})"
-                    )
+                        md_line = (
+                            f"[{article['title']}]({article['link']}) "
+                            f"({article['date']} | {article['source']})"
+                        )
+                    cols = st.columns([0.04, 0.96])
+                    with cols[0]:
+                        checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
+                    with cols[1]:
+                        st.markdown(md_line, unsafe_allow_html=True)
+                    st.session_state.article_checked[key] = checked
 
-                cols = st.columns([0.04, 0.96])
-                with cols[0]:
-                    checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
-                with cols[1]:
-                    st.markdown(md_line, unsafe_allow_html=True)
-                st.session_state.article_checked[key] = checked
-
-            if limit < len(articles):
-                if st.button("더보기", key=f"more_{keyword}"):
-                    st.session_state.show_limit[keyword] += 10
+                if limit < len(articles):
+                    if st.button("더보기", key=f"more_{keyword}"):
+                        st.session_state.show_limit[keyword] += 10
 
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
-        selected_articles = []
-        for keyword, articles in results.items():
-            limit = st.session_state.show_limit.get(keyword, 5)
-            for idx, article in enumerate(articles[:limit]):
-                key = f"{keyword}_{idx}"
-                cache_key = f"summary_{key}"
-                if st.session_state.article_checked.get(key, False):
-                    # 감성분석 뱃지 미표시 옵션일 때만 이 시점에 요약/감성분석 실행
-                    if (not show_sentiment_badge) or (cache_key not in st.session_state):
-                        one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
-                        st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
-                    else:
-                        one_line, summary, sentiment, full_text = st.session_state[cache_key]
-                    selected_articles.append({
-                        "회사명": keyword,
-                        "기사제목": article['title'],
-                        "요약": one_line,
-                        "full_summary": summary,
-                        "sentiment": sentiment,
-                        "링크": article['link'],
-                        "date": article['date'],
-                        "source": article['source']
-                    })
-                    if show_sentiment_badge:
-                        st.markdown(
-                            f"#### [{article['title']}]({article['link']}) "
-                            f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>({sentiment})</span>",
-                            unsafe_allow_html=True
-                        )
-                    else:
-                        st.markdown(f"#### [{article['title']}]({article['link']})", unsafe_allow_html=True)
-                    st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
-                    st.markdown(f"- **한 줄 요약:** {one_line}")
-                    st.markdown(f"- **요약본:** {summary}")
-                    if not show_sentiment_badge:
-                        st.markdown(f"- **감성분석:** `{sentiment}`")
-                    st.markdown("---")
-        summary_data = selected_articles
+        with st.container(border=True):
+            selected_articles = []
+            for keyword, articles in results.items():
+                limit = st.session_state.show_limit.get(keyword, 5)
+                for idx, article in enumerate(articles[:limit]):
+                    key = f"{keyword}_{idx}"
+                    cache_key = f"summary_{key}"
+                    if st.session_state.article_checked.get(key, False):
+                        if (not show_sentiment_badge) or (cache_key not in st.session_state):
+                            one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+                            st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+                        else:
+                            one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                        selected_articles.append({
+                            "키워드": keyword,
+                            "기사제목": article['title'],
+                            "요약": one_line,
+                            "요약본": summary,
+                            "감성": sentiment,
+                            "링크": article['link'],
+                            "날짜": article['date'],
+                            "출처": article['source']
+                        })
+                        if show_sentiment_badge:
+                            st.markdown(
+                                f"#### [{article['title']}]({article['link']}) "
+                                f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>({sentiment})</span>",
+                                unsafe_allow_html=True
+                            )
+                        else:
+                            st.markdown(f"#### [{article['title']}]({article['link']})", unsafe_allow_html=True)
+                        st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
+                        st.markdown(f"- **한 줄 요약:** {one_line}")
+                        st.markdown(f"- **요약본:** {summary}")
+                        if not show_sentiment_badge:
+                            st.markdown(f"- **감성분석:** `{sentiment}`")
+                        st.markdown("---")
+            summary_data = selected_articles
 
-        st.write(f"선택된 기사 개수: {len(summary_data)}")
+            st.write(f"선택된 기사 개수: {len(summary_data)}")
 
-        st.markdown("#### 기존 엑셀 템플릿 업로드")
-        uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요(기존 템플릿)", type=["xlsx"])
-        if uploaded_file is not None and summary_data:
-            if st.button("선택 기사 엑셀로 저장"):
-                excel_bytes = update_excel(summary_data, uploaded_file)
+            # 엑셀 다운로드 버튼
+            if summary_data:
+                excel_bytes = get_excel_download(summary_data)
                 st.download_button(
-                    label="📥 엑셀 파일 다운로드",
+                    label="📥 선택 기사 엑셀 다운로드",
                     data=excel_bytes.getvalue(),
-                    file_name="뉴스요약_업데이트.xlsx",
+                    file_name="뉴스요약_다운로드.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-        elif uploaded_file is not None:
-            st.info("엑셀로 저장할 기사를 먼저 선택하세요.")
 
 if st.session_state.search_results:
     filtered_results = {}
