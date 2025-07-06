@@ -23,6 +23,33 @@ import newspaper  # newspaper4k
 import openpyxl
 from openpyxl import load_workbook
 
+# --- CSS: 체크박스와 기사 사이 gap 최소화 ---
+st.markdown("""
+<style>
+[data-testid="column"] > div {
+    gap: 0rem !important;
+}
+.stMultiSelect [data-baseweb="tag"] {
+    background-color: #ff5c5c !important;
+    color: white !important;
+    border: none !important;
+    font-weight: bold;
+}
+.sentiment-badge {
+    display: inline-block;
+    padding: 0.08em 0.6em;
+    margin-left: 0.2em;
+    border-radius: 0.8em;
+    font-size: 0.85em;
+    font-weight: bold;
+    vertical-align: middle;
+}
+.sentiment-positive { background: #2ecc40; color: #fff; }
+.sentiment-neutral { background: #0074d9; color: #fff; }
+.sentiment-negative { background: #ff4136; color: #fff; }
+</style>
+""", unsafe_allow_html=True)
+
 # 세션 상태 변수 초기화
 if "favorite_keywords" not in st.session_state:
     st.session_state.favorite_keywords = set()
@@ -147,18 +174,6 @@ with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
         default=law_keywords,
         key="law_filter"
     )
-
-# CSS: 붉은색 태그 스타일
-st.markdown("""
-<style>
-.stMultiSelect [data-baseweb="tag"] {
-    background-color: #ff5c5c !important;
-    color: white !important;
-    border: none !important;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # --- 본문 추출 함수(요청대로 단순화) ---
 def extract_article_text(url):
@@ -441,16 +456,19 @@ def update_excel(selected_data, template_path):
 
 # --- 요약/감성분석/기사선택/엑셀 저장 UI ---
 def render_articles_with_single_summary_and_telegram(results, show_limit):
+    SENTIMENT_CLASS = {
+        "긍정": "sentiment-positive",
+        "부정": "sentiment-negative",
+        "중립": "sentiment-neutral"
+    }
     summary_data = []
-    all_articles = []
-    article_keys = []
     checked_list = []
 
     # 선택 상태를 세션에 저장 (체크박스 상태 유지)
     if "article_checked" not in st.session_state:
         st.session_state.article_checked = {}
 
-    # 1. 2단 컬럼 레이아웃 생성 (왼쪽: 기사리스트, 오른쪽: 선택된 기사 요약/감성)
+    # 2단 컬럼 레이아웃 (왼쪽: 기사리스트, 오른쪽: 선택된 기사 요약/감성)
     col_list, col_summary = st.columns([1, 1])
 
     with col_list:
@@ -458,24 +476,37 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
         for keyword, articles in results.items():
             for idx, article in enumerate(articles[:show_limit.get(keyword, 5)]):
                 key = f"{keyword}_{idx}"
-                md_line = f"[{keyword}] [{article['title']}]({article['link']}) ({article['date']} | {article['source']})"
-                cols = st.columns([0.12, 0.88])
+                cache_key = f"summary_{key}"
+                # 감성분석 캐싱 (기사 리스트에 바로 보여주기 위해)
+                if cache_key not in st.session_state:
+                    one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+                    st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+                else:
+                    one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                sentiment_label = sentiment if sentiment else "분석중"
+                sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
+                # 기사 제목 옆에 감성 결과를 괄호+색상 뱃지로 바로 표시
+                md_line = (
+                    f"[{keyword}] "
+                    f"[{article['title']}]({article['link']}) "
+                    f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
+                    f"({article['date']} | {article['source']})"
+                )
+                cols = st.columns([0.04, 0.96])
                 with cols[0]:
                     checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
                 with cols[1]:
                     st.markdown(md_line, unsafe_allow_html=True)
                 st.session_state.article_checked[key] = checked
 
-    # 2. 오른쪽 컬럼: 선택된 기사들의 요약/감성분석 결과 모두 출력
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         selected_articles = []
         for keyword, articles in results.items():
             for idx, article in enumerate(articles[:show_limit.get(keyword, 5)]):
                 key = f"{keyword}_{idx}"
+                cache_key = f"summary_{key}"
                 if st.session_state.article_checked.get(key, False):
-                    # 이미 요약/감성분석을 했는지 세션에 저장(속도 최적화)
-                    cache_key = f"summary_{key}"
                     if cache_key not in st.session_state:
                         one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
                         st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
@@ -492,11 +523,10 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
                         "source": article['source']
                     })
                     # 요약/감성분석 결과 출력
-                    st.markdown(f"#### [{article['title']}]({article['link']})")
+                    st.markdown(f"#### [{article['title']}]({article['link']}) <span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>({sentiment})</span>", unsafe_allow_html=True)
                     st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
                     st.markdown(f"- **한 줄 요약:** {one_line}")
                     st.markdown(f"- **요약본:** {summary}")
-                    st.markdown(f"- **감성분석:** `{sentiment}`")
                     st.markdown("---")
         summary_data = selected_articles
 
