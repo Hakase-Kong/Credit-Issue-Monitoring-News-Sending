@@ -21,7 +21,7 @@ import telepot
 from openai import OpenAI
 import newspaper  # newspaper4k
 
-# --- CSS: 체크박스와 기사 사이 gap 최소화 및 감성 뱃지 스타일 ---
+# --- CSS: 체크박스와 기사 사이 gap 최소화 및 감성 뱃지 스타일, flex row 버튼 하단정렬 ---
 st.markdown("""
 <style>
 [data-testid="column"] > div {
@@ -52,6 +52,18 @@ st.markdown("""
     margin-bottom: 1.2em;
     padding: 1.1em 1.2em 1.2em 1.2em;
     box-shadow: 0 2px 8px 0 rgba(0,0,0,0.03);
+}
+.flex-row-bottom {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.flex-grow {
+    flex: 1 1 0%;
+}
+.flex-btn {
+    min-width: 90px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -98,26 +110,29 @@ with col_title:
 with col_option:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=True)
 
-# 1. 키워드 입력/검색 버튼 (아래 정렬)
-with st.container():
-    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input")
-    st.write("")  # 여백
-    search_clicked = st.button("검색", use_container_width=True)
+# 1. 키워드 입력/검색 버튼 (한 줄, 버튼 하단정렬)
+st.markdown('<div class="flex-row-bottom">', unsafe_allow_html=True)
+keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input", label_visibility="visible")
+st.markdown('<div class="flex-grow"></div>', unsafe_allow_html=True)
+search_clicked = st.button("검색", key="search_btn", help="키워드로 검색", use_container_width=False)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# 2. 즐겨찾기 카테고리 선택/검색 버튼 (아래 정렬)
+# 2. 즐겨찾기 카테고리 선택/검색 버튼 (한 줄, 버튼 하단정렬)
 st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
-with st.container():
-    selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", major_categories)
-    for cat in selected_categories:
-        st.session_state.favorite_keywords.update(favorite_categories[cat])
-    st.write("")
-    category_search_clicked = st.button("🔍 검색", use_container_width=True, key="cat_search_btn")
+st.markdown('<div class="flex-row-bottom">', unsafe_allow_html=True)
+selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", major_categories, key="cat_multi")
+st.markdown('<div class="flex-grow"></div>', unsafe_allow_html=True)
+category_search_clicked = st.button("🔍 검색", key="cat_search_btn", help="카테고리로 검색", use_container_width=False)
+st.markdown('</div>', unsafe_allow_html=True)
+for cat in selected_categories:
+    st.session_state.favorite_keywords.update(favorite_categories[cat])
 
-# 3. 즐겨찾기에서 검색/버튼 (아래 정렬)
-with st.container():
-    fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=[])
-    st.write("")
-    fav_search_clicked = st.button("⭐ 즐겨찾기로 검색", use_container_width=True)
+# 3. 즐겨찾기에서 검색/버튼 (한 줄, 버튼 하단정렬)
+st.markdown('<div class="flex-row-bottom">', unsafe_allow_html=True)
+fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=[], key="fav_multi")
+st.markdown('<div class="flex-grow"></div>', unsafe_allow_html=True)
+fav_search_clicked = st.button("⭐ 즐겨찾기로 검색", key="fav_search_btn", help="즐겨찾기 키워드로 검색", use_container_width=False)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # 날짜 입력
 date_col1, date_col2 = st.columns([1, 1])
