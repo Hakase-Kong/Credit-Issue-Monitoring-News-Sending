@@ -13,7 +13,6 @@ except LookupError:
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-import nltk
 import requests
 import re
 import os
@@ -21,6 +20,8 @@ from datetime import datetime
 import telepot
 from openai import OpenAI
 import newspaper  # newspaper4k
+import openpyxl
+from openpyxl import load_workbook
 
 # 세션 상태 변수 초기화
 if "favorite_keywords" not in st.session_state:
@@ -54,7 +55,6 @@ favorite_categories = {
 }
 major_categories = list(favorite_categories.keys())
 sub_categories = {cat: favorite_categories[cat] for cat in major_categories}
-# 즐겨찾기 전체 키워드(테스트1~3 제외)
 all_fav_keywords = sorted(set(
     kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
 ))
@@ -79,7 +79,7 @@ with cat_col:
 with btn_col:
     category_search_clicked = st.button("🔍 검색", use_container_width=True)
 
-# -- 즐겨찾기에서 검색/버튼 한 줄 배치 (테스트1~3 없이, 기본 선택 없음)
+# -- 즐겨찾기에서 검색/버튼 한 줄 배치
 fav_col, fav_btn_col = st.columns([5, 1])
 with fav_col:
     fav_selected = st.multiselect("⭐ 즐겨찾기에서 검색", all_fav_keywords, default=[])
@@ -410,6 +410,36 @@ def article_passes_all_filters(article):
     else:
         return True
 
+# --- 엑셀 업데이트 함수 (openpyxl) ---
+def update_excel(selected_data, template_path):
+    wb = load_workbook(template_path)
+    ws = wb.active
+    # 회사명 → 행번호 매핑 (엑셀의 3행부터 데이터 시작, 회사명은 D열(5번째))
+    company_col = 4  # D열(0부터 시작)
+    company_to_row = {}
+    for row in range(3, ws.max_row + 1):
+        name = ws.cell(row=row, column=company_col).value
+        if name:
+            company_to_row[name.replace(" ", "")] = row
+    # J(10), L(12)열에 하이퍼링크 업데이트
+    for item in selected_data:
+        name = item["회사명"].replace(" ", "")
+        if name in company_to_row and item["요약"] and item["링크"]:
+            if item["sentiment"] == "긍정":
+                cell = ws.cell(row=company_to_row[name], column=10)  # J열
+            elif item["sentiment"] == "부정":
+                cell = ws.cell(row=company_to_row[name], column=12)  # L열
+            else:
+                continue
+            cell.value = item["요약"]
+            cell.hyperlink = item["링크"]
+            cell.style = "Hyperlink"
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+# --- 요약/감성분석/기사선택/엑셀 저장 UI ---
 def render_articles_with_single_summary_and_telegram(results, show_limit):
     summary_data = []
     all_articles = []
@@ -423,67 +453,43 @@ def render_articles_with_single_summary_and_telegram(results, show_limit):
         st.info("검색 결과가 없습니다.")
         return
 
-    selected_idx = st.radio("요약/감성분석/텔레그램 전송할 기사를 선택하세요.", range(len(all_articles)), format_func=lambda i: all_articles[i], key="article_selector")
-    selected_keyword, selected_article_idx = article_keys[selected_idx]
-    selected_article = st.session_state.search_results[selected_keyword][selected_article_idx]
+    # 1. 기사별 요약/감성분석 및 선택 체크박스
+    st.markdown("### 기사 요약 결과 (엑셀 저장할 기사 선택)")
+    selected_indices = []
+    for i, (keyword, idx) in enumerate(article_keys):
+        article = st.session_state.search_results[keyword][idx]
+        display_text = f"[{article['title']}] ({article['date']} | {article['source']})"
+        checked = st.checkbox(display_text, value=False, key=f"news_{i}")
+        if checked:
+            # 실제 요약/감성분석 실행
+            one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+            summary_data.append({
+                "회사명": keyword,
+                "요약": one_line,
+                "full_summary": summary,
+                "sentiment": sentiment,
+                "링크": article['link'],
+                "date": article['date'],
+                "source": article['source']
+            })
+            selected_indices.append(i)
 
-    st.markdown(f"""
-    <div style='margin-bottom: 10px; padding: 10px; border: 1px solid #eee; border-radius: 10px; background-color: #fafafa;'>
-        <div style='font-weight: bold; font-size: 15px; margin-bottom: 4px;'>
-            <a href="{selected_article['link']}" target="_blank" style='text-decoration: none; color: #1155cc;'>
-                {selected_article['title']}
-            </a>
-        </div>
-        <div style='font-size: 12px; color: gray;'>
-            {selected_article['date']} | {selected_article['source']}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.write(f"선택된 기사 개수: {len(selected_indices)}")
 
-    if st.button("🔍 선택 기사 요약 및 감성분석"):
-        with st.spinner("기사 요약 및 감성분석 중..."):
-            one_line, summary, sentiment, full_text = summarize_article_from_url(selected_article['link'], selected_article['title'])
-            if full_text:
-                st.markdown("**[한 줄 요약]**")
-                st.write(one_line)
-                st.markdown("**[요약본]**")
-                st.write(summary)
-                st.markdown(f"**[감성 분석]**: :red[{sentiment}]")
-                summary_data.append({
-                    "title": selected_article['title'],
-                    "summary": one_line,
-                    "full_summary": summary,
-                    "sentiment": sentiment,
-                    "url": selected_article['link'],
-                    "date": selected_article['date'],
-                    "source": selected_article['source']
-                })
-            else:
-                st.warning(one_line)
-
-    if st.button("✈️ 선택 기사 텔레그램 전송"):
-        try:
-            msg = f"*[{selected_article['title']}]({selected_article['link']})*\n{selected_article['date']} | {selected_article['source']}"
-            Telegram().send_message(msg)
-            st.success("텔레그램으로 전송되었습니다!")
-        except Exception as e:
-            st.warning(f"텔레그램 전송 오류: {e}")
-
-    # 엑셀 다운로드 버튼 (요약 결과 있을 때만)
-    if summary_data:
-        summary_df = pd.DataFrame(summary_data)
-        def to_excel(df):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Summary')
-            return output.getvalue()
-        excel_bytes = to_excel(summary_df)
-        st.download_button(
-            label="📥 요약 기사 엑셀 다운로드",
-            data=excel_bytes,
-            file_name="summary_articles.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # 2. 엑셀 템플릿 업로드
+    st.markdown("#### 기존 엑셀 템플릿 업로드")
+    uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요(기존 템플릿)", type=["xlsx"])
+    if uploaded_file is not None and summary_data:
+        if st.button("선택 기사 엑셀로 저장"):
+            excel_bytes = update_excel(summary_data, uploaded_file)
+            st.download_button(
+                label="📥 엑셀 파일 다운로드",
+                data=excel_bytes.getvalue(),
+                file_name="뉴스요약_업데이트.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    elif uploaded_file is not None:
+        st.info("엑셀로 저장할 기사를 먼저 선택하세요.")
 
 if st.session_state.search_results:
     filtered_results = {}
