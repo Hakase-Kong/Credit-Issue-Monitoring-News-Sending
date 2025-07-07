@@ -103,6 +103,33 @@ all_fav_keywords = sorted(set(
     kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
 ))
 
+# --- [추가] 공통 필터 옵션 대분류/소분류 구성 ---
+common_filter_categories = {
+    "신용/등급": [
+        "신용등급", "등급전망", "하락", "강등", "하향", "상향", "디폴트", "부실", "부도", "미지급", "수요 미달", "미매각", "제도 개편", "EOD"
+    ],
+    "수요/공급": [
+        "수요", "공급", "수급", "둔화", "위축", "성장", "급등", "급락", "상승", "하락", "부진", "심화"
+    ],
+    "실적/재무": [
+        "실적", "매출", "영업이익", "적자", "손실", "비용", "부채비율", "이자보상배율"
+    ],
+    "자금/조달": [
+        "차입", "조달", "설비투자", "회사채", "발행", "인수", "매각"
+    ],
+    "구조/조정": [
+        "M&A", "합병", "계열 분리", "구조조정", "다각화", "구조 재편"
+    ],
+    "거시/정책": [
+        "금리", "환율", "관세", "무역제재", "보조금", "세액 공제", "경쟁"
+    ],
+    "지배구조/법": [
+        "횡령", "배임", "공정거래", "오너리스크", "대주주", "지배구조"
+    ]
+}
+common_major_categories = list(common_filter_categories.keys())
+common_sub_categories = {cat: common_filter_categories[cat] for cat in common_major_categories}
+
 st.set_page_config(layout="wide")
 col_title, col_option = st.columns([0.8, 0.2])
 with col_title:
@@ -191,6 +218,20 @@ with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
         default=law_keywords,
         key="law_filter"
     )
+
+# --- [추가] 공통 필터 옵션 ---
+with st.expander("🧩 공통 필터 옵션", expanded=True):
+    use_common_filter = st.checkbox("이 필터 적용", value=False, key="use_common_filter")
+    col_common_major, col_common_sub = st.columns([1, 2])
+    with col_common_major:
+        selected_common_major = st.selectbox("공통 대분류(분류)", common_major_categories, key="common_major")
+    with col_common_sub:
+        selected_common_sub = st.multiselect(
+            "공통 소분류(필터 키워드)",
+            common_sub_categories[selected_common_major],
+            default=common_sub_categories[selected_common_major],
+            key="common_sub"
+        )
 
 # --- 본문 추출 함수(요청대로 단순화) ---
 def extract_article_text(url):
@@ -433,6 +474,9 @@ def article_passes_all_filters(article):
         filters.append(finance_filter_keywords)
     if use_law_filter:
         filters.append(law_filter_keywords)
+    # --- [공통 필터 옵션 추가] ---
+    if use_common_filter:
+        filters.append(selected_common_sub)
     if filters:
         return or_keyword_filter(article, *filters)
     else:
