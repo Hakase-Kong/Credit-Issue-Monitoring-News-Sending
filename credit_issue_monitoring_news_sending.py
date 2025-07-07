@@ -78,6 +78,7 @@ if "show_limit" not in st.session_state:
 if "search_triggered" not in st.session_state:
     st.session_state.search_triggered = False
 
+# --- 즐겨찾기 카테고리(변경 금지) ---
 favorite_categories = {
     "국/공채": [],
     "공공기관": [],
@@ -97,13 +98,66 @@ favorite_categories = {
     "건설": ["포스코이앤씨"],
     "특수채": ["주택도시보증공사", "기업은행"]
 }
-major_categories = list(favorite_categories.keys())
-sub_categories = {cat: favorite_categories[cat] for cat in major_categories}
+
+# --- 산업별 필터 옵션: 대분류/소분류 키워드 최신화 ---
+industry_filter_categories = {
+    "은행 및 금융지주": [
+        "경영실태평가", "BIS", "CET1", "자본비율", "상각형 조건부자본증권", "자본확충", "자본여력", "자본적정성", "LCR",
+        "조달금리", "NIM", "순이자마진", "고정이하여신비율", "대손충당금", "충당금", "부실채권", "연체율", "가계대출", "취약차주"
+    ],
+    "보험사": [
+        "보장성보험", "저축성보험", "변액보험", "퇴직연금", "일반보험", "자동차보험", "ALM", "지급여력비율", "K'-ICS",
+        "보험수익성", "보험손익", "수입보험료", "CSM", "상각", "투자손익", "운용성과", "IFRS4", "IFRS17", "보험부채",
+        "장기선도금리", "최종관찰만기", "유동성 프리미엄", "신종자본증권", "후순위채", "위험자산비중", "가중부실자산비율"
+    ],
+    "카드사": [
+        "민간소비지표", "대손준비금", "가계부채", "연체율", "가맹점카드수수료", "대출성자산", "신용판매자산", "고정이하여신", "레버리지배율", "건전성"
+    ],
+    "캐피탈": [
+        "충당금커버리지비율", "고정이하여신", "PF구조조정", "리스자산", "손실흡수능력", "부동산PF연체채권", "자산포트폴리오", "건전성", "조정총자산수익률"
+    ],
+    "지주사": [
+        # 소분류 없음
+    ],
+    "에너지": [
+        "정유", "유가", "정제마진", "스프레드", "가동률", "재고 손실", "중국 수요", "IMO 규제", "저유황 연료", "LNG"
+    ],
+    "발전": [
+        "LNG", "천연가스", "유가", "SMP", "REC", "계통시장", "탄소세", "탄소배출권", "전력시장 개편", "전력 자율화", "한파", "기온 상승"
+    ],
+    "자동차": [
+        "AMPC 보조금", "AMPC", "IRA", "IRA 인센티브", "중국 배터리", "EV 수요", "EV", "전기차", "ESS수요"
+    ],
+    "전기전자": [
+        "CHIPS 보조금", "CHIPS", "중국", "관세"
+    ],
+    "철강": [
+        "철광석", "후판", "강판", "철근", "스프레드", "철강", "가동률", "제철소", "셧다운", "중국산 저가", "중국 수출 감소", "건설경기", "조선 수요", "파업"
+    ],
+    "비철": [
+        # 소분류 없음
+    ],
+    "소매": [
+        "내수부진", "시장지배력"
+    ],
+    "석유화학": [
+        "석유화학", "석화", "유가", "증설", "스프레드", "가동률", "PX", "벤젠", "중국 증설", "중동 COTC"
+    ],
+    "건설": [
+        "철근 가격", "시멘트 가격", "공사비", "SOC 예산", "도시정비 지원", "우발채무", "수주", "주간사", "사고", "시공능력순위", "미분양", "대손충당금"
+    ],
+    "특수채": [
+        "자본확충"
+    ]
+}
+
+major_categories = list(industry_filter_categories.keys())
+sub_categories = {cat: industry_filter_categories[cat] for cat in major_categories}
 all_fav_keywords = sorted(set(
     kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
 ))
 
-# --- [추가] 공통 필터 옵션 대분류/소분류 구성 ---
+# --- [공통 필터 옵션은 기존 코드와 동일하게 유지] ---
 common_filter_categories = {
     "신용/등급": [
         "신용등급", "등급전망", "하락", "강등", "하향", "상향", "디폴트", "부실", "부도", "미지급", "수요 미달", "미매각", "제도 개편", "EOD"
@@ -147,7 +201,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 # 2. 즐겨찾기 카테고리 선택/검색 버튼 (한 줄, 버튼 하단정렬)
 st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
 st.markdown('<div class="flex-row-bottom">', unsafe_allow_html=True)
-selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", major_categories, key="cat_multi")
+selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", list(favorite_categories.keys()), key="cat_multi")
 st.markdown('<div class="flex-grow"></div>', unsafe_allow_html=True)
 category_search_clicked = st.button("🔍 검색", key="cat_search_btn", help="카테고리로 검색", use_container_width=False)
 st.markdown('</div>', unsafe_allow_html=True)
@@ -186,6 +240,7 @@ with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
 with st.expander("🔍 키워드 필터 옵션", expanded=True):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
 
+# --- 산업별 필터 옵션 최신화 반영 ---
 with st.expander("🏭 산업별 필터 옵션", expanded=True):
     use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
     col_major, col_sub = st.columns([1, 2])
@@ -219,7 +274,7 @@ with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
         key="law_filter"
     )
 
-# --- [추가] 공통 필터 옵션 ---
+# --- [공통 필터 옵션은 기존 코드와 동일하게 유지] ---
 with st.expander("🧩 공통 필터 옵션", expanded=True):
     use_common_filter = st.checkbox("이 필터 적용", value=False, key="use_common_filter")
     col_common_major, col_common_sub = st.columns([1, 2])
