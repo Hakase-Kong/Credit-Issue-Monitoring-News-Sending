@@ -157,7 +157,7 @@ all_fav_keywords = sorted(set(
     kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
 ))
 
-# --- [공통 필터 옵션은 기존 코드와 동일하게 유지] ---
+# --- [공통 필터 옵션] ---
 common_filter_categories = {
     "신용/등급": [
         "신용등급", "등급전망", "하락", "강등", "하향", "상향", "디폴트", "부실", "부도", "미지급", "수요 미달", "미매각", "제도 개편", "EOD"
@@ -189,7 +189,8 @@ col_title, col_option = st.columns([0.8, 0.2])
 with col_title:
     st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
 with col_option:
-    show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=True)
+    # 1. 기사목록에 감성분석 배지표시 기본 체크 해제
+    show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False)
 
 # 1. 키워드 입력/검색 버튼 (한 줄, 버튼 하단정렬)
 st.markdown('<div class="flex-row-bottom">', unsafe_allow_html=True)
@@ -222,20 +223,21 @@ with date_col1:
 with date_col2:
     end_date = st.date_input("종료일")
 
-# 신용위험 필터 옵션
-with st.expander("🛡️ 신용위험 필터 옵션", expanded=True):
-    use_credit_filter = st.checkbox("이 필터 적용", value=False, key="use_credit_filter")
-    credit_keywords = [
-        "신용등급", "신용평가", "하향", "상향", "강등", "조정", "부도",
-        "파산", "디폴트", "채무불이행", "적자", "영업손실", "현금흐름", "자금난",
-        "재무위험", "부정적 전망", "긍정적 전망", "기업회생", "워크아웃", "구조조정", "자본잠식"
-    ]
-    credit_filter_keywords = st.multiselect(
-        "신용위험 관련 키워드 (하나 이상 선택)",
-        options=credit_keywords,
-        default=credit_keywords,
-        key="credit_filter"
-    )
+# 3. 공통필터옵션을 날짜 바로 밑으로 이동
+with st.expander("🧩 공통 필터 옵션", expanded=True):
+    use_common_filter = st.checkbox("이 필터 적용", value=False, key="use_common_filter")
+    col_common_major, col_common_sub = st.columns([1, 2])
+    with col_common_major:
+        selected_common_major = st.selectbox("공통 대분류(분류)", common_major_categories, key="common_major")
+    with col_common_sub:
+        selected_common_sub = st.multiselect(
+            "공통 소분류(필터 키워드)",
+            common_sub_categories[selected_common_major],
+            default=common_sub_categories[selected_common_major],
+            key="common_sub"
+        )
+
+# --- 신용위험/재무위험/법정책 필터 옵션 제거됨 ---
 
 with st.expander("🔍 키워드 필터 옵션", expanded=True):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
@@ -252,40 +254,6 @@ with st.expander("🏭 산업별 필터 옵션", expanded=True):
             sub_categories[selected_major],
             default=sub_categories[selected_major],
             key="industry_sub"
-        )
-
-with st.expander("💰 재무위험 필터 옵션", expanded=True):
-    use_finance_filter = st.checkbox("이 필터 적용", value=False, key="use_finance_filter")
-    finance_keywords = ["자산", "총자산", "부채", "자본", "매출", "비용", "영업이익", "순이익"]
-    finance_filter_keywords = st.multiselect(
-        "재무위험 관련 키워드",
-        options=finance_keywords,
-        default=finance_keywords,
-        key="finance_filter"
-    )
-
-with st.expander("⚖️ 법/정책 위험 필터 옵션", expanded=True):
-    use_law_filter = st.checkbox("이 필터 적용", value=False, key="use_law_filter")
-    law_keywords = ["테스트1", "테스트2", "테스트3"]
-    law_filter_keywords = st.multiselect(
-        "법/정책 위험 관련 키워드",
-        options=law_keywords,
-        default=law_keywords,
-        key="law_filter"
-    )
-
-# --- [공통 필터 옵션은 기존 코드와 동일하게 유지] ---
-with st.expander("🧩 공통 필터 옵션", expanded=True):
-    use_common_filter = st.checkbox("이 필터 적용", value=False, key="use_common_filter")
-    col_common_major, col_common_sub = st.columns([1, 2])
-    with col_common_major:
-        selected_common_major = st.selectbox("공통 대분류(분류)", common_major_categories, key="common_major")
-    with col_common_sub:
-        selected_common_sub = st.multiselect(
-            "공통 소분류(필터 키워드)",
-            common_sub_categories[selected_common_major],
-            default=common_sub_categories[selected_common_major],
-            key="common_sub"
         )
 
 # --- 본문 추출 함수(요청대로 단순화) ---
@@ -389,13 +357,14 @@ def fetch_naver_news(query, start_date=None, end_date=None, enable_credit_filter
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     articles = []
-    for page in range(1, 6):
+    # 한 번에 100개씩만 요청 (네이버 API 최대 display=100)
+    for page in range(1, 2):  # 1회만 루프 (100개만 요청)
         if len(articles) >= limit:
             break
         params = {
             "query": query,
-            "display": 10,
-            "start": (page - 1) * 10 + 1,
+            "display": 100,  # 한 번에 100개 요청
+            "start": (page - 1) * 100 + 1,  # 시작 위치
             "sort": "date"
         }
         response = requests.get("https://openapi.naver.com/v1/search/news.json", headers=headers, params=params)
