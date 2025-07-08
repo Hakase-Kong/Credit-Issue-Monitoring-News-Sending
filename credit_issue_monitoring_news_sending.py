@@ -402,19 +402,19 @@ def filter_by_issues(title, desc, selected_keywords, require_keyword_in_title=Fa
             return False
     return True
 
-def fetch_naver_news(query, start_date=None, end_date=None, limit=100, require_keyword_in_title=False):
+def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_keyword_in_title=False):
     headers = {
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     articles = []
-    for page in range(1, 2):  # 1회만 루프 (100개만 요청)
+    for start in range(1, 1001, 100):  # 1, 101, ..., 901
         if len(articles) >= limit:
             break
         params = {
             "query": query,
             "display": 100,
-            "start": (page - 1) * 100 + 1,
+            "start": start,
             "sort": "date"
         }
         response = requests.get("https://openapi.naver.com/v1/search/news.json", headers=headers, params=params)
@@ -436,6 +436,8 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=100, require_k
                 "date": pub_date.strftime("%Y-%m-%d"),
                 "source": "Naver"
             })
+        if len(items) < 100:
+            break  # 더 이상 기사 없음
     return articles[:limit]
 
 def fetch_gnews_news(query, start_date=None, end_date=None, limit=100, require_keyword_in_title=False):
