@@ -161,15 +161,21 @@ with st.expander("🧩 공통 필터 옵션"):
     use_common_filter = st.checkbox("이 필터 적용", value=False, key="use_common_filter")
     col_common_major, col_common_sub = st.columns([1, 1])
     with col_common_major:
-        selected_common_major = st.selectbox("공통 대분류(분류)", common_major_categories, key="common_major")
+        selected_common_major = st.selectbox(
+            "공통 대분류(분류)",
+            common_major_categories,
+            key="common_major",
+            index=0 if common_major_categories else None
+        )
     with col_common_sub:
+        sub_options = common_sub_categories.get(selected_common_major, [])
         selected_common_sub = st.multiselect(
             "공통 소분류(필터 키워드)",
-            common_sub_categories[selected_common_major],
-            default=common_sub_categories[selected_common_major],
+            sub_options,
+            default=sub_options,
             key="common_sub"
         )
-
+        
 # --- 기업별 필터 옵션 (이름 옆 체크박스, 좌우 분할) ---
 with st.expander("🏢 기업별 필터 옵션"):
     use_company_filter = st.checkbox("이 필터 적용", value=False, key="use_company_filter")
