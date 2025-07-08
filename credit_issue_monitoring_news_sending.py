@@ -99,8 +99,8 @@ favorite_categories = {
     "특수채": ["주택도시보증공사", "기업은행"]
 }
 
-# --- 기업별 필터 옵션: 기업명(분류) - 키워드(소분류) ---
 company_filter_categories = {
+    # ... (생략 없이 기존 코드 동일)
     "현대해상": [],
     "농협생명": [],
     "메리츠화재": ["부동산PF"],
@@ -559,8 +559,8 @@ def article_passes_all_filters(article):
     else:
         return True
 
-# --- 커스텀 엑셀 다운로드 함수: favorite_categories의 기업명 순서대로 ---
-def get_excel_download_custom(summary_data, company_order):
+# --- 커스텀 엑셀 다운로드 함수: 기업명(A열), B~E열(긍정/부정 뉴스) ---
+def get_excel_download_custom_with_company_col(summary_data, company_order):
     df_articles = pd.DataFrame(summary_data)
     result_rows = []
     for company in company_order:
@@ -577,6 +577,7 @@ def get_excel_download_custom(summary_data, company_order):
         neg_link = neg_news.iloc[0]["링크"] if not neg_news.empty else ""
 
         result_rows.append({
+            "기업명": company,
             "긍정적뉴스 날짜": pos_date,
             "긍정적 뉴스 기사제목": f'=HYPERLINK("{pos_link}", "{pos_title}")' if pos_link else "",
             "부정적뉴스 날짜": neg_date,
@@ -689,12 +690,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
 
             # --- 회사명 순서 리스트: favorite_categories의 모든 기업명 순서대로 ---
             company_order = []
-            for cat in favorite_categories.values():
-                company_order.extend(cat)
+            for cat in ["보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈", "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"]:
+                company_order.extend(favorite_categories.get(cat, []))
 
             # --- 엑셀 다운로드 버튼 (커스텀 포맷) ---
             if summary_data:
-                excel_bytes = get_excel_download_custom(summary_data, company_order)
+                excel_bytes = get_excel_download_custom_with_company_col(summary_data, company_order)
                 st.download_button(
                     label="📥 맞춤 엑셀 다운로드",
                     data=excel_bytes.getvalue(),
