@@ -118,7 +118,7 @@ company_filter_categories = {
     "삼성카드": [],
     "한국캐피탈": ["군인공제회"],
     "현대캐피탈": ["자동차금융"],
-    "SK이노베이션": ["SK지오센트릭", "SK에너지", "SK엔무브", "SK인천석유화학", "2차전지", "석유화학", "윤활유", "전기차", "배터리"],
+    "SK이노베이션": ["SK지오센트릭", "SK에너지", "SK앤무브", "SK인천석유화학", "2차전지", "석유화학", "윤활유", "전기차", "배터리"],
     "GS에너지": ["GS칼텍스", "GS파워", "정유", "열병합 수요"],
     "SK": ["SK이노베이션", "SK텔레콤", "SK온", "배터리", "석유화학", "이동통신"],
     "GS": ["GS에너지", "GS리테일", "GS E&C", "정유", "건설", "유통"],
@@ -153,7 +153,6 @@ company_filter_categories = {
     "주택도시보증공사(신종)": ["HUG", "전세사기", "보증사고", "보증료율", "회수율", "보증잔액", "대위변제액"],
     "기업은행(후)": ["중소기업대출", "공공기관 해제", "대손충당금", "부실채권", "불법", "구속"]
 }
-
 company_major_categories = list(company_filter_categories.keys())
 company_sub_categories = {cat: company_filter_categories[cat] for cat in company_major_categories}
 
@@ -202,12 +201,8 @@ industry_filter_categories = {
     ],
     "특수채": ["자본확충"]
 }
-
 major_categories = list(industry_filter_categories.keys())
 sub_categories = {cat: industry_filter_categories[cat] for cat in major_categories}
-all_fav_keywords = sorted(set(
-    kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
-))
 
 # --- [공통 필터 옵션] ---
 common_filter_categories = {
@@ -236,6 +231,8 @@ common_filter_categories = {
 common_major_categories = list(common_filter_categories.keys())
 common_sub_categories = {cat: common_filter_categories[cat] for cat in common_major_categories}
 
+# --- UI 시작 ---
+
 st.set_page_config(layout="wide")
 col_title, col_option = st.columns([0.8, 0.2])
 with col_title:
@@ -243,20 +240,20 @@ with col_title:
 with col_option:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False)
 
-# 1. 키워드 입력/검색 버튼 (한 줄, 버튼 하단정렬)
-st.markdown('<div class="flex-row-bottom">', unsafe_allow_html=True)
-keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input", label_visibility="visible")
-st.markdown('<div class="flex-grow"></div>', unsafe_allow_html=True)
-search_clicked = st.button("검색", key="search_btn", help="키워드로 검색", use_container_width=False)
-st.markdown('</div>', unsafe_allow_html=True)
+# 키워드 입력 + 검색 버튼 한 줄 배치
+col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
+with col_kw_input:
+    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input", label_visibility="visible")
+with col_kw_btn:
+    search_clicked = st.button("검색", key="search_btn", help="키워드로 검색", use_container_width=True)
 
-# 2. 즐겨찾기 카테고리 선택/검색 버튼 (한 줄, 버튼 하단정렬)
+# 즐겨찾기 카테고리 선택 + 검색 버튼 한 줄 배치
 st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
-st.markdown('<div class="flex-row-bottom">', unsafe_allow_html=True)
-selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", list(favorite_categories.keys()), key="cat_multi")
-st.markdown('<div class="flex-grow"></div>', unsafe_allow_html=True)
-category_search_clicked = st.button("🔍 검색", key="cat_search_btn", help="카테고리로 검색", use_container_width=False)
-st.markdown('</div>', unsafe_allow_html=True)
+col_cat_input, col_cat_btn = st.columns([0.8, 0.2])
+with col_cat_input:
+    selected_categories = st.multiselect("카테고리 선택 시 자동으로 즐겨찾기 키워드에 반영됩니다.", list(favorite_categories.keys()), key="cat_multi")
+with col_cat_btn:
+    category_search_clicked = st.button("🔍 검색", key="cat_search_btn", help="카테고리로 검색", use_container_width=True)
 for cat in selected_categories:
     st.session_state.favorite_keywords.update(favorite_categories[cat])
 
@@ -267,10 +264,11 @@ with date_col1:
 with date_col2:
     end_date = st.date_input("종료일")
 
-# --- 공통 필터 옵션 ---
-with st.expander("🧩 공통 필터 옵션", expanded=True):
-    use_common_filter = st.checkbox("이 필터 적용", value=False, key="use_common_filter")
-    col_common_major, col_common_sub = st.columns([1, 2])
+# 공통 필터 옵션 좌우 분할 + 체크박스
+with st.expander("🧩 공통 필터 옵션  "):
+    col_common_check, col_common_major, col_common_sub = st.columns([0.12, 0.44, 0.44])
+    with col_common_check:
+        use_common_filter = st.checkbox("이 필터 적용", value=False, key="use_common_filter")
     with col_common_major:
         selected_common_major = st.selectbox("공통 대분류(분류)", common_major_categories, key="common_major")
     with col_common_sub:
@@ -281,22 +279,30 @@ with st.expander("🧩 공통 필터 옵션", expanded=True):
             key="common_sub"
         )
 
-# --- 기업별 필터 옵션 ---
-with st.expander("🏢 기업별 필터 옵션", expanded=True):
-    use_company_filter = st.checkbox("이 필터 적용", value=False, key="use_company_filter")
-    selected_company = st.multiselect("기업명(복수 선택 가능)", company_major_categories, key="company_major")
-    selected_company_sub = []
-    for comp in selected_company:
-        selected_company_sub.extend(company_sub_categories.get(comp, []))
-    selected_company_sub = sorted(set(selected_company_sub))
-    st.write(f"선택된 기업 필터 키워드: {', '.join(selected_company_sub) if selected_company_sub else '(없음)'}")
+# 기업별 필터 옵션 좌우 분할 + 체크박스
+with st.expander("🏢 기업별 필터 옵션  "):
+    col_company_check, col_company_major, col_company_sub = st.columns([0.12, 0.44, 0.44])
+    with col_company_check:
+        use_company_filter = st.checkbox("이 필터 적용", value=False, key="use_company_filter")
+    with col_company_major:
+        selected_company = st.multiselect("기업명(복수 선택 가능)", company_major_categories, key="company_major")
+    with col_company_sub:
+        selected_company_sub = []
+        for comp in selected_company:
+            selected_company_sub.extend(company_sub_categories.get(comp, []))
+        selected_company_sub = sorted(set(selected_company_sub))
+        st.write("필터 키워드")
+        st.markdown(", ".join(selected_company_sub) if selected_company_sub else "(없음)")
 
-with st.expander("🔍 키워드 필터 옵션", expanded=True):
+# 키워드 필터 옵션
+with st.expander("🔍 키워드 필터 옵션  "):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
 
-with st.expander("🏭 산업별 필터 옵션", expanded=True):
-    use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
-    col_major, col_sub = st.columns([1, 2])
+# 산업별 필터 옵션 좌우 분할 + 체크박스
+with st.expander("🏭 산업별 필터 옵션  "):
+    col_industry_check, col_major, col_sub = st.columns([0.12, 0.44, 0.44])
+    with col_industry_check:
+        use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
     with col_major:
         selected_major = st.selectbox("대분류(산업)", major_categories, key="industry_major")
     with col_sub:
