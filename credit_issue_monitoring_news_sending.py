@@ -202,7 +202,7 @@ industry_filter_categories = {
     "특수채": ["자본확충"]
 }
 major_categories = list(industry_filter_categories.keys())
-sub_categories = {cat: industry_filter_categories[cat] for cat in major_categories]
+sub_categories = {cat: industry_filter_categories[cat] for cat in major_categories}
 all_fav_keywords = sorted(set(
     kw for cat in favorite_categories.values() for kw in cat if kw not in ["테스트1", "테스트2", "테스트3"]
 ))
