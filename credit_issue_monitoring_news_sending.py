@@ -77,6 +77,8 @@ if "show_limit" not in st.session_state:
     st.session_state.show_limit = {}
 if "search_triggered" not in st.session_state:
     st.session_state.search_triggered = False
+if "selected_articles" not in st.session_state:
+    st.session_state.selected_articles = []
 
 # --- 즐겨찾기 카테고리(변경 금지) ---
 favorite_categories = {
@@ -663,11 +665,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     key = f"{keyword}_{idx}_{unique_id}"
                     cache_key = f"summary_{key}"
                     if st.session_state.article_checked.get(key, False):
-                        if (not show_sentiment_badge) or (cache_key not in st.session_state):
+                        # 요약 캐시가 이미 있으면 재요약하지 않음
+                        if cache_key in st.session_state:
+                            one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                        else:
                             one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
                             st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
-                        else:
-                            one_line, summary, sentiment, full_text = st.session_state[cache_key]
                         selected_articles.append({
                             "키워드": keyword,
                             "기사제목": safe_title_for_append(article.get('title')),
@@ -693,6 +696,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             st.markdown(f"- **감성분석:** `{sentiment}`")
                         st.markdown("---")
 
+            # 세션에 최신 선택 기사 리스트를 저장
+            st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
             # --- 회사명 순서 리스트: favorite_categories의 모든 기업명 순서대로 ---
@@ -701,8 +706,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 company_order.extend(favorite_categories.get(cat, []))
 
             # --- 엑셀 다운로드 버튼 (커스텀 포맷) ---
-            if selected_articles:
-                excel_bytes = get_excel_download_custom_with_company_col(selected_articles, company_order)
+            if st.session_state.selected_articles:
+                excel_bytes = get_excel_download_custom_with_company_col(st.session_state.selected_articles, company_order)
                 st.download_button(
                     label="📥 맞춤 엑셀 다운로드",
                     data=excel_bytes.getvalue(),
