@@ -568,13 +568,22 @@ def get_excel_download_custom_with_company_col(summary_data, company_order):
         pos_news = comp_articles[comp_articles["감성"] == "긍정"].sort_values(by="날짜", ascending=False)
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
 
-        pos_date = pos_news.iloc[0]["날짜"] if not pos_news.empty else ""
-        pos_title = pos_news.iloc[0]["기사제목"] if not pos_news.empty else ""
+        # 기사제목이 비어있거나 None일 때 빈 문자열로 보장
+        pos_title = (
+            str(pos_news.iloc[0]["기사제목"])
+            if not pos_news.empty and pd.notnull(pos_news.iloc[0]["기사제목"])
+            else ""
+        )
         pos_link = pos_news.iloc[0]["링크"] if not pos_news.empty else ""
+        pos_date = pos_news.iloc[0]["날짜"] if not pos_news.empty else ""
 
-        neg_date = neg_news.iloc[0]["날짜"] if not neg_news.empty else ""
-        neg_title = neg_news.iloc[0]["기사제목"] if not neg_news.empty else ""
+        neg_title = (
+            str(neg_news.iloc[0]["기사제목"])
+            if not neg_news.empty and pd.notnull(neg_news.iloc[0]["기사제목"])
+            else ""
+        )
         neg_link = neg_news.iloc[0]["링크"] if not neg_news.empty else ""
+        neg_date = neg_news.iloc[0]["날짜"] if not neg_news.empty else ""
 
         result_rows.append({
             "기업명": company,
