@@ -560,18 +560,6 @@ def article_passes_all_filters(article):
         return True
 
 # --- 커스텀 엑셀 다운로드 함수: 기업명(A열), B~E열(긍정/부정 뉴스) ---
-def safe_title_for_append(val):
-    if val is None or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
-        return "제목없음"
-    return str(val)
-
-# 기사 저장 시점
-selected_articles.append({
-    "키워드": keyword,
-    "기사제목": safe_title_for_append(article.get('title')),
-    # 이하 생략
-})
-
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
         return "제목없음"
@@ -615,7 +603,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
         "부정": "sentiment-negative",
         "중립": "sentiment-neutral"
     }
-    summary_data = []
 
     if "article_checked" not in st.session_state:
         st.session_state.article_checked = {}
@@ -664,7 +651,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
+            # 반드시 함수 내부에서 리스트를 선언
             selected_articles = []
+            def safe_title_for_append(val):
+                if val is None or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
+                    return "제목없음"
+                return str(val)
             for keyword, articles in results.items():
                 limit = st.session_state.show_limit.get(keyword, 5)
                 for idx, article in enumerate(articles[:limit]):
@@ -679,7 +671,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             one_line, summary, sentiment, full_text = st.session_state[cache_key]
                         selected_articles.append({
                             "키워드": keyword,
-                            "기사제목": article['title'],
+                            "기사제목": safe_title_for_append(article.get('title')),
                             "요약": one_line,
                             "요약본": summary,
                             "감성": sentiment,
@@ -701,9 +693,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         if not show_sentiment_badge:
                             st.markdown(f"- **감성분석:** `{sentiment}`")
                         st.markdown("---")
-            summary_data = selected_articles
 
-            st.write(f"선택된 기사 개수: {len(summary_data)}")
+            st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
             # --- 회사명 순서 리스트: favorite_categories의 모든 기업명 순서대로 ---
             company_order = []
@@ -711,8 +702,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 company_order.extend(favorite_categories.get(cat, []))
 
             # --- 엑셀 다운로드 버튼 (커스텀 포맷) ---
-            if summary_data:
-                excel_bytes = get_excel_download_custom_with_company_col(summary_data, company_order)
+            if selected_articles:
+                excel_bytes = get_excel_download_custom_with_company_col(selected_articles, company_order)
                 st.download_button(
                     label="📥 맞춤 엑셀 다운로드",
                     data=excel_bytes.getvalue(),
