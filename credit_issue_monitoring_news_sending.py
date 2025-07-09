@@ -560,6 +560,12 @@ def article_passes_all_filters(article):
         return True
 
 # --- 커스텀 엑셀 다운로드 함수: 기업명(A열), B~E열(긍정/부정 뉴스) ---
+def safe_title(val):
+    # 값이 None, NaN, 빈 문자열이면 "제목없음" 반환
+    if pd.isnull(val) or str(val).strip() == "":
+        return "제목없음"
+    return str(val)
+
 def get_excel_download_custom_with_company_col(summary_data, company_order):
     df_articles = pd.DataFrame(summary_data)
     result_rows = []
@@ -568,20 +574,11 @@ def get_excel_download_custom_with_company_col(summary_data, company_order):
         pos_news = comp_articles[comp_articles["감성"] == "긍정"].sort_values(by="날짜", ascending=False)
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
 
-        # 기사제목이 비어있거나 None일 때 빈 문자열로 보장
-        pos_title = (
-            str(pos_news.iloc[0]["기사제목"])
-            if not pos_news.empty and pd.notnull(pos_news.iloc[0]["기사제목"])
-            else ""
-        )
+        pos_title = safe_title(pos_news.iloc[0]["기사제목"]) if not pos_news.empty else "제목없음"
         pos_link = pos_news.iloc[0]["링크"] if not pos_news.empty else ""
         pos_date = pos_news.iloc[0]["날짜"] if not pos_news.empty else ""
 
-        neg_title = (
-            str(neg_news.iloc[0]["기사제목"])
-            if not neg_news.empty and pd.notnull(neg_news.iloc[0]["기사제목"])
-            else ""
-        )
+        neg_title = safe_title(neg_news.iloc[0]["기사제목"]) if not neg_news.empty else "제목없음"
         neg_link = neg_news.iloc[0]["링크"] if not neg_news.empty else ""
         neg_date = neg_news.iloc[0]["날짜"] if not neg_news.empty else ""
 
