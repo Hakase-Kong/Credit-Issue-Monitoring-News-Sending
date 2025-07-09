@@ -560,9 +560,20 @@ def article_passes_all_filters(article):
         return True
 
 # --- 커스텀 엑셀 다운로드 함수: 기업명(A열), B~E열(긍정/부정 뉴스) ---
+def safe_title_for_append(val):
+    if val is None or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
+        return "제목없음"
+    return str(val)
+
+# 기사 저장 시점
+selected_articles.append({
+    "키워드": keyword,
+    "기사제목": safe_title_for_append(article.get('title')),
+    # 이하 생략
+})
+
 def safe_title(val):
-    # 값이 None, NaN, 빈 문자열이면 "제목없음" 반환
-    if pd.isnull(val) or str(val).strip() == "":
+    if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
         return "제목없음"
     return str(val)
 
