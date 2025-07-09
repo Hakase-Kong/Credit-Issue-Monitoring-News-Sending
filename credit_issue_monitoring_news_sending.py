@@ -651,7 +651,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
-            # 반드시 함수 내부에서 리스트를 선언
             selected_articles = []
             def safe_title_for_append(val):
                 if val is None or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
