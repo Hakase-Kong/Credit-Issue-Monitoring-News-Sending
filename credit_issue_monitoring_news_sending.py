@@ -343,6 +343,7 @@ with st.expander("🏭 산업별 필터 옵션"):
 # --- 키워드 필터 옵션 (하단으로 이동) ---
 with st.expander("🔍 키워드 필터 옵션"):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
+    require_exact_keyword_in_title_or_content = st.checkbox("키워드가 온전히 제목 또는 본문에 포함된 기사만 보기", value=False)
 
 # --- 본문 추출 함수(요청대로 단순화) ---
 def extract_article_text(url):
@@ -543,6 +544,25 @@ def or_keyword_filter(article, *keyword_lists):
             return True
     return False
 
+# --- 온전 일치 키워드 필터 함수 ---
+def article_contains_exact_keyword(article, keywords):
+    title = article.get("title", "")
+    content = ""
+    # 본문 추출 캐시가 있으면 사용
+    cache_key = article.get("link", "")
+    summary_cache_key = None
+    for key in st.session_state.keys():
+        if key.startswith("summary_") and cache_key in key:
+            summary_cache_key = key
+            break
+    if summary_cache_key and isinstance(st.session_state[summary_cache_key], tuple):
+        _, _, _, content = st.session_state[summary_cache_key]
+    # 본문이 없으면 빈 문자열로 처리
+    for kw in keywords:
+        if kw and (kw in title or (content and kw in content)):
+            return True
+    return False
+
 search_clicked = False
 if keywords_input:
     keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
@@ -583,6 +603,17 @@ def article_passes_all_filters(article):
     # --- 제목 제외 키워드 필터 ---
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
+    # --- 온전 일치 키워드 필터 ---
+    if require_exact_keyword_in_title_or_content:
+        # 키워드 입력란, 카테고리 선택 모두 적용
+        all_keywords = []
+        if keywords_input:
+            all_keywords.extend([k.strip() for k in keywords_input.split(",") if k.strip()])
+        if selected_categories:
+            for cat in selected_categories:
+                all_keywords.extend(favorite_categories[cat])
+        if not article_contains_exact_keyword(article, all_keywords):
+            return False
     if filters:
         return or_keyword_filter(article, *filters)
     else:
@@ -639,7 +670,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
     col_list, col_summary = st.columns([1, 1])
 
     with col_list:
-        st.markdown("### 기사 요약 결과 (엑셀 저장할 기사 선택)")
+        st.markdown("### 기사 요약 결과")
         for keyword, articles in results.items():
             with st.container(border=True):
                 st.markdown(f"**[{keyword}]**")
@@ -659,12 +690,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         md_line = (
                             f"[{article['title']}]({article['link']}) "
                             f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
-                            f"({article['date']} | {article['source']})"
+                            f"{article['date']} | {article['source']}"
                         )
                     else:
                         md_line = (
                             f"[{article['title']}]({article['link']}) "
-                            f"({article['date']} | {article['source']})"
+                            f"{article['date']} | {article['source']}"
                         )
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
