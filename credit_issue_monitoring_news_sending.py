@@ -68,7 +68,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 세션 상태 변수 초기화
+# ----------------- 제외 키워드(제목에 포함시 해당 기사 제외) -----------------
+EXCLUDE_TITLE_KEYWORDS = [
+    # 스포츠 관련
+    "야구", "축구", "배구", "농구", "골프", "e스포츠", "올림픽", "월드컵", "K리그", "프로야구", "프로축구", "프로배구", "프로농구",
+    # 부고/인사
+    "부고", "인사", "승진", "임명", "발령", "인사발령", "인사이동",
+    # 브랜드 평판
+    "브랜드평판", "브랜드 평판", "브랜드 순위", "브랜드지수",
+    # 주식/시세/코스피/코스닥 (상승/하락/급등/급락은 제외)
+    "코스피", "코스닥", "주가", "주식", "증시", "시세", "마감", "장중", "장마감", "거래량", "거래대금", "상한가", "하한가"
+]
+
+def exclude_by_title_keywords(title, exclude_keywords):
+    for word in exclude_keywords:
+        if word in title:
+            return True
+    return False
+
+# ----------------- 세션 상태 변수 초기화 -----------------
 if "favorite_keywords" not in st.session_state:
     st.session_state.favorite_keywords = set()
 if "search_results" not in st.session_state:
@@ -444,6 +462,9 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
                 continue
             if not filter_by_issues(title, desc, [query], require_keyword_in_title):
                 continue
+            # ----------- 제목 제외 키워드 적용 -----------
+            if exclude_by_title_keywords(re.sub("<.*?>", "", title), EXCLUDE_TITLE_KEYWORDS):
+                continue
             articles.append({
                 "title": re.sub("<.*?>", "", title),
                 "link": item["link"],
@@ -474,6 +495,9 @@ def fetch_gnews_news(query, start_date=None, end_date=None, limit=100, require_k
             title = item.get("title", "")
             desc = item.get("description", "")
             if not filter_by_issues(title, desc, [query], require_keyword_in_title):
+                continue
+            # ----------- 제목 제외 키워드 적용 -----------
+            if exclude_by_title_keywords(title, EXCLUDE_TITLE_KEYWORDS):
                 continue
             pub_date = datetime.strptime(item["publishedAt"][:10], "%Y-%m-%d").date()
             articles.append({
@@ -556,6 +580,9 @@ def article_passes_all_filters(article):
         filters.append(selected_company_sub)
     if use_industry_filter:
         filters.append(selected_sub)
+    # --- 제목 제외 키워드 필터 ---
+    if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
+        return False
     if filters:
         return or_keyword_filter(article, *filters)
     else:
