@@ -254,9 +254,9 @@ col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
 with col_title:
     st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
 with col_option1:
-    show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False)
+    show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False, key="show_sentiment_badge")
 with col_option2:
-    enable_summary = st.checkbox("요약 기능 적용", value=True)
+    enable_summary = st.checkbox("요약 기능 적용", value=True, key="enable_summary")
 
 # 1. 키워드 입력/검색 버튼 (한 줄, 버튼 오른쪽)
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
@@ -338,8 +338,8 @@ with st.expander("🏭 산업별 필터 옵션"):
 
 # --- 키워드 필터 옵션 (하단으로 이동) ---
 with st.expander("🔍 키워드 필터 옵션"):
-    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False)
-    require_exact_keyword_in_title_or_content = st.checkbox("키워드가 온전히 제목 또는 본문에 포함된 기사만 보기", value=False)
+    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False, key="require_keyword_in_title")
+    require_exact_keyword_in_title_or_content = st.checkbox("키워드가 온전히 제목 또는 본문에 포함된 기사만 보기", value=False, key="require_exact_keyword_in_title_or_content")
 
 # --- 본문 추출 함수(요청대로 단순화) ---
 def extract_article_text(url):
@@ -393,11 +393,9 @@ def summarize_and_sentiment_with_openai(text, do_summary=True):
     answer = response.choices[0].message.content.strip()
     if lang == "ko":
         m1 = re.search(r"\[한 줄 요약\]:\s*(.+)", answer)
-        m2 = None  # 요약본은 없음
         m3 = re.search(r"\[감성\]:\s*(.+)", answer)
     else:
         m1 = re.search(r"\[One-line Summary\]:\s*(.+)", answer)
-        m2 = None
         m3 = re.search(r"\[Sentiment\]:\s*(.+)", answer)
     one_line = m1.group(1).strip() if (do_summary and m1) else ""
     summary = ""  # 상세 요약은 생략
@@ -565,7 +563,7 @@ if search_clicked or st.session_state.get("search_triggered"):
         st.warning("키워드는 최대 10개까지 입력 가능합니다.")
     else:
         with st.spinner("뉴스 검색 중..."):
-            process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
+            process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=st.session_state.get("require_keyword_in_title", False))
     st.session_state.search_triggered = False
 
 if category_search_clicked and selected_categories:
@@ -577,20 +575,20 @@ if category_search_clicked and selected_categories:
             sorted(keywords),
             start_date,
             end_date,
-            require_keyword_in_title=require_keyword_in_title
+            require_keyword_in_title=st.session_state.get("require_keyword_in_title", False)
         )
 
 def article_passes_all_filters(article):
     filters = []
-    if use_common_filter:
-        filters.append(selected_common_sub)
-    if use_company_filter:
+    if st.session_state.get("use_common_filter", False):
+        filters.append(st.session_state.get("common_sub", []))
+    if st.session_state.get("use_company_filter", False):
         filters.append(selected_company_sub)
-    if use_industry_filter:
-        filters.append(selected_sub)
+    if st.session_state.get("use_industry_filter", False):
+        filters.append(st.session_state.get("industry_sub", []))
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
-    if require_exact_keyword_in_title_or_content:
+    if st.session_state.get("require_exact_keyword_in_title_or_content", False):
         all_keywords = []
         if keywords_input:
             all_keywords.extend([k.strip() for k in keywords_input.split(",") if k.strip()])
@@ -764,6 +762,6 @@ if st.session_state.search_results:
     render_articles_with_single_summary_and_telegram(
         filtered_results,
         st.session_state.show_limit,
-        show_sentiment_badge=show_sentiment_badge,
-        enable_summary=enable_summary
+        show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
+        enable_summary=st.session_state.get("enable_summary", True)
     )
