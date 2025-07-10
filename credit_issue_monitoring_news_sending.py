@@ -52,10 +52,10 @@ st.markdown("""
     padding: 1.1em 1.2em 1.2em 1.2em;
     box-shadow: 0 2px 8px 0 rgba(0,0,0,0.03);
 }
-.flex-row-top {
+.flex-row-bottom {
     display: flex;
-    align-items: flex-start;
-    gap: 1.2rem;
+    align-items: flex-end;
+    gap: 0.5rem;
     margin-bottom: 0.5rem;
 }
 .flex-grow {
@@ -250,27 +250,20 @@ common_major_categories = list(common_filter_categories.keys())
 common_sub_categories = {cat: common_filter_categories[cat] for cat in common_major_categories}
 
 st.set_page_config(layout="wide")
-
-# --- 상단 컨트롤 한 줄에 정렬 ---
-with st.container():
-    st.markdown('<div class="flex-row-top">', unsafe_allow_html=True)
-    # 키워드 입력창
-    st.markdown('<div class="flex-grow">', unsafe_allow_html=True)
-    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input", label_visibility="collapsed")
-    st.markdown('</div>', unsafe_allow_html=True)
-    # 검색 버튼
-    st.markdown('<div>', unsafe_allow_html=True)
-    search_clicked = st.button("검색", key="search_btn", help="키워드로 검색")
-    st.markdown('</div>', unsafe_allow_html=True)
-    # 감성분석 체크박스
-    st.markdown('<div style="margin-top:2px;">', unsafe_allow_html=True)
+col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
+with col_title:
+    st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
+with col_option1:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False, key="show_sentiment_badge")
-    st.markdown('</div>', unsafe_allow_html=True)
-    # 요약 체크박스
-    st.markdown('<div style="margin-top:2px;">', unsafe_allow_html=True)
+with col_option2:
     enable_summary = st.checkbox("요약 기능 적용", value=True, key="enable_summary")
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+
+# 1. 키워드 입력/검색 버튼 (한 줄, 버튼 오른쪽)
+col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
+with col_kw_input:
+    keywords_input = st.text_input("키워드 (예: 삼성, 한화)", value="", key="keyword_input", label_visibility="visible")
+with col_kw_btn:
+    search_clicked = st.button("검색", key="search_btn", help="키워드로 검색", use_container_width=True)
 
 # 2. 즐겨찾기 카테고리 선택/검색 버튼 (한 줄, 버튼 오른쪽)
 st.markdown("**⭐ 즐겨찾기 카테고리 선택**")
@@ -323,7 +316,7 @@ with st.expander("🏢 기업별 필터 옵션"):
         st.write("필터 키워드")
         st.markdown(", ".join(selected_company_sub) if selected_company_sub else "(없음)")
 
-# --- 산업별 필터 옵션 (이름 옆 체크박스, 원래 위치, 대분류 다중선택) ---
+# --- 산업별 필터 옵션 (이름 옆 체크박스, 원래 위치) ---
 with st.expander("🏭 산업별 필터 옵션"):
     use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
     col_major, col_sub = st.columns([1, 1])
@@ -332,24 +325,23 @@ with st.expander("🏭 산업별 필터 옵션"):
             "대분류(산업)",
             major_categories,
             key="industry_majors"
-        )
+            )
         sub_options = []
     for major in selected_majors:
         sub_options.extend(sub_categories.get(major, []))
     sub_options = sorted(set(sub_options))
-    with col_sub:
-        selected_sub = st.multiselect(
-            "소분류(필터 키워드)",
-            sub_options,
-            default=sub_options,
-            key="industry_sub"
-        )
+    selected_sub = st.multiselect(
+        "소분류(필터 키워드)",
+        sub_options,
+        default=sub_options,
+        key="industry_sub"
+    )
 
 # --- 키워드 필터 옵션 (하단으로 이동) ---
 with st.expander("🔍 키워드 필터 옵션"):
     require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False, key="require_keyword_in_title")
     require_exact_keyword_in_title_or_content = st.checkbox("키워드가 온전히 제목 또는 본문에 포함된 기사만 보기", value=False, key="require_exact_keyword_in_title_or_content")
-    
+
 # --- 본문 추출 함수(요청대로 단순화) ---
 def extract_article_text(url):
     try:
