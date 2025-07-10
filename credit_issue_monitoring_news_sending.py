@@ -377,7 +377,7 @@ def summarize_and_sentiment_with_openai(text):
             "아래 포맷으로 답변해줘:\n"
             "[한 줄 요약]: (여기에 한 줄 요약)\n"
             "[요약본]: (여기에 여러 문단 요약)\n"
-            "[감성]: (긍정/부정/중립 중 하나만)\n\n"
+            "[감성]: (긍정/부정 중 하나만)\n\n"
             "[기사 본문]\n" + text
         )
     else:
@@ -707,6 +707,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 if limit < len(articles):
                     if st.button("더보기", key=f"more_{keyword}"):
                         st.session_state.show_limit[keyword] += 10
+                        st.experimental_rerun()
 
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
