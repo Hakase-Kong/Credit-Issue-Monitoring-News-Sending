@@ -250,12 +250,12 @@ common_major_categories = list(common_filter_categories.keys())
 common_sub_categories = {cat: common_filter_categories[cat] for cat in common_major_categories}
 
 st.set_page_config(layout="wide")
-col_title, col_option = st.columns([0.6, 0.2, 0.2])
+col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
 with col_title:
     st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
-with col_option:
+with col_option1:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False)
-with col_option:
+with col_option2:
     enable_summary = st.checkbox("요약 기능 적용", value=True)
 
 # 1. 키워드 입력/검색 버튼 (한 줄, 버튼 오른쪽)
