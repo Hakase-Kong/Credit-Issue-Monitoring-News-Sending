@@ -321,20 +321,21 @@ with st.expander("🏭 산업별 필터 옵션"):
     use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
     col_major, col_sub = st.columns([1, 1])
     with col_major:
-        selected_major = st.selectbox(
+        selected_majors = st.multiselect(
             "대분류(산업)",
             major_categories,
-            key="industry_major",
-            index=0 if major_categories else None
-        )
-    with col_sub:
-        sub_options = sub_categories.get(selected_major, [])
-        selected_sub = st.multiselect(
-            "소분류(필터 키워드)",
-            sub_options,
-            default=sub_options,
-            key="industry_sub"
-        )
+            key="industry_majors"
+            )
+        sub_options = []
+    for major in selected_majors:
+        sub_options.extend(sub_categories.get(major, []))
+    sub_options = sorted(set(sub_options))
+    selected_sub = st.multiselect(
+        "소분류(필터 키워드)",
+        sub_options,
+        default=sub_options,
+        key="industry_sub"
+    )
 
 # --- 키워드 필터 옵션 (하단으로 이동) ---
 with st.expander("🔍 키워드 필터 옵션"):
