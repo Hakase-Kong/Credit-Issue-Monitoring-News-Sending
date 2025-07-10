@@ -707,7 +707,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 if limit < len(articles):
                     if st.button("더보기", key=f"more_{keyword}"):
                         st.session_state.show_limit[keyword] += 10
-                        st.experimental_rerun()
+                        st.rerun()
 
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
