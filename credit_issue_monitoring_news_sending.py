@@ -19,7 +19,7 @@ import os
 from datetime import datetime
 import telepot
 from openai import OpenAI
-import newspaper  # newspaper4k
+import newspaper  # newspaper3k
 
 # --- CSS: 체크박스와 기사 사이 gap 최소화 및 감성 뱃지 스타일, flex row 버튼 하단정렬 ---
 st.markdown("""
@@ -43,7 +43,6 @@ st.markdown("""
     vertical-align: middle;
 }
 .sentiment-positive { background: #2ecc40; color: #fff; }
-.sentiment-neutral { background: #0074d9; color: #fff; }
 .sentiment-negative { background: #ff4136; color: #fff; }
 .stBox {
     background: #fcfcfc;
@@ -70,13 +69,9 @@ st.markdown("""
 
 # ----------------- 제외 키워드(제목에 포함시 해당 기사 제외) -----------------
 EXCLUDE_TITLE_KEYWORDS = [
-    # 스포츠 관련
     "야구", "축구", "배구", "농구", "골프", "e스포츠", "올림픽", "월드컵", "K리그", "프로야구", "프로축구", "프로배구", "프로농구",
-    # 부고/인사
     "부고", "인사", "승진", "임명", "발령", "인사발령", "인사이동",
-    # 브랜드 평판
     "브랜드평판", "브랜드 평판", "브랜드 순위", "브랜드지수",
-    # 주식/시세/코스피/코스닥 (상승/하락/급등/급락은 제외)
     "코스피", "코스닥", "주가", "주식", "증시", "시세", "마감", "장중", "장마감", "거래량", "거래대금", "상한가", "하한가"
 ]
 
@@ -120,7 +115,6 @@ favorite_categories = {
 }
 
 company_filter_categories = {
-    # ... (생략 없이 기존 코드 동일)
     "현대해상": [],
     "농협생명": [],
     "메리츠화재": ["부동산PF"],
@@ -256,11 +250,13 @@ common_major_categories = list(common_filter_categories.keys())
 common_sub_categories = {cat: common_filter_categories[cat] for cat in common_major_categories}
 
 st.set_page_config(layout="wide")
-col_title, col_option = st.columns([0.8, 0.2])
+col_title, col_option = st.columns([0.6, 0.2, 0.2])
 with col_title:
     st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
 with col_option:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False)
+with col_option:
+    enable_summary = st.checkbox("요약 기능 적용", value=True)
 
 # 1. 키워드 입력/검색 버튼 (한 줄, 버튼 오른쪽)
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
@@ -355,44 +351,36 @@ def extract_article_text(url):
     except Exception as e:
         return f"본문 추출 오류: {e}"
 
-# --- OpenAI 요약/감성분석 함수 ---
+# --- OpenAI 요약/감성분석 함수 (긍정/부정만, 요약 옵션) ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
-def summarize_and_sentiment_with_openai(text):
+def summarize_and_sentiment_with_openai(text, do_summary=True):
     if not OPENAI_API_KEY:
         return "OpenAI API 키가 설정되지 않았습니다.", None, None, None
     lang = detect_lang(text)
     if lang == "ko":
         prompt = (
-            "아래 기사 본문을 요약하고 감성분석을 해줘.\n\n"
-            "- [한 줄 요약]: 기사 전체 내용을 한 문장으로 요약\n"
-            "- [요약본]: 기사 내용을 2~3 문단(각 문단 2~4문장)으로, 핵심 내용을 충분히 파악할 수 있게 요약\n"
-            "- [감성]: 기사 전체의 감정을 긍정/부정/중립 중 하나로만 답해줘. "
-            "만약 파산, 자금난, 회생, 적자, 구조조정, 영업손실, 부도, 채무불이행, 경영 위기 등 부정적 사건이 중심이면 반드시 '부정'으로 답해줘.\n"
-            "광고, 배너, 추천기사, 서비스 안내 등 기사 본문과 무관한 내용은 모두 요약과 감성분석에서 제외.\n\n"
-            "아래 포맷으로 답변해줘:\n"
-            "[한 줄 요약]: (여기에 한 줄 요약)\n"
-            "[요약본]: (여기에 여러 문단 요약)\n"
-            "[감성]: (긍정/부정 중 하나만)\n\n"
-            "[기사 본문]\n" + text
+            ("아래 기사 본문을 감성분석(긍정/부정만)하고" +
+             ("\n- [한 줄 요약]: 기사 전체 내용을 한 문장으로 요약" if do_summary else "") +
+             "\n- [감성]: 기사 전체의 감정을 긍정/부정 중 하나로만 답해줘. 중립은 절대 답하지 마. 파산, 자금난 등 부정적 사건이 중심이면 반드시 '부정'으로 답해줘.\n\n"
+             "아래 포맷으로 답변해줘:\n" +
+             ("[한 줄 요약]: (여기에 한 줄 요약)\n" if do_summary else "") +
+             "[감성]: (긍정/부정 중 하나만)\n\n"
+             "[기사 본문]\n" + text)
         )
     else:
         prompt = (
-            "Summarize the following news article and analyze its sentiment.\n\n"
-            "- [One-line Summary]: Summarize the entire article in one sentence.\n"
-            "- [Summary]: Summarize the article in 2–3 paragraphs (each 2–4 sentences), so that the main content is well understood.\n"
-            "- [Sentiment]: Classify the overall sentiment as one of: positive, negative, or neutral. "
-            "If the article centers on bankruptcy, financial distress, restructuring, insolvency, operating loss, default, or management crisis, you must answer 'negative'.\n"
-            "Exclude any advertisements, banners, recommended articles, or unrelated content.\n\n"
-            "Respond in this format:\n"
-            "[One-line Summary]: (your one-line summary)\n"
-            "[Summary]: (your multi-paragraph summary)\n"
-            "[Sentiment]: (positive/negative/neutral only)\n\n"
-            "[ARTICLE]\n" + text
+            ("Analyze the following news article for sentiment (positive/negative only)." +
+             ("\n- [One-line Summary]: Summarize the entire article in one sentence." if do_summary else "") +
+             "\n- [Sentiment]: Classify the overall sentiment as either positive or negative ONLY. Never answer 'neutral'. If the article is about bankruptcy, crisis, etc., answer 'negative'.\n\n"
+             "Respond in this format:\n" +
+             ("[One-line Summary]: (your one-line summary)\n" if do_summary else "") +
+             "[Sentiment]: (positive/negative only)\n\n"
+             "[ARTICLE]\n" + text)
         )
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
@@ -405,15 +393,20 @@ def summarize_and_sentiment_with_openai(text):
     answer = response.choices[0].message.content.strip()
     if lang == "ko":
         m1 = re.search(r"\[한 줄 요약\]:\s*(.+)", answer)
-        m2 = re.search(r"\[요약본\]:\s*([\s\S]+?)(?:\[감성\]:|$)", answer)
+        m2 = None  # 요약본은 없음
         m3 = re.search(r"\[감성\]:\s*(.+)", answer)
     else:
         m1 = re.search(r"\[One-line Summary\]:\s*(.+)", answer)
-        m2 = re.search(r"\[Summary\]:\s*([\s\S]+?)(?:\[Sentiment\]:|$)", answer)
+        m2 = None
         m3 = re.search(r"\[Sentiment\]:\s*(.+)", answer)
-    one_line = m1.group(1).strip() if m1 else ""
-    summary = m2.group(1).strip() if m2 else answer
+    one_line = m1.group(1).strip() if (do_summary and m1) else ""
+    summary = ""  # 상세 요약은 생략
     sentiment = m3.group(1).strip() if m3 else ""
+    # 후처리: 중립 등 들어오면 부정으로 강제
+    if sentiment.lower() in ['neutral', '중립', '']:
+        sentiment = '부정' if lang == "ko" else 'negative'
+    if lang == "en":
+        sentiment = '긍정' if sentiment.lower() == 'positive' else '부정'
     return one_line, summary, sentiment, text
 
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
@@ -441,7 +434,7 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     articles = []
-    for start in range(1, 1001, 100):  # 1, 101, ..., 901
+    for start in range(1, 1001, 100):
         if len(articles) >= limit:
             break
         params = {
@@ -463,7 +456,6 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
                 continue
             if not filter_by_issues(title, desc, [query], require_keyword_in_title):
                 continue
-            # ----------- 제목 제외 키워드 적용 -----------
             if exclude_by_title_keywords(re.sub("<.*?>", "", title), EXCLUDE_TITLE_KEYWORDS):
                 continue
             articles.append({
@@ -473,7 +465,7 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
                 "source": "Naver"
             })
         if len(items) < 100:
-            break  # 더 이상 기사 없음
+            break
     return articles[:limit]
 
 def fetch_gnews_news(query, start_date=None, end_date=None, limit=100, require_keyword_in_title=False):
@@ -497,7 +489,6 @@ def fetch_gnews_news(query, start_date=None, end_date=None, limit=100, require_k
             desc = item.get("description", "")
             if not filter_by_issues(title, desc, [query], require_keyword_in_title):
                 continue
-            # ----------- 제목 제외 키워드 적용 -----------
             if exclude_by_title_keywords(title, EXCLUDE_TITLE_KEYWORDS):
                 continue
             pub_date = datetime.strptime(item["publishedAt"][:10], "%Y-%m-%d").date()
@@ -527,12 +518,12 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
 def detect_lang_from_title(title):
     return "ko" if re.search(r"[가-힣]", title) else "en"
 
-def summarize_article_from_url(article_url, title):
+def summarize_article_from_url(article_url, title, do_summary=True):
     try:
         full_text = extract_article_text(article_url)
         if full_text.startswith("본문 추출 오류"):
             return full_text, None, None, None
-        one_line, summary, sentiment, _ = summarize_and_sentiment_with_openai(full_text)
+        one_line, summary, sentiment, _ = summarize_and_sentiment_with_openai(full_text, do_summary=do_summary)
         return one_line, summary, sentiment, full_text
     except Exception as e:
         return f"요약 오류: {e}", None, None, None
@@ -544,11 +535,9 @@ def or_keyword_filter(article, *keyword_lists):
             return True
     return False
 
-# --- 온전 일치 키워드 필터 함수 ---
 def article_contains_exact_keyword(article, keywords):
     title = article.get("title", "")
     content = ""
-    # 본문 추출 캐시가 있으면 사용
     cache_key = article.get("link", "")
     summary_cache_key = None
     for key in st.session_state.keys():
@@ -557,7 +546,6 @@ def article_contains_exact_keyword(article, keywords):
             break
     if summary_cache_key and isinstance(st.session_state[summary_cache_key], tuple):
         _, _, _, content = st.session_state[summary_cache_key]
-    # 본문이 없으면 빈 문자열로 처리
     for kw in keywords:
         if kw and (kw in title or (content and kw in content)):
             return True
@@ -600,12 +588,9 @@ def article_passes_all_filters(article):
         filters.append(selected_company_sub)
     if use_industry_filter:
         filters.append(selected_sub)
-    # --- 제목 제외 키워드 필터 ---
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
-    # --- 온전 일치 키워드 필터 ---
     if require_exact_keyword_in_title_or_content:
-        # 키워드 입력란, 카테고리 선택 모두 적용
         all_keywords = []
         if keywords_input:
             all_keywords.extend([k.strip() for k in keywords_input.split(",") if k.strip()])
@@ -619,7 +604,6 @@ def article_passes_all_filters(article):
     else:
         return True
 
-# --- 커스텀 엑셀 다운로드 함수: 기업명(A열), B~E열(긍정/부정 뉴스) ---
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
         return "제목없음"
@@ -656,12 +640,10 @@ def get_excel_download_custom_with_company_col(summary_data, company_order):
     output.seek(0)
     return output
 
-# --- 요약/감성분석/기사선택/엑셀 저장 UI ---
-def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True):
+def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
     SENTIMENT_CLASS = {
         "긍정": "sentiment-positive",
-        "부정": "sentiment-negative",
-        "중립": "sentiment-neutral"
+        "부정": "sentiment-negative"
     }
 
     if "article_checked" not in st.session_state:
@@ -681,12 +663,14 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     cache_key = f"summary_{key}"
                     if show_sentiment_badge:
                         if cache_key not in st.session_state:
-                            one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+                            one_line, summary, sentiment, full_text = summarize_article_from_url(
+                                article['link'], article['title'], do_summary=enable_summary
+                            )
                             st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
                         else:
                             one_line, summary, sentiment, full_text = st.session_state[cache_key]
                         sentiment_label = sentiment if sentiment else "분석중"
-                        sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-neutral")
+                        sentiment_class = SENTIMENT_CLASS.get(sentiment_label, "sentiment-negative")
                         md_line = (
                             f"[{article['title']}]({article['link']}) "
                             f"<span class='sentiment-badge {sentiment_class}'>({sentiment_label})</span> "
@@ -724,11 +708,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     key = f"{keyword}_{idx}_{unique_id}"
                     cache_key = f"summary_{key}"
                     if st.session_state.article_checked.get(key, False):
-                        # 요약 캐시가 이미 있으면 재요약하지 않음
                         if cache_key in st.session_state:
                             one_line, summary, sentiment, full_text = st.session_state[cache_key]
                         else:
-                            one_line, summary, sentiment, full_text = summarize_article_from_url(article['link'], article['title'])
+                            one_line, summary, sentiment, full_text = summarize_article_from_url(
+                                article['link'], article['title'], do_summary=enable_summary
+                            )
                             st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
                         selected_articles.append({
                             "키워드": keyword,
@@ -743,28 +728,24 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         if show_sentiment_badge:
                             st.markdown(
                                 f"#### [{article['title']}]({article['link']}) "
-                                f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>({sentiment})</span>",
+                                f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>",
                                 unsafe_allow_html=True
                             )
                         else:
                             st.markdown(f"#### [{article['title']}]({article['link']})", unsafe_allow_html=True)
                         st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
-                        st.markdown(f"- **한 줄 요약:** {one_line}")
-                        st.markdown(f"- **요약본:** {summary}")
-                        if not show_sentiment_badge:
-                            st.markdown(f"- **감성분석:** `{sentiment}`")
+                        if enable_summary:
+                            st.markdown(f"- **한 줄 요약:** {one_line}")
+                        st.markdown(f"- **감성분석:** `{sentiment}`")
                         st.markdown("---")
 
-            # 세션에 최신 선택 기사 리스트를 저장
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
-            # --- 회사명 순서 리스트: favorite_categories의 모든 기업명 순서대로 ---
             company_order = []
             for cat in ["보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈", "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"]:
                 company_order.extend(favorite_categories.get(cat, []))
 
-            # --- 엑셀 다운로드 버튼 (커스텀 포맷) ---
             if st.session_state.selected_articles:
                 excel_bytes = get_excel_download_custom_with_company_col(st.session_state.selected_articles, company_order)
                 st.download_button(
@@ -780,4 +761,9 @@ if st.session_state.search_results:
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
-    render_articles_with_single_summary_and_telegram(filtered_results, st.session_state.show_limit, show_sentiment_badge)
+    render_articles_with_single_summary_and_telegram(
+        filtered_results,
+        st.session_state.show_limit,
+        show_sentiment_badge=show_sentiment_badge,
+        enable_summary=enable_summary
+    )
