@@ -16,6 +16,9 @@ import telepot
 from openai import OpenAI
 import newspaper  # newspaper3k
 
+nltk.download('punkt', download_dir='/tmp/nltk_data')
+nltk.data.path.append('/tmp/nltk_data')
+
 # --- CSS 스타일 ---
 st.markdown("""
 <style>
