@@ -659,8 +659,8 @@ def safe_title(val):
         return "제목없음"
     return str(val)
 
-def get_excel_download_with_favorite_company_col(summary_data, favorite_categories):
-    # 1. A열 기업명 리스트 생성 (favorite_categories의 모든 기업명, 순서대로)
+def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories):
+    # 1. A열: favorite_categories의 기업명(검색 키워드와 동일)
     company_order = []
     for cat in [
         "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
@@ -668,24 +668,49 @@ def get_excel_download_with_favorite_company_col(summary_data, favorite_categori
     ]:
         company_order.extend(favorite_categories.get(cat, []))
 
+    # 2. B열: excel_company_categories의 기업명(엑셀 표기용)
+    excel_company_order = []
+    for cat in [
+        "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
+        "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"
+    ]:
+        excel_company_order.extend(excel_company_categories.get(cat, []))
+
     df_articles = pd.DataFrame(summary_data)
     result_rows = []
-    for company in company_order:
+    for idx, company in enumerate(company_order):
+        # B열 표기명: excel_company_order와 순서 맞추기 (없으면 빈 문자열)
+        excel_company_name = excel_company_order[idx] if idx < len(excel_company_order) else ""
+
         comp_articles = df_articles[df_articles["키워드"] == company]
         pos_news = comp_articles[comp_articles["감성"] == "긍정"].sort_values(by="날짜", ascending=False)
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
 
-        # B~F열: 기존 A~E열에서 한 칸씩 오른쪽으로 이동
-        row = {
-            "기업명": company,  # A열
-            "긍정적뉴스 날짜": pos_news.iloc[0]["날짜"] if not pos_news.empty else "",
-            "긍정적 뉴스 기사제목": f'=HYPERLINK("{pos_news.iloc[0]["링크"]}", "{safe_title(pos_news.iloc[0]["기사제목"])}")' if not pos_news.empty else "",
-            "긍정적 뉴스 요약": pos_news.iloc[0]["요약"] if not pos_news.empty else "",
-            "부정적뉴스 날짜": neg_news.iloc[0]["날짜"] if not neg_news.empty else "",
-            "부정적 뉴스 기사제목": f'=HYPERLINK("{neg_news.iloc[0]["링크"]}", "{safe_title(neg_news.iloc[0]["기사제목"])}")' if not neg_news.empty else "",
-            "부정적 뉴스 요약": neg_news.iloc[0]["요약"] if not neg_news.empty else "",
-        }
-        result_rows.append(row)
+        # C/D열: '(뉴스일자) 뉴스제목' 하이퍼링크
+        if not pos_news.empty:
+            pos_date = pos_news.iloc[0]["날짜"]
+            pos_title = pos_news.iloc[0]["기사제목"]
+            pos_link = pos_news.iloc[0]["링크"]
+            pos_display = f'({pos_date}) {pos_title}'
+            pos_hyperlink = f'=HYPERLINK("{pos_link}", "{pos_display}")'
+        else:
+            pos_hyperlink = ""
+
+        if not neg_news.empty:
+            neg_date = neg_news.iloc[0]["날짜"]
+            neg_title = neg_news.iloc[0]["기사제목"]
+            neg_link = neg_news.iloc[0]["링크"]
+            neg_display = f'({neg_date}) {neg_title}'
+            neg_hyperlink = f'=HYPERLINK("{neg_link}", "{neg_display}")'
+        else:
+            neg_hyperlink = ""
+
+        result_rows.append({
+            "기업명": company,               # A열: 검색 키워드(정확 매칭용)
+            "표기명": excel_company_name,    # B열: 엑셀 표기명
+            "긍정 뉴스": pos_hyperlink,      # C열: 긍정 뉴스 (날짜+제목 하이퍼링크)
+            "부정 뉴스": neg_hyperlink       # D열: 부정 뉴스 (날짜+제목 하이퍼링크)
+        })
 
     df_result = pd.DataFrame(result_rows)
     output = BytesIO()
@@ -799,6 +824,20 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
             excel_company_order = []
             for cat in ["국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈", "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"]:
                 excel_company_order.extend(excel_company_categories.get(cat, []))
+
+            if st.session_state.selected_articles:
+                excel_bytes = get_excel_download_with_favorite_and_excel_company_col(
+                    st.session_state.selected_articles,
+                    favorite_categories,
+                    excel_company_categories
+                )
+                st.download_button(
+                    label="📥 맞춤 엑셀 다운로드",
+                    data=excel_bytes.getvalue(),
+                    file_name="뉴스요약_맞춤형.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
 
             if st.session_state.selected_articles:
                 excel_bytes = get_excel_download_with_favorite_company_col(
