@@ -114,6 +114,57 @@ favorite_categories = {
     "특수채": ["주택도시보증공사", "기업은행"]
 }
 
+excel_company_categories = {
+    "국/공채": [],
+    "공공기관": [],
+    "보험사": [
+        "현대해상화재보험(후)", "농협생명보험(후)", "메리츠화재해상보험(후)", "교보생명(후)",
+        "삼성화재", "삼성생명", "신한라이프(후)", "흥국생명보험(후)", "동양생명보험(후)", "미래에셋생명(후)"
+    ],
+    "5대금융지주": [
+        "신한지주", "하나금융지주", "KB금융", "농협금융지주", "우리금융지주"
+    ],
+    "5대시중은행": [
+        "농협은행", "국민은행", "신한은행", "우리은행", "하나은행"
+    ],
+    "카드사": [
+        "케이비카드", "현대카드", "신한카드", "비씨카드", "삼성카드"
+    ],
+    "캐피탈": [
+        "한국캐피탈", "현대캐피탈"
+    ],
+    "지주사": [
+        "SK이노베이션", "지에스에너지", "SK", "GS"
+    ],
+    "에너지": [
+        "SK가스", "GS칼텍스", "S-Oil", "SK에너지", "에스케이엔무브", "코리아에너지터미널"
+    ],
+    "발전": [
+        "GS파워", "지에스이피에스", "삼천리"
+    ],
+    "자동차": [
+        "LG에너지솔루션", "한온시스템", "포스코퓨처엠", "한국타이어앤테크놀로지"
+    ],
+    "전기/전자": [
+        "SK하이닉스", "LG이노텍", "LG전자", "엘에스일렉트릭"
+    ],
+    "소비재": [
+        "이마트", "LF", "CJ제일제당", "SK네트웍스", "CJ대한통운"
+    ],
+    "비철/철강": [
+        "포스코", "현대제철", "고려아연"
+    ],
+    "석유화학": [
+        "LG화학", "SK지오센트릭"
+    ],
+    "건설": [
+        "포스코이앤씨"
+    ],
+    "특수채": [
+        "주택도시보증공사", "기업은행"
+    ]
+}
+
 company_filter_categories = {
     "현대해상": [],
     "농협생명": [],
@@ -741,9 +792,9 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
-            company_order = []
-            for cat in ["보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈", "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"]:
-                company_order.extend(favorite_categories.get(cat, []))
+            excel_company_order = []
+            for cat in ["국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈", "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"]:
+                excel_company_order.extend(excel_company_categories.get(cat, []))
 
             if st.session_state.selected_articles:
                 excel_bytes = get_excel_download_custom_with_company_col(st.session_state.selected_articles, company_order)
