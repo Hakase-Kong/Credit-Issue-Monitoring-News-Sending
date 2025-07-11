@@ -660,7 +660,7 @@ def safe_title(val):
     return str(val)
 
 def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories):
-    # 1. A열: favorite_categories의 기업명(검색 키워드와 동일)
+    # A열: favorite_categories의 기업명(검색 키워드와 동일)
     company_order = []
     for cat in [
         "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
@@ -668,7 +668,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     ]:
         company_order.extend(favorite_categories.get(cat, []))
 
-    # 2. B열: excel_company_categories의 기업명(엑셀 표기용)
+    # B열: excel_company_categories의 기업명(엑셀 표기용)
     excel_company_order = []
     for cat in [
         "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
@@ -679,7 +679,6 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     df_articles = pd.DataFrame(summary_data)
     result_rows = []
     for idx, company in enumerate(company_order):
-        # B열 표기명: excel_company_order와 순서 맞추기 (없으면 빈 문자열)
         excel_company_name = excel_company_order[idx] if idx < len(excel_company_order) else ""
 
         comp_articles = df_articles[df_articles["키워드"] == company]
@@ -838,18 +837,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-
-            if st.session_state.selected_articles:
-                excel_bytes = get_excel_download_with_favorite_company_col(
-                    st.session_state.selected_articles,
-                    favorite_categories
-                )
-                st.download_button(
-                    label="📥 맞춤 엑셀 다운로드",
-                    data=excel_bytes.getvalue(),
-                    file_name="뉴스요약_맞춤형.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
 
 if st.session_state.search_results:
     filtered_results = {}
