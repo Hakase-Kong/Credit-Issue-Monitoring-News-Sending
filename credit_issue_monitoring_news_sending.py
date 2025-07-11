@@ -153,12 +153,57 @@ common_filter_categories = {
         "횡령", "배임", "공정거래", "오너리스크", "대주주", "지배구조"
     ]
 }
-
-# 모든 공통 필터 키워드 하나의 리스트로 통합
 ALL_COMMON_FILTER_KEYWORDS = []
 for keywords in common_filter_categories.values():
     ALL_COMMON_FILTER_KEYWORDS.extend(keywords)
 
+# --- 산업별 필터 옵션 ---
+industry_filter_categories = {
+    "은행 및 금융지주": [
+        "경영실태평가", "BIS", "CET1", "자본비율", "상각형 조건부자본증권", "자본확충", "자본여력", "자본적정성", "LCR",
+        "조달금리", "NIM", "순이자마진", "고정이하여신비율", "대손충당금", "충당금", "부실채권", "연체율", "가계대출", "취약차주"
+    ],
+    "보험사": [
+        "보장성보험", "저축성보험", "변액보험", "퇴직연금", "일반보험", "자동차보험", "ALM", "지급여력비율", "K-ICS",
+        "보험수익성", "보험손익", "수입보험료", "CSM", "상각", "투자손익", "운용성과", "IFRS4", "IFRS17", "보험부채",
+        "장기선도금리", "최종관찰만기", "유동성 프리미엄", "신종자본증권", "후순위채", "위험자산비중", "가중부실자산비율"
+    ],
+    "카드사": [
+        "민간소비지표", "대손준비금", "가계부채", "연체율", "가맹점카드수수료", "대출성자산", "신용판매자산", "고정이하여신", "레버리지배율", "건전성"
+    ],
+    "캐피탈": [
+        "충당금커버리지비율", "고정이하여신", "PF구조조정", "리스자산", "손실흡수능력", "부동산PF연체채권", "자산포트폴리오", "건전성", "조정총자산수익률"
+    ],
+    "지주사": [],
+    "에너지": [
+        "정유", "유가", "정제마진", "스프레드", "가동률", "재고 손실", "중국 수요", "IMO 규제", "저유황 연료", "LNG"
+    ],
+    "발전": [
+        "LNG", "천연가스", "유가", "SMP", "REC", "계통시장", "탄소세", "탄소배출권", "전력시장 개편", "전력 자율화", "한파", "기온 상승"
+    ],
+    "자동차": [
+        "AMPC 보조금", "AMPC", "IRA", "IRA 인센티브", "중국 배터리", "EV 수요", "EV", "전기차", "ESS수요"
+    ],
+    "전기전자": [
+        "CHIPS 보조금", "CHIPS", "중국", "관세"
+    ],
+    "철강": [
+        "철광석", "후판", "강판", "철근", "스프레드", "철강", "가동률", "제철소", "셧다운", "중국산 저가", "중국 수출 감소", "건설경기", "조선 수요", "파업"
+    ],
+    "비철": [],
+    "소매": [
+        "내수부진", "시장지배력"
+    ],
+    "석유화학": [
+        "석유화학", "석화", "유가", "증설", "스프레드", "가동률", "PX", "벤젠", "중국 증설", "중동 COTC"
+    ],
+    "건설": [
+        "철근 가격", "시멘트 가격", "공사비", "SOC 예산", "도시정비 지원", "우발채무", "수주", "주간사", "사고", "시공능력순위", "미분양", "대손충당금"
+    ],
+    "특수채": ["자본확충"]
+}
+
+# --- UI 시작 ---
 st.set_page_config(layout="wide")
 col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
 with col_title:
@@ -191,6 +236,33 @@ with date_col1:
     start_date = st.date_input("시작일")
 with date_col2:
     end_date = st.date_input("종료일")
+
+# --- 공통 필터 옵션 (항상 적용, 전체 키워드 가시적으로 표시) ---
+with st.expander("🧩 공통 필터 옵션 (항상 적용됨)"):
+    for major, subs in common_filter_categories.items():
+        st.markdown(f"**{major}**: {', '.join(subs)}")
+
+# --- 산업별 필터 옵션 ---
+with st.expander("🏭 산업별 필터 옵션"):
+    use_industry_filter = st.checkbox("이 필터 적용", value=False, key="use_industry_filter")
+    col_major, col_sub = st.columns([1, 1])
+    with col_major:
+        selected_majors = st.multiselect(
+            "대분류(산업)",
+            list(industry_filter_categories.keys()),
+            key="industry_majors"
+        )
+    with col_sub:
+        sub_options = []
+        for major in selected_majors:
+            sub_options.extend(industry_filter_categories.get(major, []))
+        sub_options = sorted(set(sub_options))
+        selected_sub = st.multiselect(
+            "소분류(필터 키워드)",
+            sub_options,
+            default=sub_options,
+            key="industry_sub"
+        )
 
 # --- 키워드 필터 옵션 (하단으로 이동) ---
 with st.expander("🔍 키워드 필터 옵션"):
@@ -448,11 +520,14 @@ if category_search_clicked and selected_categories:
 
 # --- 기사 필터링 함수 ---
 def article_passes_all_filters(article):
+    filters = []
+    # 공통 필터 항상 적용
+    filters.append(ALL_COMMON_FILTER_KEYWORDS)
+    # 산업별 필터 사용 시 적용
+    if st.session_state.get("use_industry_filter", False):
+        filters.append(st.session_state.get("industry_sub", []))
     # 제외 키워드
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
-        return False
-    # 공통 필터 키워드 항상 적용
-    if not or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS):
         return False
     # 키워드 정확 포함 옵션
     if st.session_state.get("require_exact_keyword_in_title_or_content", False):
@@ -464,7 +539,7 @@ def article_passes_all_filters(article):
                 all_keywords.extend(favorite_categories[cat])
         if not article_contains_exact_keyword(article, all_keywords):
             return False
-    return True
+    return or_keyword_filter(article, *filters)
 
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
