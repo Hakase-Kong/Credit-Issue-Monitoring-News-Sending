@@ -659,7 +659,15 @@ def safe_title(val):
         return "제목없음"
     return str(val)
 
-def get_excel_download_custom_with_company_col(summary_data, company_order):
+def get_excel_download_with_favorite_company_col(summary_data, favorite_categories):
+    # 1. A열 기업명 리스트 생성 (favorite_categories의 모든 기업명, 순서대로)
+    company_order = []
+    for cat in [
+        "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
+        "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"
+    ]:
+        company_order.extend(favorite_categories.get(cat, []))
+
     df_articles = pd.DataFrame(summary_data)
     result_rows = []
     for company in company_order:
@@ -667,21 +675,17 @@ def get_excel_download_custom_with_company_col(summary_data, company_order):
         pos_news = comp_articles[comp_articles["감성"] == "긍정"].sort_values(by="날짜", ascending=False)
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
 
-        pos_title = safe_title(pos_news.iloc[0]["기사제목"]) if not pos_news.empty else "제목없음"
-        pos_link = pos_news.iloc[0]["링크"] if not pos_news.empty else ""
-        pos_date = pos_news.iloc[0]["날짜"] if not pos_news.empty else ""
-
-        neg_title = safe_title(neg_news.iloc[0]["기사제목"]) if not neg_news.empty else "제목없음"
-        neg_link = neg_news.iloc[0]["링크"] if not neg_news.empty else ""
-        neg_date = neg_news.iloc[0]["날짜"] if not neg_news.empty else ""
-
-        result_rows.append({
-            "기업명": company,
-            "긍정적뉴스 날짜": pos_date,
-            "긍정적 뉴스 기사제목": f'=HYPERLINK("{pos_link}", "{pos_title}")' if pos_link else "",
-            "부정적뉴스 날짜": neg_date,
-            "부정적 뉴스 기사제목": f'=HYPERLINK("{neg_link}", "{neg_title}")' if neg_link else ""
-        })
+        # B~F열: 기존 A~E열에서 한 칸씩 오른쪽으로 이동
+        row = {
+            "기업명": company,  # A열
+            "긍정적뉴스 날짜": pos_news.iloc[0]["날짜"] if not pos_news.empty else "",
+            "긍정적 뉴스 기사제목": f'=HYPERLINK("{pos_news.iloc[0]["링크"]}", "{safe_title(pos_news.iloc[0]["기사제목"])}")' if not pos_news.empty else "",
+            "긍정적 뉴스 요약": pos_news.iloc[0]["요약"] if not pos_news.empty else "",
+            "부정적뉴스 날짜": neg_news.iloc[0]["날짜"] if not neg_news.empty else "",
+            "부정적 뉴스 기사제목": f'=HYPERLINK("{neg_news.iloc[0]["링크"]}", "{safe_title(neg_news.iloc[0]["기사제목"])}")' if not neg_news.empty else "",
+            "부정적 뉴스 요약": neg_news.iloc[0]["요약"] if not neg_news.empty else "",
+        }
+        result_rows.append(row)
 
     df_result = pd.DataFrame(result_rows)
     output = BytesIO()
@@ -797,7 +801,10 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 excel_company_order.extend(excel_company_categories.get(cat, []))
 
             if st.session_state.selected_articles:
-                excel_bytes = get_excel_download_custom_with_company_col(st.session_state.selected_articles, excel_company_order)
+                excel_bytes = get_excel_download_with_favorite_company_col(
+                    st.session_state.selected_articles,
+                    favorite_categories
+                )
                 st.download_button(
                     label="📥 맞춤 엑셀 다운로드",
                     data=excel_bytes.getvalue(),
