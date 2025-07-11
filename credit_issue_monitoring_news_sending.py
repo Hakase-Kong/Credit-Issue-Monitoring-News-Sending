@@ -1,23 +1,26 @@
 import nltk
+import os
+
+NLTK_DATA_PATH = '/tmp/nltk_data'
+os.makedirs(NLTK_DATA_PATH, exist_ok=True)
+os.environ['NLTK_DATA'] = NLTK_DATA_PATH
+if NLTK_DATA_PATH not in nltk.data.path:
+    nltk.data.path.append(NLTK_DATA_PATH)
 
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
-    nltk.download('punkt')
+    nltk.download('punkt', download_dir=NLTK_DATA_PATH)
 
 import streamlit as st
 import pandas as pd
 from io import BytesIO
 import requests
 import re
-import os
 from datetime import datetime
 import telepot
 from openai import OpenAI
 import newspaper  # newspaper3k
-
-nltk.download('punkt', download_dir='/tmp/nltk_data')
-nltk.data.path.append('/tmp/nltk_data')
 
 # --- CSS 스타일 ---
 st.markdown("""
