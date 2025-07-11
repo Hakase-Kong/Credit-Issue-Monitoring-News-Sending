@@ -797,7 +797,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 excel_company_order.extend(excel_company_categories.get(cat, []))
 
             if st.session_state.selected_articles:
-                excel_bytes = get_excel_download_custom_with_company_col(st.session_state.selected_articles, company_order)
+                excel_bytes = get_excel_download_custom_with_company_col(st.session_state.selected_articles, excel_company_order)
                 st.download_button(
                     label="📥 맞춤 엑셀 다운로드",
                     data=excel_bytes.getvalue(),
