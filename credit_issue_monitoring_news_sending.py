@@ -442,6 +442,12 @@ def is_english(text):
     return all(ord(c) < 128 for c in text if c.isalpha())
 
 # --- 중복 기사 제거 함수 ---
+from difflib import SequenceMatcher
+
+def is_similar_title(title1, title2, threshold=0.75):
+    ratio = SequenceMatcher(None, title1, title2).ratio()
+    return ratio > threshold
+
 def remove_duplicate_articles(articles):
     seen = set()
     unique_articles = []
@@ -452,19 +458,18 @@ def remove_duplicate_articles(articles):
             seen.add(link)
     return unique_articles
 
-from difflib import SequenceMatcher
-
-def is_similar_title(title1, title2, threshold=0.85):
-    ratio = SequenceMatcher(None, title1, title2).ratio()
-    return ratio > threshold
-
-def remove_duplicate_articles_by_title(articles, threshold=0.85):
+def remove_duplicate_articles_by_title(articles, threshold=0.75):
     unique_articles = []
     for article in articles:
         title = article.get("title", "")
-        if not any(is_similar_title(title, a.get("title", "")) for a in unique_articles):
+        if not any(is_similar_title(title, a.get("title", ""), threshold) for a in unique_articles):
             unique_articles.append(article)
     return unique_articles
+
+def deduplicate_articles(articles, title_threshold=0.75):
+    articles = remove_duplicate_articles(articles)
+    articles = remove_duplicate_articles_by_title(articles, threshold=title_threshold)
+    return articles
 
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
     for k in keyword_list:
