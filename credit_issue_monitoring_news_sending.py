@@ -8,6 +8,7 @@ from datetime import datetime
 import telepot
 from openai import OpenAI
 import newspaper  # newspaper3k
+from difflib import SequenceMatcher
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -281,7 +282,7 @@ with st.expander("🔍 키워드 필터 옵션"):
 # --- 본문 추출 함수 ---
 def extract_article_text(url):
     try:
-        article = newspaper.Article(url)
+        article = newspaper.article(url)
         article.download()
         article.parse()
         return article.text
@@ -449,6 +450,20 @@ def remove_duplicate_articles(articles):
         if link and link not in seen:
             unique_articles.append(article)
             seen.add(link)
+    return unique_articles
+
+from difflib import SequenceMatcher
+
+def is_similar_title(title1, title2, threshold=0.85):
+    ratio = SequenceMatcher(None, title1, title2).ratio()
+    return ratio > threshold
+
+def remove_duplicate_articles_by_title(articles, threshold=0.85):
+    unique_articles = []
+    for article in articles:
+        title = article.get("title", "")
+        if not any(is_similar_title(title, a.get("title", "")) for a in unique_articles):
+            unique_articles.append(article)
     return unique_articles
 
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
