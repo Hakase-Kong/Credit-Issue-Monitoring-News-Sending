@@ -8,6 +8,7 @@ from datetime import datetime
 import telepot
 from openai import OpenAI
 import newspaper  # newspaper3k
+import difflib
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -441,14 +442,20 @@ def is_english(text):
     return all(ord(c) < 128 for c in text if c.isalpha())
 
 # --- 중복 기사 제거 함수 ---
-def remove_duplicate_articles(articles):
-    seen = set()
+def remove_duplicate_articles_by_title(articles, threshold=0.75):
     unique_articles = []
+    titles = []
     for article in articles:
-        link = article.get("link")
-        if link and link not in seen:
+        title = article.get("title", "")
+        is_duplicate = False
+        for existing_title in titles:
+            similarity = difflib.SequenceMatcher(None, title, existing_title).ratio()
+            if similarity >= threshold:
+                is_duplicate = True
+                break
+        if not is_duplicate:
             unique_articles.append(article)
-            seen.add(link)
+            titles.append(title)
     return unique_articles
 
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
@@ -457,7 +464,7 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
             articles = fetch_gnews_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
         else:
             articles = fetch_naver_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
-        articles = remove_duplicate_articles(articles)
+        articles = remove_duplicate_articles_by_title(articles, threshold=0.75)
         st.session_state.search_results[k] = articles
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
@@ -626,7 +633,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
         st.markdown("### 기사 요약 결과")
         for keyword, articles in results.items():
             # 렌더링 직전 중복 기사 제거
-            articles = remove_duplicate_articles(articles)
+            articles = remove_duplicate_articles_by_title(articles, threshold=0.75)
+
             with st.container(border=True):
                 st.markdown(f"**[{keyword}]**")
                 limit = st.session_state.show_limit.get(keyword, 5)
@@ -675,7 +683,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     return "제목없음"
                 return str(val)
             for keyword, articles in results.items():
-                articles = remove_duplicate_articles(articles)
+                articles = remove_duplicate_articles_by_title(articles, threshold=0.75)
                 limit = st.session_state.show_limit.get(keyword, 5)
                 for idx, article in enumerate(articles[:limit]):
                     unique_id = re.sub(r'\W+', '', article['link'])[-16:]
