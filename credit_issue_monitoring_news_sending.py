@@ -282,7 +282,7 @@ with st.expander("🔍 키워드 필터 옵션"):
 # --- 본문 추출 함수 ---
 def extract_article_text(url):
     try:
-        article = newspaper.article(url)
+        article = newspaper.Article(url)
         article.download()
         article.parse()
         return article.text
