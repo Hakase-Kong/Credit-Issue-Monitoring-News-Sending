@@ -252,7 +252,7 @@ with col_option2:
 
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
 with col_kw_input:
-    keywords_input = st.text_input(value="", key="keyword_input", label_visibility="visible")
+    keywords_input = st.text_input(, value="", key="keyword_input", label_visibility="visible")
 with col_kw_btn:
     search_clicked = st.button("검색", key="search_btn", help="키워드로 검색", use_container_width=True)
 
@@ -260,7 +260,7 @@ st.markdown("**⭐ 산업군 선택**")
 col_cat_input, col_cat_btn = st.columns([0.8, 0.2])
 with col_cat_input:
     selected_categories = st.multiselect(
-        list(favorite_categories.keys()), key="cat_multi"
+        , list(favorite_categories.keys()), key="cat_multi"
         )
 if selected_categories:
     auto_selected_majors = get_industry_majors_from_favorites(selected_categories)
