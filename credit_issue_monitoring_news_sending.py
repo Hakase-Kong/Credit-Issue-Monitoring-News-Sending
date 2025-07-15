@@ -252,7 +252,7 @@ with col_option2:
 
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
 with col_kw_input:
-    keywords_input = st.text_input("", value="", key="keyword_input", label_visibility="visible")
+    keywords_input = st.text_input(value="", key="keyword_input", label_visibility="visible")
 with col_kw_btn:
     search_clicked = st.button("검색", key="search_btn", help="키워드로 검색", use_container_width=True)
 
@@ -260,7 +260,6 @@ st.markdown("**⭐ 산업군 선택**")
 col_cat_input, col_cat_btn = st.columns([0.8, 0.2])
 with col_cat_input:
     selected_categories = st.multiselect(
-        "",
         list(favorite_categories.keys()), key="cat_multi"
         )
 if selected_categories:
@@ -314,7 +313,7 @@ with st.expander("🏭 산업별 필터 옵션"):
         )
 
 with st.expander("🔍 키워드 필터 옵션"):
-    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False, key="require_keyword_in_title")
+    require_keyword_in_title = st.checkbox("기사 제목에 키워드가 포함된 경우만 보기", value=False, key="require_keyword_in_title", on_change=st.rerun)
     require_exact_keyword_in_title_or_content = st.checkbox("키워드가 온전히 제목 또는 본문에 포함된 기사만 보기", value=False, key="require_exact_keyword_in_title_or_content")
 
 def extract_article_text(url):
@@ -520,17 +519,26 @@ def article_passes_all_filters(article):
         filters.append(st.session_state.get("industry_sub", []))
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
+
+    # [추가] 기사 제목에 키워드가 반드시 있을 때만 통과 옵션 적용
+    if st.session_state.get("require_keyword_in_title", False):
+        keyword_list = []
+        if "keyword_input" in st.session_state:
+            keyword_list = [k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()]
+        if not any(kw in article.get('title', '') for kw in keyword_list):
+            return False
+
     if st.session_state.get("require_exact_keyword_in_title_or_content", False):
         all_keywords = []
-        if keywords_input:
-            all_keywords.extend([k.strip() for k in keywords_input.split(",") if k.strip()])
-        if selected_categories:
-            for cat in selected_categories:
+        if "keyword_input" in st.session_state:
+            all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
+        if "cat_multi" in st.session_state:
+            for cat in st.session_state["cat_multi"]:
                 all_keywords.extend(favorite_categories[cat])
         if not article_contains_exact_keyword(article, all_keywords):
             return False
 
-    # ✅ 날짜 범위 필터 추가
+    # 날짜 범위 필터
     try:
         pub_date = datetime.strptime(article['date'], '%Y-%m-%d').date()
         if pub_date < st.session_state.get("start_date", datetime.today().date()) or pub_date > st.session_state.get("end_date", datetime.today().date()):
@@ -539,6 +547,7 @@ def article_passes_all_filters(article):
         return False
 
     return or_keyword_filter(article, *filters)
+
 
 
 def safe_title(val):
