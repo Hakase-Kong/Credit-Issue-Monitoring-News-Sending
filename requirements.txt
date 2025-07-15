@@ -5,5 +5,4 @@ pandas
 newspaper3k
 telepot
 xlsxwriter
-python-dotenv
-lxml
+lxml_html_clean
