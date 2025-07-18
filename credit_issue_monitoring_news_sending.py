@@ -836,6 +836,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
 
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
+            render_selected_important_articles()
 
             st.download_button(
                 label="📥 맞춤 엑셀 다운로드",
@@ -1047,53 +1048,61 @@ def run_generate_important_articles_and_store():
         st.success("OpenAI 자동 선정 완료!")
 
 def render_selected_important_articles():
-    st.markdown("### ⭐ 중요 기사 확정/교체")
+    st.markdown("### ⭐ 중요 기사 확정 / 교체")
 
-    col_action = st.columns([0.5, 0.25, 0.25])
-    with col_action[0]:
-        if st.button("🤖 OpenAI로 자동선정"):
+    # 버튼들을 가로 나열
+    col1, col2, col3 = st.columns([0.5, 0.25, 0.25])
+    with col1:
+        if st.button("🤖 OpenAI로 중요 기사 자동선정"):
             run_generate_important_articles_and_store()
             st.rerun()
-    with col_action[1]:
+    with col2:
         if st.button("🔁 선택 기사로 교체"):
             comp = st.session_state.important_article_selected.get("company")
             senti = st.session_state.important_article_selected.get("sentiment")
-            found = False
-            if comp and senti:
-                for kw, arts in st.session_state.search_results.items():
-                    for idx, article in enumerate(arts):
+            if not (comp and senti):
+                st.warning("우측에서 교체할 위치(긍정 or 부정)를 먼저 선택하세요.")
+            else:
+                found = False
+                for keyword, articles in st.session_state.search_results.items():
+                    for idx, article in enumerate(articles):
                         uid = re.sub(r'\W+', '', article["link"])[-16:]
-                        key = f"{kw}_{idx}_{uid}"
-                        if st.session_state.article_checked.get(key, False):
+                        key = f"{keyword}_{idx}_{uid}"
+                        if st.session_state.article_checked.get(key):
+                            # 교체 수행
                             st.session_state.selected_important_articles[comp][senti] = article
                             st.session_state.important_article_selected = {"company": None, "sentiment": None}
                             st.session_state.article_checked[key] = False
-                            st.success(f"{comp}의 [{senti}] 기사 교체 완료!")
+                            st.success(f"{comp} 의 [{senti}] 뉴스가 성공적으로 교체되었습니다!")
                             st.rerun()
                             found = True
+                            break
+                    if found:
+                        break
                 if not found:
-                    st.warning("좌측에서 교체할 기사를 1개 선택하세요.")
-            else:
-                st.warning("먼저 우측에서 교체할 위치를 체크하세요.")
-
-    with col_action[2]:
-        if st.button("❌ 선택 삭제"):
-            sel = st.session_state.important_article_selected.copy()
-            if sel["company"] and sel["sentiment"]:
-                st.session_state.selected_important_articles[sel["company"]][sel["sentiment"]] = None
+                    st.warning("좌측 뉴스 영역에서 교체할 기사를 체크하세요.")
+    with col3:
+        if st.button("❌ 선택된 중요 기사 삭제"):
+            target = st.session_state.important_article_selected.copy()
+            if target["company"] and target["sentiment"]:
+                st.session_state.selected_important_articles[target["company"]][target["sentiment"]] = None
+                st.success(f"{target['company']} 의 [{target['sentiment']}] 기사 삭제 완료")
                 st.session_state.important_article_selected = {"company": None, "sentiment": None}
                 st.rerun()
             else:
-                st.warning("먼저 삭제할 항목을 체크하세요.")
+                st.warning("삭제할 대상을 우측에서 먼저 선택하세요.")
 
-    for company in st.session_state.search_results.keys():  # ✅ 검색된 키워드만 표시
-        each = st.session_state.selected_important_articles.get(company, {"긍정": None, "부정": None})
+    # ✅ 중요 기사 목록: 현재 검색된 키워드만 보여줌
+    for company in st.session_state.search_results.keys():
+        imp_articles = st.session_state.selected_important_articles.get(company, {"긍정": None, "부정": None})
         st.markdown(f"**🔸 {company}**")
-        cols_chk = st.columns([0.5, 0.5])
-        for i, senti in enumerate(["긍정", "부정"]):
-            a = each.get(senti)
-            label = f"[{senti}] {a['title'][:40]}..." if a else f"[{senti}] 없음"
-            if cols_chk[i].checkbox(label, key=f"impchk_{company}_{senti}"):
+        col_pos, col_neg = st.columns(2)
+
+        for senti, col in zip(["긍정", "부정"], [col_pos, col_neg]):
+            article = imp_articles.get(senti)
+            label = f"[{senti}] {article['title'][:40]}..." if article else f"[{senti}] - 없음"
+            checked = col.checkbox(label, key=f"impchk_{company}_{senti}")
+            if checked:
                 st.session_state.important_article_selected = {"company": company, "sentiment": senti}
 
 def render_article_replacement_ui():
