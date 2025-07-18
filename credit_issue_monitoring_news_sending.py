@@ -9,6 +9,7 @@ import telepot
 from openai import OpenAI
 import newspaper
 import difflib
+from urllib.parse import urlparse
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -34,7 +35,6 @@ EXCLUDE_TITLE_KEYWORDS = [
     "봉사", "후원", "기부", "우승", "무승부", "패배", "스포츠", "스폰서", "지속가능", "ESG", "위촉", "이벤트", "사전예약", "챔프전",
     "프로모션", "연극", "공연", "어르신"
 ]
-
 def exclude_by_title_keywords(title, exclude_keywords):
     for word in exclude_keywords:
         if word in title:
@@ -246,7 +246,12 @@ def get_industry_majors_from_favorites(selected_categories):
 st.set_page_config(layout="wide")
 col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
 with col_title:
-    st.markdown("<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>📊 Credit Issue Monitoring</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>"
+        "<a href='https://credit-issue-monitoring.onrender.com/' target='_blank' style='text-decoration:none; color:#1a1a1a;'>"
+        "📊 Credit Issue Monitoring</a></h1>",
+        unsafe_allow_html=True
+    )
 with col_option1:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False, key="show_sentiment_badge")
 with col_option2:
@@ -315,8 +320,11 @@ with st.expander("🏭 산업별 필터 옵션"):
             key="industry_sub"
         )
 
+# --- 중복 기사 제거 기능 체크박스 포함된 키워드 필터 옵션 ---
 with st.expander("🔍 키워드 필터 옵션"):
-        require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", value=True, key="require_exact_keyword_in_title_or_content")
+    require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", value=True, key="require_exact_keyword_in_title_or_content")
+    # 중복 기사 제거 체크박스 추가 (기본 해제)
+    remove_duplicate_articles = st.checkbox("중복 기사 제거", value=False, key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
 
 def extract_article_text(url):
     try:
@@ -381,6 +389,12 @@ def summarize_and_sentiment_with_openai(text, do_summary=True):
         sentiment = '긍정' if sentiment.lower() == 'positive' else '부정'
     return one_line, summary, sentiment, text
 
+def infer_source_from_url(url):
+    domain = urlparse(url).netloc
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
 NAVER_CLIENT_ID = "_qXuzaBGk_jQesRRPRvu"
 NAVER_CLIENT_SECRET = "lZc2gScgNq"
 TELEGRAM_TOKEN = "7033950842:AAFk4pSb5qtNj435Gf2B5-rPlFrlNqhZFuQ"
@@ -417,10 +431,12 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
         response = requests.get("https://openapi.naver.com/v1/search/news.json", headers=headers, params=params)
         if response.status_code != 200:
             break
+
         items = response.json().get("items", [])
         for item in items:
             title, desc = item["title"], item["description"]
             pub_date = datetime.strptime(item["pubDate"], "%a, %d %b %Y %H:%M:%S %z").date()
+
             if start_date and pub_date < start_date:
                 continue
             if end_date and pub_date > end_date:
@@ -429,16 +445,24 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
                 continue
             if exclude_by_title_keywords(re.sub("<.*?>", "", title), EXCLUDE_TITLE_KEYWORDS):
                 continue
+
+            # 언론사명 가져오기 + 기본값 처리 + 도메인 기반 추출 보완
+            source = item.get("source")
+            if not source or source.strip() == "":
+                source = infer_source_from_url(item.get("originallink", ""))
+                if not source:
+                    source = "Naver"
+
             articles.append({
                 "title": re.sub("<.*?>", "", title),
                 "link": item["link"],
                 "date": pub_date.strftime("%Y-%m-%d"),
-                "source": "Naver"
+                "source": source
             })
+
         if len(items) < 100:
             break
     return articles[:limit]
-
 
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
     for k in keyword_list:
@@ -480,6 +504,21 @@ def article_contains_exact_keyword(article, keywords):
             return True
     return False
 
+# --- 중복 기사 제거 함수 ---
+def is_similar(title1, title2, threshold=0.6):
+    ratio = difflib.SequenceMatcher(None, title1, title2).ratio()
+    return ratio >= threshold
+
+def remove_duplicates(articles):
+    unique_articles = []
+    titles = []
+    for article in articles:
+        title = article.get("title", "")
+        if all(not is_similar(title, existing_title) for existing_title in titles):
+            unique_articles.append(article)
+            titles.append(title)
+    return unique_articles
+
 search_clicked = False
 if keywords_input:
     keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
@@ -498,7 +537,7 @@ if search_clicked or st.session_state.get("search_triggered"):
                 keyword_list,
                 st.session_state["start_date"],
                 st.session_state["end_date"],
-                require_keyword_in_title=st.session_state.get("require_keyword_in_title", False)
+                require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
             )
     st.session_state.search_triggered = False
 
@@ -511,7 +550,7 @@ if category_search_clicked and selected_categories:
             sorted(keywords),
             st.session_state["start_date"],
             st.session_state["end_date"],
-            require_keyword_in_title=st.session_state.get("require_keyword_in_title", False)
+            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
 
 def article_passes_all_filters(article):
@@ -716,8 +755,14 @@ if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+        
+        # --- 중복 기사 제거 처리 ---
+        if st.session_state.get("remove_duplicate_articles", False):
+            filtered_articles = remove_duplicates(filtered_articles)
+        
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
+
     render_articles_with_single_summary_and_telegram(
         filtered_results,
         st.session_state.show_limit,
