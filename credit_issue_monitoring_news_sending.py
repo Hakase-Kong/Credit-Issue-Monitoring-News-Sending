@@ -602,14 +602,16 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"
     ]:
         excel_company_order.extend(excel_company_categories.get(cat, []))
+
     df_articles = pd.DataFrame(summary_data)
 
+    # ✅ 보호 로직: '키워드' 컬럼이 없으면 빈 엑셀 반환
     if "키워드" not in df_articles.columns:
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        pd.DataFrame(columns=["기업명", "표기명", "긍정 뉴스", "부정 뉴스"]).to_excel(writer, index=False)
-    output.seek(0)
-    return output
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            pd.DataFrame(columns=["기업명", "표기명", "긍정 뉴스", "부정 뉴스"]).to_excel(writer, index=False)
+        output.seek(0)
+        return output
 
     result_rows = []
     for idx, company in enumerate(company_order):
@@ -617,6 +619,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         comp_articles = df_articles[df_articles["키워드"] == company]
         pos_news = comp_articles[comp_articles["감성"] == "긍정"].sort_values(by="날짜", ascending=False)
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
+
         if not pos_news.empty:
             pos_date = pos_news.iloc[0]["날짜"]
             pos_title = pos_news.iloc[0]["기사제목"]
@@ -625,6 +628,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
             pos_hyperlink = f'=HYPERLINK("{pos_link}", "{pos_display}")'
         else:
             pos_hyperlink = ""
+
         if not neg_news.empty:
             neg_date = neg_news.iloc[0]["날짜"]
             neg_title = neg_news.iloc[0]["기사제목"]
@@ -633,12 +637,14 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
             neg_hyperlink = f'=HYPERLINK("{neg_link}", "{neg_display}")'
         else:
             neg_hyperlink = ""
+
         result_rows.append({
             "기업명": company,
             "표기명": excel_company_name,
             "긍정 뉴스": pos_hyperlink,
             "부정 뉴스": neg_hyperlink
         })
+
     df_result = pd.DataFrame(result_rows)
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
