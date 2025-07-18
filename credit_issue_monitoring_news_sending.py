@@ -603,6 +603,14 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     ]:
         excel_company_order.extend(excel_company_categories.get(cat, []))
     df_articles = pd.DataFrame(summary_data)
+
+    if "키워드" not in df_articles.columns:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        pd.DataFrame(columns=["기업명", "표기명", "긍정 뉴스", "부정 뉴스"]).to_excel(writer, index=False)
+    output.seek(0)
+    return output
+
     result_rows = []
     for idx, company in enumerate(company_order):
         excel_company_name = excel_company_order[idx] if idx < len(excel_company_order) else ""
