@@ -638,6 +638,42 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     output.seek(0)
     return output
 
+def get_important_article_via_openai(candidates, sentiment_type, filter_keywords):
+    prompt = (
+        f"다음은 '{sentiment_type}' 감성으로 분류된 뉴스 기사 목록입니다.\n"
+        f"기사 제목에 아래 키워드 중 하나라도 포함된 기사만 고려하십시오:\n"
+        f"{', '.join(filter_keywords)}\n\n"
+        f"각 기사:\n"
+    )
+    filtered_candidates = [
+        a for a in candidates
+        if a['감성'] == sentiment_type and any(k in a['기사제목'] for k in filter_keywords)
+    ]
+    if not filtered_candidates:
+        return None  # 조건 만족하는 기사 없음
+
+    for idx, a in enumerate(filtered_candidates):
+        prompt += f"{idx+1}. 제목: {a['기사제목']}\n   요약: {a['요약']}\n   링크: {a['링크']}\n"
+
+    prompt += (
+        "\n이 중에서 가장 중요하고 핵심적인 기사 하나만 골라주세요.\n"
+        "해당 기사의 ‘기사 제목’만 그대로 출력해주세요. 선택하지 않을 경우 '없음'이라고 적어주세요."
+    )
+
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=400,
+        temperature=0.2,
+    )
+    answer = response.choices[0].message.content.strip()
+    if answer.lower() in ["없음", "no article", "none"]:
+        return None
+    for art in filtered_candidates:
+        if art['기사제목'] in answer or art['기사제목'][:30] in answer:
+            return art
+    return None
+
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
     SENTIMENT_CLASS = {
         "긍정": "sentiment-positive",
