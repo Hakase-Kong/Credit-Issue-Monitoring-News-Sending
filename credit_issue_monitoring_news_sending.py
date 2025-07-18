@@ -54,6 +54,12 @@ if "selected_articles" not in st.session_state:
     st.session_state.selected_articles = []
 if "cat_major_autoset" not in st.session_state:
     st.session_state.cat_major_autoset = []
+if "selected_important_articles" not in st.session_state:
+    st.session_state["selected_important_articles"] = {}
+if "keyword_to_replace" not in st.session_state:
+    st.session_state["keyword_to_replace"] = None
+if "sentiment_to_replace" not in st.session_state:
+    st.session_state["sentiment_to_replace"] = None
 
 # --- 즐겨찾기 카테고리(변경 금지) ---
 favorite_categories = {
@@ -878,3 +884,141 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
+
+def run_generate_important_articles_and_store():
+    with st.spinner("OpenAI로 중요 기사 추출 중..."):
+        OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        selected_articles = {}
+
+        for category, companies in favorite_categories.items():
+            for company in companies:
+                articles = st.session_state.search_results.get(company, [])
+                filtered_keywords = list(set(ALL_COMMON_FILTER_KEYWORDS + st.session_state.get("industry_sub", [])))
+                target_articles = [a for a in articles if any(kw in a["title"] for kw in filtered_keywords)]
+                if not target_articles:
+                    selected_articles[company] = {"긍정": None, "부정": None}
+                    continue
+
+                prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
+                prompt = (
+                    f"[필터 키워드]\n{', '.join(filtered_keywords)}\n\n"
+                    f"[기사 목록]\n{prompt_list}\n\n"
+                    "각 기사에 대해 감성(긍정/부정)을 판단하고,\n"
+                    "제목에 필터 키워드가 포함된 뉴스만 기준으로,\n"
+                    "- 긍정에서 가장 중요한 뉴스 1건\n"
+                    "- 부정에서 가장 중요한 뉴스 1건\n"
+                    "제목만 아래 형식으로:\n\n"
+                    "[긍정]: (뉴스 제목)\n[부정]: (뉴스 제목)"
+                )
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=800,
+                        temperature=0.3
+                    )
+                    content = response.choices[0].message.content.strip()
+                    import re
+                    pos_title = re.search(r"\[긍정\]:\s*(.+)", content)
+                    neg_title = re.search(r"\[부정\]:\s*(.+)", content)
+                    pos_title = pos_title.group(1).strip() if pos_title else ""
+                    neg_title = neg_title.group(1).strip() if neg_title else ""
+
+                    def find_article(title):
+                        for art in target_articles:
+                            if title in art["title"]:
+                                return art
+                        return None
+
+                    selected_articles[company] = {
+                        "긍정": find_article(pos_title),
+                        "부정": find_article(neg_title)
+                    }
+                except:
+                    selected_articles[company] = {"긍정": None, "부정": None}
+
+        st.session_state.selected_important_articles = selected_articles
+        st.success("자동 기사 선정 완료!")
+
+
+def render_selected_important_articles():
+    st.markdown("### ✅ 자동 선정된 중요 기사 (수정 가능)")
+
+    for company, data in st.session_state.selected_important_articles.items():
+        st.markdown(f"**🔸 {company}**")
+        cols = st.columns([0.6, 0.2, 0.2])
+        for sentiment in ["긍정", "부정"]:
+            article = data.get(sentiment)
+            if article:
+                cols[0].markdown(f"[{sentiment}] [{article['title']}]({article['link']})")
+            else:
+                cols[0].markdown(f"[{sentiment}] _선택된 기사 없음_")
+            if cols[1].button(f"🗑️ 삭제_{company}_{sentiment}"):
+                st.session_state.selected_important_articles[company][sentiment] = None
+                st.rerun()
+            if cols[2].button(f"🔁 교체_{company}_{sentiment}"):
+                st.session_state.keyword_to_replace = company
+                st.session_state.sentiment_to_replace = sentiment
+                st.rerun()
+
+
+def render_article_replacement_ui():
+    keyword = st.session_state.get("keyword_to_replace")
+    senti = st.session_state.get("sentiment_to_replace")
+    if not (keyword and senti):
+        return
+    articles = st.session_state.search_results.get(keyword, [])
+    st.markdown(f"### 🔁 `{keyword}`의 `{senti}` 뉴스 교체")
+    for idx, a in enumerate(articles):
+        st.markdown(f"**{a['title']}** ({a['date']} | {a['source']})")
+        if st.button(f"👉 이 뉴스로 교체 ({idx})", key=f"replace_{idx}"):
+            st.session_state.selected_important_articles[keyword][senti] = a
+            st.session_state.keyword_to_replace = None
+            st.session_state.sentiment_to_replace = None
+            st.success("기사 교체 완료!")
+            st.rerun()
+
+
+def download_final_important_articles_excel():
+    output_data = []
+    for company, data in st.session_state.selected_important_articles.items():
+        pos, neg = data.get("긍정"), data.get("부정")
+
+        def link_format(a):
+            return f'=HYPERLINK("{a["link"]}", "({a["date"]}) {a["title"]}")' if a else ""
+
+        output_data.append({
+            "기업명": company,
+            "긍정 뉴스": link_format(pos),
+            "부정 뉴스": link_format(neg)
+        })
+
+    df = pd.DataFrame(output_data)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False)
+    output.seek(0)
+    return output
+
+
+# === 실행 구간: 자동선정 버튼 및 결과 ===
+with st.expander("⭐ 키워드별 중요기사 자동선정 및 엑셀 확정", expanded=True):
+    st.write("뉴스 검색 결과를 바탕으로, 각 기업별 중요기사 1건씩 자동선정 후 직접 수정 및 엑셀 다운로드가 가능합니다.")
+
+    if st.button("▶️ OpenAI로 중요기사 자동선정"):
+        run_generate_important_articles_and_store()
+
+    if st.session_state.selected_important_articles:
+        render_selected_important_articles()
+        render_article_replacement_ui()
+
+        st.markdown("---")
+        st.markdown("### ⬇️ 최종 확정기사 엑셀 다운로드")
+
+        st.download_button(
+            label="📁 확정된 중요기사 Excel 다운로드",
+            data=download_final_important_articles_excel().getvalue(),
+            file_name="중요기사_최종확정.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
