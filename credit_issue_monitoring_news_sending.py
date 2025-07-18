@@ -826,8 +826,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
+            # ✅ 수정된 부분
             with col_dl2:
-                # ⭐ 중요 기사 추출 + 엑셀 생성까지 한 번에 처리
                 if st.button("⭐ 키워드별 중요 기사 엑셀 다운로드", help="감성/필터 기반 핵심 기사만 자동 추려 엑셀 저장"):
                     with st.spinner("OpenAI로 중요 기사 추출 중..."):
                         output_excel = generate_important_article_excel(
@@ -837,12 +837,14 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             favorites=favorite_categories,
                             excel_names=excel_company_categories
                         )
+
                         st.download_button(
-                            label="📥 엑셀 파일 다운로드 (자동 생성)",
+                            label="📥 중요 기사 엑셀 다운로드",
                             data=output_excel.getvalue(),
                             file_name="중요뉴스_자동선정.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
+
 
 if st.session_state.search_results:
     filtered_results = {}
