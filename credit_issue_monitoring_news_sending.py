@@ -732,6 +732,64 @@ def generate_important_article_excel(search_results, common_keywords, industry_k
     output.seek(0)
     return output
 
+def render_selected_important_articles():
+    st.markdown("### ⭐ 중요 기사 확정 / 교체")
+
+    # 버튼들을 가로 나열
+    col1, col2, col3 = st.columns([0.5, 0.25, 0.25])
+    with col1:
+        if st.button("🤖 OpenAI로 중요 기사 자동선정"):
+            run_generate_important_articles_and_store()
+            st.rerun()
+    with col2:
+        if st.button("🔁 선택 기사로 교체"):
+            comp = st.session_state.important_article_selected.get("company")
+            senti = st.session_state.important_article_selected.get("sentiment")
+            if not (comp and senti):
+                st.warning("우측에서 교체할 위치(긍정 or 부정)를 먼저 선택하세요.")
+            else:
+                found = False
+                for keyword, articles in st.session_state.search_results.items():
+                    for idx, article in enumerate(articles):
+                        uid = re.sub(r'\W+', '', article["link"])[-16:]
+                        key = f"{keyword}_{idx}_{uid}"
+                        if st.session_state.article_checked.get(key):
+                            # 교체 수행
+                            st.session_state.selected_important_articles[comp][senti] = article
+                            st.session_state.important_article_selected = {"company": None, "sentiment": None}
+                            st.session_state.article_checked[key] = False
+                            st.success(f"{comp} 의 [{senti}] 뉴스가 성공적으로 교체되었습니다!")
+                            st.rerun()
+                            found = True
+                            break
+                    if found:
+                        break
+                if not found:
+                    st.warning("좌측 뉴스 영역에서 교체할 기사를 체크하세요.")
+    with col3:
+        if st.button("❌ 선택된 중요 기사 삭제"):
+            target = st.session_state.important_article_selected.copy()
+            if target["company"] and target["sentiment"]:
+                st.session_state.selected_important_articles[target["company"]][target["sentiment"]] = None
+                st.success(f"{target['company']} 의 [{target['sentiment']}] 기사 삭제 완료")
+                st.session_state.important_article_selected = {"company": None, "sentiment": None}
+                st.rerun()
+            else:
+                st.warning("삭제할 대상을 우측에서 먼저 선택하세요.")
+
+    # ✅ 중요 기사 목록: 현재 검색된 키워드만 보여줌
+    for company in st.session_state.search_results.keys():
+        imp_articles = st.session_state.selected_important_articles.get(company, {"긍정": None, "부정": None})
+        st.markdown(f"**🔸 {company}**")
+        col_pos, col_neg = st.columns(2)
+
+        for senti, col in zip(["긍정", "부정"], [col_pos, col_neg]):
+            article = imp_articles.get(senti)
+            label = f"[{senti}] {article['title'][:40]}..." if article else f"[{senti}] - 없음"
+            checked = col.checkbox(label, key=f"impchk_{company}_{senti}")
+            if checked:
+                st.session_state.important_article_selected = {"company": company, "sentiment": senti}
+
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
     SENTIMENT_CLASS = {
         "긍정": "sentiment-positive",
@@ -1046,64 +1104,6 @@ def run_generate_important_articles_and_store():
 
         st.session_state.selected_important_articles = selected_articles
         st.success("OpenAI 자동 선정 완료!")
-
-def render_selected_important_articles():
-    st.markdown("### ⭐ 중요 기사 확정 / 교체")
-
-    # 버튼들을 가로 나열
-    col1, col2, col3 = st.columns([0.5, 0.25, 0.25])
-    with col1:
-        if st.button("🤖 OpenAI로 중요 기사 자동선정"):
-            run_generate_important_articles_and_store()
-            st.rerun()
-    with col2:
-        if st.button("🔁 선택 기사로 교체"):
-            comp = st.session_state.important_article_selected.get("company")
-            senti = st.session_state.important_article_selected.get("sentiment")
-            if not (comp and senti):
-                st.warning("우측에서 교체할 위치(긍정 or 부정)를 먼저 선택하세요.")
-            else:
-                found = False
-                for keyword, articles in st.session_state.search_results.items():
-                    for idx, article in enumerate(articles):
-                        uid = re.sub(r'\W+', '', article["link"])[-16:]
-                        key = f"{keyword}_{idx}_{uid}"
-                        if st.session_state.article_checked.get(key):
-                            # 교체 수행
-                            st.session_state.selected_important_articles[comp][senti] = article
-                            st.session_state.important_article_selected = {"company": None, "sentiment": None}
-                            st.session_state.article_checked[key] = False
-                            st.success(f"{comp} 의 [{senti}] 뉴스가 성공적으로 교체되었습니다!")
-                            st.rerun()
-                            found = True
-                            break
-                    if found:
-                        break
-                if not found:
-                    st.warning("좌측 뉴스 영역에서 교체할 기사를 체크하세요.")
-    with col3:
-        if st.button("❌ 선택된 중요 기사 삭제"):
-            target = st.session_state.important_article_selected.copy()
-            if target["company"] and target["sentiment"]:
-                st.session_state.selected_important_articles[target["company"]][target["sentiment"]] = None
-                st.success(f"{target['company']} 의 [{target['sentiment']}] 기사 삭제 완료")
-                st.session_state.important_article_selected = {"company": None, "sentiment": None}
-                st.rerun()
-            else:
-                st.warning("삭제할 대상을 우측에서 먼저 선택하세요.")
-
-    # ✅ 중요 기사 목록: 현재 검색된 키워드만 보여줌
-    for company in st.session_state.search_results.keys():
-        imp_articles = st.session_state.selected_important_articles.get(company, {"긍정": None, "부정": None})
-        st.markdown(f"**🔸 {company}**")
-        col_pos, col_neg = st.columns(2)
-
-        for senti, col in zip(["긍정", "부정"], [col_pos, col_neg]):
-            article = imp_articles.get(senti)
-            label = f"[{senti}] {article['title'][:40]}..." if article else f"[{senti}] - 없음"
-            checked = col.checkbox(label, key=f"impchk_{company}_{senti}")
-            if checked:
-                st.session_state.important_article_selected = {"company": company, "sentiment": senti}
 
 def render_article_replacement_ui():
     keyword = st.session_state.get("keyword_to_replace")
