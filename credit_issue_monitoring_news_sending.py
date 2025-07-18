@@ -905,7 +905,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
 
             st.session_state.selected_important_articles = selected_articles
             st.success("자동선정 완료!")
-            st.experimental_rerun()
+            st.rerun()
 
         for company, each in st.session_state.selected_important_articles.items():
             st.markdown(f"**📌 {company}**")
