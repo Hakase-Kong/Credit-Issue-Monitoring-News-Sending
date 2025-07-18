@@ -724,6 +724,60 @@ def generate_important_article_excel(search_results, common_keywords, industry_k
     output.seek(0)
     return output
 
+def display_important_articles_edit_panel():
+    st.subheader("⭐ 키워드별 중요 기사 추천 결과 (편집 및 다운로드 가능)")
+
+    if "important_articles_selected" not in st.session_state:
+        st.session_state.important_articles_selected = {}
+
+    if "replace_candidate_articles" not in st.session_state:
+        st.session_state.replace_candidate_articles = {}
+
+    for company, articles in st.session_state.important_articles_selected.items():
+        st.markdown(f"### 🏢 {company} 기업 중요 뉴스")
+
+        col1, col2 = st.columns([0.5, 0.5])
+        for sentiment in ["긍정", "부정"]:
+            with col1 if sentiment == "긍정" else col2:
+                article = articles.get(sentiment)
+                if not article:
+                    st.markdown(f"❌ {sentiment} 기사가 없습니다.")
+                    continue
+
+                st.markdown(f"**{sentiment} 기사:**")
+                st.markdown(f"- **제목:** [{article['title']}]({article['link']})")
+                st.markdown(f"- **감성:** `{article.get('sentiment', '')}`")
+                st.markdown(f"- **요약:** {article.get('summary', '')}")
+
+                if st.button(f"📝 {company} - {sentiment} 교체", key=f"replace_{company}_{sentiment}"):
+                    candidates = []
+                    # 검색 결과에서 해당 기업 관련 기사 필터링
+                    for a in st.session_state.search_results.get(company, []):
+                        if sentiment in a.get("title", "") or sentiment in a.get("description", ""):
+                            candidates.append(a)
+                    st.session_state.replace_candidate_articles[(company, sentiment)] = candidates
+
+def display_replacement_candidates():
+    for (company, sentiment), candidate_list in st.session_state.replace_candidate_articles.items():
+        st.markdown(f"#### 🔁 {company} - {sentiment} 기사 교체 후보")
+
+        for idx, a in enumerate(candidate_list):
+            st.markdown(
+                f"- 📌 **[{a['title']}]({a['link']})** ({a['date']}, {a['source']})",
+                unsafe_allow_html=True
+            )
+            if st.button(f"⬅ 이 기사로 교체", key=f"replace_article_{company}_{sentiment}_{idx}"):
+                st.session_state.important_articles_selected[company][sentiment] = {
+                    "title": a["title"],
+                    "link": a["link"],
+                    "summary": "",  # 필요한 경우 요약 추출 추가 가능
+                    "sentiment": sentiment
+                }
+                # 완료 후 교체 대상 삭제 및 리렌더링
+                st.session_state.replace_candidate_articles.pop((company, sentiment))
+                st.success(f"{company} - {sentiment} 뉴스가 교체되었습니다.")
+                st.experimental_rerun()
+
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
     SENTIMENT_CLASS = {
         "긍정": "sentiment-positive",
@@ -859,6 +913,38 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
 
+def export_final_articles_to_excel():
+    st.markdown("## 📥 확정된 중요 기사 다운로드 (엑셀)")
+
+    final_rows = []
+    for company, articles in st.session_state.important_articles_selected.items():
+        row = {
+            "기업명": company,
+            "긍정 뉴스": f'=HYPERLINK("{articles["긍정"]["link"]}", "{articles["긍정"]["title"]}")' if articles.get("긍정") else "",
+            "부정 뉴스": f'=HYPERLINK("{articles["부정"]["link"]}", "{articles["부정"]["title"]}")' if articles.get("부정") else "",
+        }
+        final_rows.append(row)
+
+    if not final_rows:
+        st.info("표시된 중요 기사가 없습니다.")
+        return
+
+    df_final = pd.DataFrame(final_rows)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_final.to_excel(writer, index=False, sheet_name="선택된 중요 기사")
+    output.seek(0)
+    st.download_button(
+        label="📥 엑셀 다운로드",
+        data=output.getvalue(),
+        file_name="선택된_중요기사.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+def run_editable_important_article_interface():
+    display_important_articles_edit_panel()
+    display_replacement_candidates()
+    export_final_articles_to_excel()
 
 if st.session_state.search_results:
     filtered_results = {}
@@ -878,3 +964,4 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
+    run_editable_important_article_interface()
