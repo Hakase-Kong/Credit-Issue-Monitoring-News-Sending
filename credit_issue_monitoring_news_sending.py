@@ -770,78 +770,83 @@ if st.session_state.search_results:
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
-# === 중요 기사 추출 기능 ===
 def get_important_article_via_openai(candidates, sentiment_type, filter_keywords):
     prompt = (
         f"다음은 '{sentiment_type}' 감성으로 분류된 뉴스 기사 목록입니다.\n"
-        f"아래 기사 [제목]에 '{', '.join(filter_keywords)}' 중 하나 이상이 포함된 기사만 고려하십시오.\n"
+        f"기사 제목에 아래 키워드 중 하나라도 포함된 기사만 고려하십시오:\n"
+        f"{', '.join(filter_keywords)}\n\n"
         f"각 기사:\n"
     )
     filtered_candidates = [
-        a for a in candidates if a['감성'] == sentiment_type and any(k in a['기사제목'] for k in filter_keywords)
+        a for a in candidates
+        if a['감성'] == sentiment_type and any(k in a['기사제목'] for k in filter_keywords)
     ]
     if not filtered_candidates:
-        return None  # 추출 불가
+        return None  # 조건 만족하는 기사 없음
 
     for idx, a in enumerate(filtered_candidates):
         prompt += f"{idx+1}. 제목: {a['기사제목']}\n   요약: {a['요약']}\n   링크: {a['링크']}\n"
 
     prompt += (
-        f"\n위 기사들 중에서 가장 우선적으로 소개해야 할 '{sentiment_type}' 기사 하나를 골라 주세요.\n"
-        f"선택된 기사의 제목을 정확히 다시 출력해 주세요.\n"
-        "선택하지 않을 경우 '없음'이라고 말해주세요."
+        "\n이 중에서 가장 중요하고 핵심적인 기사 하나만 골라주세요.\n"
+        "해당 기사의 ‘기사 제목’만 그대로 출력해주세요. 선택하지 않을 경우 '없음'이라고 적어주세요."
     )
 
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=400,
-        temperature=0.3,
+        temperature=0.2,
     )
     answer = response.choices[0].message.content.strip()
     if answer.lower() in ["없음", "no article", "none"]:
         return None
-
+    # 정답이 어떤 기사 제목인지 찾기
     for art in filtered_candidates:
         if art['기사제목'] in answer or art['기사제목'][:30] in answer:
             return art
-    return None
+    return None  # 혹시 못찾으면 None
 
+# --- 중요 기사 추출 UI 버튼 ("선택된 기사 개수:" 아래 삽입용) ---
 if st.session_state.selected_articles:
     st.write(f"선택된 기사 개수: {len(st.session_state.selected_articles)}")
 
-    # 🎯 중요 기사 추출 버튼
-    if st.button("💡 중요 기사 추출(추천)", key="generate_important_articles"):
-        with st.spinner("중요 기사 추출 중..."):
-
-            filter_keywords = []
-            filter_keywords.extend(ALL_COMMON_FILTER_KEYWORDS)
+    # 🎯 버튼 클릭 시 실행되는 중요 기사 추출 기능
+    if st.button("💡 중요 기사 추출(추천)", key="recommend_important_articles"):
+        with st.spinner("OpenAI로 중요 기사 추출 중..."):
+            # 전체 필터 키워드 (공통 + 산업별)
+            filter_keywords = list(ALL_COMMON_FILTER_KEYWORDS)
             if st.session_state.get("use_industry_filter", False):
-                filter_keywords.extend(st.session_state.get("industry_sub", []))
+                filter_keywords += st.session_state.get("industry_sub", [])
 
+            selected_articles = st.session_state.selected_articles
+
+            # 기업명(키워드) 기준 그룹핑
+            unique_keywords = sorted(set([a["키워드"] for a in selected_articles]))
             important_summary_rows = []
-            processed_keywords = set([a["키워드"] for a in st.session_state.selected_articles])
-            for keyword in sorted(processed_keywords):
+
+            for keyword in unique_keywords:
+                # Excel 표기명 매핑
                 excel_display_name = ""
                 for cat, comps in favorite_categories.items():
                     if keyword in comps:
-                        excel_name_list = excel_company_categories.get(cat, [])
+                        mapped = excel_company_categories.get(cat, [])
                         idx = comps.index(keyword)
-                        if idx < len(excel_name_list):
-                            excel_display_name = excel_name_list[idx]
+                        if idx < len(mapped):
+                            excel_display_name = mapped[idx]
                         break
 
-                related_articles = [a for a in st.session_state.selected_articles if a['키워드'] == keyword]
+                # 해당 키워드 기사 필터링
+                keyword_articles = [a for a in selected_articles if a["키워드"] == keyword]
 
-                pos_article = get_important_article_via_openai(related_articles, "긍정", filter_keywords)
-                neg_article = get_important_article_via_openai(related_articles, "부정", filter_keywords)
+                # 긍정/부정 기사 중 중요 기사 선택
+                pos_article = get_important_article_via_openai(keyword_articles, "긍정", filter_keywords)
+                neg_article = get_important_article_via_openai(keyword_articles, "부정", filter_keywords)
 
                 def to_hyperlink(article):
                     if not article:
                         return ""
-                    disp = f'({article["날짜"]}) {article["기사제목"]}'
-                    link = article["링크"]
-                    return f'=HYPERLINK("{link}", "{disp}")'
+                    return f'=HYPERLINK("{article["링크"]}", "({article["날짜"]}) {article["기사제목"]}")'
 
                 important_summary_rows.append({
                     "기업명": keyword,
@@ -850,15 +855,15 @@ if st.session_state.selected_articles:
                     "부정 뉴스": to_hyperlink(neg_article)
                 })
 
-            df_important = pd.DataFrame(important_summary_rows)
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_important.to_excel(writer, index=False, sheet_name="중요 기사 요약")
-            buffer.seek(0)
-
+            # 결과 엑셀 생성 및 다운로드 제공
+            df_result = pd.DataFrame(important_summary_rows)
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_result.to_excel(writer, index=False, sheet_name='중요 뉴스 요약')
+            output.seek(0)
             st.download_button(
                 label="📥 중요 기사 엑셀 다운로드",
-                data=buffer.getvalue(),
-                file_name="중요기사_추천요약.xlsx",
+                data=output.read(),
+                file_name="중요뉴스_요약.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
