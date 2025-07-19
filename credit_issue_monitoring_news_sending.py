@@ -56,6 +56,10 @@ if "cat_major_autoset" not in st.session_state:
     st.session_state.cat_major_autoset = []
 if "important_articles_preview" not in st.session_state:
     st.session_state.important_articles_preview = []
+if "important_selected_index" not in st.session_state:
+    st.session_state["important_selected_index"] = []
+if "article_checked_left" not in st.session_state:
+    st.session_state.article_checked_left = {}
 
 # --- 즐겨찾기 카테고리(변경 금지) ---
 favorite_categories = {
@@ -720,6 +724,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 def render_important_article_review_and_download():
     st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
+    # 🚀 자동 선정 버튼
     if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
         with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
             important_articles = generate_important_article_list(
@@ -729,23 +734,77 @@ def render_important_article_review_and_download():
                 favorites=favorite_categories
             )
             st.session_state.important_articles_preview = important_articles
+            st.session_state.important_selected_index = []
 
     if not st.session_state.get("important_articles_preview"):
         st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
         return
 
-    delete_indexes = []
-    for idx, article in enumerate(st.session_state["important_articles_preview"]):
-        col1, col2 = st.columns([0.85, 0.15])
-        with col1:
-            st.markdown(f"- `{article['회사명']}` | [{article['제목']}]({article['링크']}) ({article['감성']})")
-        with col2:
-            if st.button(f"🗑 삭제", key=f"del_imp_{idx}"):
-                delete_indexes.append(idx)
+    st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
 
-    # 삭제 반영
-    for idx in sorted(delete_indexes, reverse=True):
-        st.session_state["important_articles_preview"].pop(idx)
+    new_selection = []
+    for idx, article in enumerate(st.session_state["important_articles_preview"]):
+        checked = st.checkbox(
+            f"{article['회사명']} | {article['감성']} | {article['제목'][:40]}...",
+            key=f"important_chk_{idx}",
+            value=(idx in st.session_state.important_selected_index)
+        )
+        if checked:
+            new_selection.append(idx)
+
+    st.session_state.important_selected_index = new_selection
+
+    col_action1, col_action2 = st.columns([0.5, 0.5])
+
+    with col_action1:
+        if st.button("🗑 선택한 기사 삭제"):
+            for idx in sorted(st.session_state.important_selected_index, reverse=True):
+                if 0 <= idx < len(st.session_state["important_articles_preview"]):
+                    st.session_state["important_articles_preview"].pop(idx)
+            st.session_state.important_selected_index = []
+            st.experimental_rerun()
+
+    with col_action2:
+        if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
+            # 왼쪽에서 선택된 기사를 찾음
+            left_selected = []
+            for key, val in st.session_state.article_checked_left.items():
+                if val:
+                    left_selected.append(key)
+
+            if len(left_selected) != 1 or len(st.session_state.important_selected_index) != 1:
+                st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
+            else:
+                # 해당 기사 정보를 왼쪽에서 추출
+                from_key = left_selected[0]
+                parts = from_key.split("_")
+                if len(parts) >= 3:
+                    keyword, idx = parts[0], int(parts[1])
+                    source_article = st.session_state.search_results.get(keyword, [])[idx]
+                    summary_key = f"summary_{keyword}_{idx}_{re.sub(r'\\W+', '', source_article['link'])[-16:]}"
+                    if summary_key in st.session_state:
+                        one_line, summary, sentiment, _ = st.session_state[summary_key]
+                    else:
+                        one_line, summary, sentiment, _ = summarize_article_from_url(
+                            source_article['link'], source_article['title']
+                        )
+                        st.session_state[summary_key] = (one_line, summary, sentiment, _)
+
+                    # 교체 실행
+                    new_article = {
+                        "회사명": keyword,
+                        "감성": sentiment,
+                        "제목": source_article["title"],
+                        "링크": source_article["link"],
+                        "날짜": source_article["date"],
+                        "출처": source_article["source"]
+                    }
+
+                    replace_idx = st.session_state.important_selected_index[0]
+                    st.session_state["important_articles_preview"][replace_idx] = new_article
+                    st.session_state.important_selected_index = []
+                    st.success("기사 교체 완료")
+                    st.experimental_rerun()
 
     st.markdown("---")
     st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
@@ -828,7 +887,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         )
                     with cols[1]:
                         st.markdown(md_line, unsafe_allow_html=True)
-                    st.session_state.article_checked[key] = checked
+                    st.session_state.article_checked_left[key] = checked
+
 
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
