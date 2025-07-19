@@ -738,9 +738,9 @@ def render_selected_important_articles():
     # 버튼들을 가로 나열
     col1, col2, col3 = st.columns([0.5, 0.25, 0.25])
     with col1:
-        if st.button("🤖 OpenAI로 중요 기사 자동선정"):
-            run_generate_important_articles_and_store()
-            st.rerun()
+        if st.button("🤖 OpenAI로 중요 기사 자동선정", key="openai_autofill_btn_important"):
+        run_generate_important_articles_and_store()
+        st.rerun()
     with col2:
         if st.button("🔁 선택 기사로 교체"):
             comp = st.session_state.important_article_selected.get("company")
