@@ -735,59 +735,54 @@ def generate_important_article_excel(search_results, common_keywords, industry_k
 def render_selected_important_articles():
     st.markdown("### ⭐ 중요 기사 확정 / 교체")
 
-    # 버튼들을 가로 나열
     col1, col2, col3 = st.columns([0.5, 0.25, 0.25])
     with col1:
-        if st.button("🤖 OpenAI로 중요 기사 자동선정", key="openai_autofill_btn_important"):
+        if st.button("🤖 OpenAI로 중요 기사 자동선정", key="btn_openai_autofill"):
             run_generate_important_articles_and_store()
             st.rerun()
     with col2:
-        if st.button("🔁 선택 기사로 교체", key="replace_article_btn_main"):
+        if st.button("🔁 선택 기사로 교체", key="btn_replace_article"):
             comp = st.session_state.important_article_selected.get("company")
             senti = st.session_state.important_article_selected.get("sentiment")
             if not (comp and senti):
-                st.warning("우측에서 교체할 위치(긍정 or 부정)를 먼저 선택하세요.")
+                st.warning("우측에서 교체할 위치(긍정/부정)를 먼저 선택하세요.")
             else:
                 found = False
-                for keyword, articles in st.session_state.search_results.items():
-                    for idx, article in enumerate(articles):
+                for kw, arts in st.session_state.search_results.items():
+                    for idx, article in enumerate(arts):
                         uid = re.sub(r'\W+', '', article["link"])[-16:]
-                        key = f"{keyword}_{idx}_{uid}"
-                        if st.session_state.article_checked.get(key):
-                            # 교체 수행
+                        key = f"{kw}_{idx}_{uid}"
+                        if st.session_state.article_checked.get(key, False):
                             st.session_state.selected_important_articles[comp][senti] = article
                             st.session_state.important_article_selected = {"company": None, "sentiment": None}
                             st.session_state.article_checked[key] = False
-                            st.success(f"{comp} 의 [{senti}] 뉴스가 성공적으로 교체되었습니다!")
+                            st.success(f"✅ [{comp}]의 {senti} 기사 교체 완료!")
                             st.rerun()
                             found = True
                             break
                     if found:
                         break
                 if not found:
-                    st.warning("좌측 뉴스 영역에서 교체할 기사를 체크하세요.")
+                    st.warning("좌측 기사 체크 후 다시 시도하세요.")
     with col3:
-        if st.button("❌ 선택된 중요 기사 삭제"):
-            target = st.session_state.important_article_selected.copy()
-            if target["company"] and target["sentiment"]:
-                st.session_state.selected_important_articles[target["company"]][target["sentiment"]] = None
-                st.success(f"{target['company']} 의 [{target['sentiment']}] 기사 삭제 완료")
+        if st.button("❌ 선택된 중요기사 삭제", key="btn_delete_article"):
+            sel = st.session_state.important_article_selected.copy()
+            if sel["company"] and sel["sentiment"]:
+                st.session_state.selected_important_articles[sel["company"]][sel["sentiment"]] = None
                 st.session_state.important_article_selected = {"company": None, "sentiment": None}
+                st.success("삭제 완료")
                 st.rerun()
             else:
-                st.warning("삭제할 대상을 우측에서 먼저 선택하세요.")
+                st.warning("삭제할 항목을 체크하세요.")
 
-    # ✅ 중요 기사 목록: 현재 검색된 키워드만 보여줌
-    for company in st.session_state.search_results.keys():
-        imp_articles = st.session_state.selected_important_articles.get(company, {"긍정": None, "부정": None})
-        st.markdown(f"**🔸 {company}**")
-        col_pos, col_neg = st.columns(2)
-
-        for senti, col in zip(["긍정", "부정"], [col_pos, col_neg]):
-            article = imp_articles.get(senti)
-            label = f"[{senti}] {article['title'][:40]}..." if article else f"[{senti}] - 없음"
-            checked = col.checkbox(label, key=f"impchk_{company}_{senti}")
-            if checked:
+    for company in st.session_state.search_results.keys():  # 검색된 키워드 기준으로만 표시
+        news = st.session_state.selected_important_articles.get(company, {"긍정": None, "부정": None})
+        st.markdown(f"**🔹 {company}**")
+        col_a, col_b = st.columns(2)
+        for senti, col in zip(["긍정", "부정"], [col_a, col_b]):
+            article = news.get(senti)
+            label = f"[{senti}] {article['title'][:40]}..." if article else f"[{senti}] 선택 없음"
+            if col.checkbox(label, key=f"impchk_{company}_{senti}"):
                 st.session_state.important_article_selected = {"company": company, "sentiment": senti}
 
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
@@ -1055,23 +1050,24 @@ def run_generate_important_articles_and_store():
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    with st.spinner("OpenAI로 중요 기사 추출 중..."):
+    with st.spinner("OpenAI로 중요 기사 자동 선정 중..."):
         selected_articles = {}
-        for company in st.session_state.search_results.keys():  # ✅ 현재 검색된 기업만
+
+        for company in st.session_state.search_results.keys():  # 현재 검색된 키워드 기준
             articles = st.session_state.search_results.get(company, [])
-            filtered_keywords = list(set(ALL_COMMON_FILTER_KEYWORDS + st.session_state.get("industry_sub", [])))
-            target_articles = [a for a in articles if any(kw in a["title"] for kw in filtered_keywords)]
-            if not target_articles:
+            keywords = list(set(ALL_COMMON_FILTER_KEYWORDS + st.session_state.get("industry_sub", [])))
+            filtered = [a for a in articles if any(kw in a["title"] for kw in keywords)]
+
+            if not filtered:
                 selected_articles[company] = {"긍정": None, "부정": None}
                 continue
 
-            prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
+            prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(filtered)])
             prompt = (
-                f"[필터 키워드]\n{', '.join(filtered_keywords)}\n\n"
+                f"[필터 키워드]\n{', '.join(keywords)}\n\n"
                 f"[기사 목록]\n{prompt_list}\n\n"
-                "각 기사에 대해 감성(긍정/부정)을 판단하고,\n"
-                "- [긍정], [부정] 각 1건씩 제목만 골라주세요.\n\n"
-                "[긍정]: (뉴스 제목)\n[부정]: (뉴스 제목)"
+                f"제목에 키워드가 포함된 기사 중:\n- [긍정]\n- [부정] 각각 1건씩 제목만 골라주세요.\n\n"
+                f"[긍정]: (제목)\n[부정]: (제목)"
             )
 
             try:
@@ -1081,29 +1077,28 @@ def run_generate_important_articles_and_store():
                     max_tokens=800,
                     temperature=0.3
                 )
-                from re import search
-                content = res.choices[0].message.content.strip()
-                pos_title = search(r"\[긍정\]:\s*(.+)", content)
-                neg_title = search(r"\[부정\]:\s*(.+)", content)
-                pos_title = pos_title.group(1).strip() if pos_title else ""
-                neg_title = neg_title.group(1).strip() if neg_title else ""
+                import re
+                txt = res.choices[0].message.content.strip()
+                pos_title = re.search(r"\[긍정\]:\s*(.+)", txt)
+                neg_title = re.search(r"\[부정\]:\s*(.+)", txt)
+                pos = pos_title.group(1).strip() if pos_title else ""
+                neg = neg_title.group(1).strip() if neg_title else ""
 
-                def match_article(title):
-                    for a in target_articles:
+                def match(title):
+                    for a in filtered:
                         if title in a["title"]:
                             return a
                     return None
 
                 selected_articles[company] = {
-                    "긍정": match_article(pos_title),
-                    "부정": match_article(neg_title)
+                    "긍정": match(pos),
+                    "부정": match(neg)
                 }
-
             except Exception:
                 selected_articles[company] = {"긍정": None, "부정": None}
 
         st.session_state.selected_important_articles = selected_articles
-        st.success("OpenAI 자동 선정 완료!")
+        st.success("자동선정 완료!")
 
 def render_article_replacement_ui():
     keyword = st.session_state.get("keyword_to_replace")
@@ -1123,32 +1118,30 @@ def render_article_replacement_ui():
 
 
 def download_final_important_articles_excel():
-    st.markdown("📥 **최종 확정 중요기사 엑셀 다운로드**")
-    selected = st.session_state.selected_important_articles
-    data = []
-    for comp in st.session_state.search_results.keys():  # ✅ 검색된 기업만 포함
-        entry = selected.get(comp, {})
-        pos = entry.get("긍정")
-        neg = entry.get("부정")
+    st.markdown("### 📥 엑셀 다운로드")
 
-        def link_format(a):
+    records = []
+    for company in st.session_state.search_results.keys():  # 검색된 키워드 기준
+        each = st.session_state.selected_important_articles.get(company, {"긍정": None, "부정": None})
+
+        def fmt(a):
             return f'=HYPERLINK("{a["link"]}", "({a["date"]}) {a["title"]}")' if a else ""
 
-        data.append({
-            "기업명": comp,
-            "긍정 뉴스": link_format(pos),
-            "부정 뉴스": link_format(neg)
+        records.append({
+            "기업명": company,
+            "긍정 뉴스": fmt(each.get("긍정")),
+            "부정 뉴스": fmt(each.get("부정"))
         })
 
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(records)
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False)
     output.seek(0)
+
     st.download_button(
-        label="📁 엑셀 다운로드",
+        label="📁 중요기사_최종확정.xlsx 다운로드",
         data=output,
         file_name="중요기사_최종확정.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
