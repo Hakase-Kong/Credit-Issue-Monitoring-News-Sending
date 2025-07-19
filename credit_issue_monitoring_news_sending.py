@@ -1029,11 +1029,10 @@ if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-        
-        # --- 중복 기사 제거 처리 ---
+
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
-        
+
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
 
@@ -1044,6 +1043,8 @@ if st.session_state.search_results:
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
-# 요약/감성분석 또는 중요기사 확정 UI 아래에
-render_selected_important_articles()
-download_final_important_articles_excel()
+    # ✅ 중요기사 확정 UI를 요약 하단으로 이동
+    render_selected_important_articles()
+
+    # ✅ 엑셀 다운로드 역시 아래로 유지
+    download_final_important_articles_excel()
