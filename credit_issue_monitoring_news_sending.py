@@ -849,107 +849,67 @@ def render_selected_important_articles():
                 st.session_state.important_article_selected = {"company": company, "sentiment": senti}
 
 
-def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
-    SENTIMENT_CLASS = {
-        "긍정": "sentiment-positive",
-        "부정": "sentiment-negative"
-    }
+def render_articles_with_single_summary_and_telegram(
+    filtered_results,
+    show_limit,
+    show_sentiment_badge=False,
+    enable_summary=True
+):
+    import streamlit as st
 
-    if "article_checked" not in st.session_state:
-        st.session_state.article_checked = {}
-    if "selected_important_articles" not in st.session_state:
-        st.session_state.selected_important_articles = {}
-    if "important_article_selected" not in st.session_state:
-        st.session_state.important_article_selected = {"company": None, "sentiment": None}
+    st.markdown("## 뉴스 검색 결과 보기")
 
     col_list, col_summary = st.columns([1, 1])
+
     with col_list:
-        st.markdown("### 🔍 뉴스 검색 결과")
-        for keyword, articles in results.items():
-            with st.container(border=True):
-                st.markdown(f"**[{keyword}] ({len(articles)}건)**")
-                for idx, article in enumerate(articles):
-                    uid = re.sub(r'\W+', '', article['link'])[-16:]
-                    key = f"{keyword}_{idx}_{uid}"
-                    cache_key = f"summary_{key}"
+        st.markdown("### 원문 기사 목록")
 
-                    if show_sentiment_badge:
-                        if cache_key not in st.session_state:
-                            one_line, summary, sentiment, text = summarize_article_from_url(article['link'], article['title'], enable_summary)
-                            st.session_state[cache_key] = (one_line, summary, sentiment, text)
-                        else:
-                            one_line, summary, sentiment, _ = st.session_state[cache_key]
-
-                        sentiment_class = SENTIMENT_CLASS.get(sentiment or "부정", "sentiment-negative")
-                        md_line = (
-                            f"[{article['title']}]({article['link']}) "
-                            f"<span class='sentiment-badge {sentiment_class}'>({sentiment})</span> "
-                            f"{article['date']} | {article['source']}"
-                        )
-                    else:
-                        md_line = f"[{article['title']}]({article['link']}) {article['date']} | {article['source']}"
-
-                    col_chk, col_txt = st.columns([0.04, 0.96])
-                    with col_chk:
-                        checked = st.checkbox(
-                            "", value=st.session_state.article_checked.get(key, False),
-                            key=f"news_{key}"
-                        )
-                    with col_txt:
-                        st.markdown(md_line, unsafe_allow_html=True)
-                    st.session_state.article_checked[key] = checked
+        selected_articles = []
+        for keyword, articles in filtered_results.items():
+            st.markdown(f"#### 🔍 키워드: {keyword}")
+            for article in articles[:show_limit]:
+                if st.checkbox(f"{article['title']} ✅", key=article["link"]):
+                    selected_articles.append(article)
+                st.caption(article["pubDate"])
+                st.markdown(f"[원문 보기]({article['link']})")
+                st.markdown("---")
 
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
-        selected_articles = []
-        for keyword, articles in results.items():
-            for idx, article in enumerate(articles):
-                uid = re.sub(r'\W+', '', article['link'])[-16:]
-                key = f"{keyword}_{idx}_{uid}"
-                cache_key = f"summary_{key}"
-                if st.session_state.article_checked.get(key, False):
-                    if cache_key in st.session_state:
-                        one_line, summary, sentiment, _ = st.session_state[cache_key]
-                    else:
-                        one_line, summary, sentiment, _ = summarize_article_from_url(article['link'], article['title'], enable_summary)
-                        st.session_state[cache_key] = (one_line, summary, sentiment, _)
 
-                    selected_articles.append({
-                        "키워드": keyword,
-                        "기사제목": safe_title(article.get("title")),
-                        "요약": one_line,
-                        "요약본": summary,
-                        "감성": sentiment,
-                        "링크": article["link"],
-                        "날짜": article["date"],
-                        "출처": article["source"]
-                    })
-
-                    st.markdown(f"#### [{article['title']}]({article['link']})", unsafe_allow_html=True)
-                    st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
-                    if enable_summary:
-                        st.markdown(f"- **한 줄 요약:** {one_line}")
-                    st.markdown(f"- **감성분석:** `{sentiment}`")
-                    st.markdown("---")
-
-                render_selected_important_articles()
-                render_article_replacement_ui()
-                download_final_important_articles_excel()
+        for idx, article in enumerate(selected_articles):
+            st.markdown(f"**{idx+1}. {article['title']}**")
+            
+            if enable_summary:
+                summary = article.get("summary", "(요약 없음)")
+                st.markdown(f"📝 요약: {summary}")
+            sentiment = article.get("sentiment", "")
+            if show_sentiment_badge and sentiment:
+                st.markdown(f"🧠 감성 분석: `{sentiment}`")
+            st.markdown("---")
 
         st.session_state.selected_articles = selected_articles
         st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
+        # 🔽 맞춤형 엑셀 다운로드 버튼
         st.download_button(
             label="📥 맞춤 엑셀 다운로드",
             data=get_excel_download_with_favorite_and_excel_company_col(
                 st.session_state.selected_articles,
-                favorite_categories,
-                excel_company_categories
+                st.session_state.favorite_categories,
+                st.session_state.excel_company_categories
             ).getvalue(),
             file_name="뉴스요약_맞춤형.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+        st.markdown("---")
+
+        # ✅ 요약/감성분석 하단에 OpenAI 버튼 등 UI 배치
+        render_selected_important_articles()
+        render_article_replacement_ui()
+        download_final_important_articles_excel()
+        
         # 📥 최종 엑셀 다운로드
         st.markdown("---")
         st.markdown("📥 중요기사 엑셀 다운로드")
