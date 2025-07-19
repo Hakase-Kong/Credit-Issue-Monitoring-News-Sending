@@ -890,7 +890,10 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 )
             with col_dl2:
                 if st.button("⭐ 중요 기사 리뷰 및 편집"):
-                    st.session_state["trigger_important_review"] = True  # UI 트리거용 변수 설정
+                    st.session_state["trigger_important_review"] = True
+
+        # ✅ 중요 기사 리뷰 & 다운로드 UI를 요약 아래에 바로 출력
+        render_important_article_review_and_download()
 
 if st.session_state.search_results:
     filtered_results = {}
@@ -910,6 +913,3 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
-
-    # ✅ 여기서 중요 기사 리뷰/엑셀 저장 UI 호출 (마지막 단계)
-    render_important_article_review_and_download()
