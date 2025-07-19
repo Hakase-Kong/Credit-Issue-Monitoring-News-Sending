@@ -871,7 +871,7 @@ def render_articles_with_single_summary_and_telegram(
             for article in articles[:limit]:
                 if st.checkbox(f"{article['title']} ✅", key=article["link"]):
                     selected_articles.append(article)
-                st.caption(article["pubDate"])
+                st.caption(article["date"])
                 st.markdown(f"[원문 보기]({article['link']})")
                 st.markdown("---")
 
