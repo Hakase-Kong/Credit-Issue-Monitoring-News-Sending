@@ -802,7 +802,6 @@ def render_important_article_review_and_download():
         return
 
     st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
-
     new_selection = []
     for idx, article in enumerate(st.session_state["important_articles_preview"]):
         checked = st.checkbox(
@@ -831,11 +830,10 @@ def render_important_article_review_and_download():
                 st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
             else:
                 from_key = left_selected[0]
-                # from_key 예시: f"{keyword}_{idx}_{unique_id}"
                 key_parts = from_key.split("_")
                 if len(key_parts) >= 3:
                     keyword = key_parts[0]
-                    idx = int(key_parts[1])  # ← 인덱스 반드시 int로!
+                    idx = int(key_parts[1])
                     left_articles = st.session_state.search_results.get(keyword, [])
                     if 0 <= idx < len(left_articles):
                         source_article = left_articles[idx]
@@ -851,10 +849,11 @@ def render_important_article_review_and_download():
                             )
                             st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
 
+                        # 반드시 왼쪽 뉴스의 제목/링크/날짜/출처 그대로!
                         new_article = {
                             "회사명": keyword,
                             "감성": sentiment,
-                            "제목": source_article["title"],  # ← 반드시 여기서 제목을 그대로 씀!!
+                            "제목": source_article["title"],
                             "링크": source_article["link"],
                             "날짜": source_article["date"],
                             "출처": source_article["source"]
@@ -862,7 +861,6 @@ def render_important_article_review_and_download():
                         replace_idx = st.session_state.important_selected_index[0]
                         st.session_state["important_articles_preview"][replace_idx] = new_article
 
-                        # 체크박스 해제
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
                         st.session_state.important_selected_index = []
