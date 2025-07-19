@@ -801,7 +801,7 @@ def render_selected_important_articles():
 
     col1, col2, col3 = st.columns([0.5, 0.25, 0.25])
     with col1:
-        if st.button("🤖 OpenAI로 중요 기사 자동선정", key="btn_openai_auto"):
+        if st.button("🤖 OpenAI로 중요 기사 자동선정", key="btn_openai_auto_selected_articles"):
             run_generate_important_articles_and_store()
             st.rerun()
     with col2:
@@ -858,7 +858,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
 
     if "article_checked" not in st.session_state:
         st.session_state.article_checked = {}
-
     if "selected_important_articles" not in st.session_state:
         st.session_state.selected_important_articles = {}
     if "important_article_selected" not in st.session_state:
@@ -867,25 +866,20 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
     col_list, col_summary = st.columns([1, 1])
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
-
         for keyword, articles in results.items():
             with st.container(border=True):
-                article_count = len(articles)
-                st.markdown(f"**[{keyword}] ({article_count}건)**")
-
+                st.markdown(f"**[{keyword}] ({len(articles)}건)**")
                 for idx, article in enumerate(articles):
-                    unique_id = re.sub(r'\W+', '', article['link'])[-16:]
-                    key = f"{keyword}_{idx}_{unique_id}"
+                    uid = re.sub(r'\W+', '', article['link'])[-16:]
+                    key = f"{keyword}_{idx}_{uid}"
                     cache_key = f"summary_{key}"
 
                     if show_sentiment_badge:
                         if cache_key not in st.session_state:
-                            one_line, summary, sentiment, full_text = summarize_article_from_url(
-                                article['link'], article['title'], do_summary=enable_summary
-                            )
-                            st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+                            one_line, summary, sentiment, text = summarize_article_from_url(article['link'], article['title'], enable_summary)
+                            st.session_state[cache_key] = (one_line, summary, sentiment, text)
                         else:
-                            one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                            one_line, summary, sentiment, _ = st.session_state[cache_key]
 
                         sentiment_class = SENTIMENT_CLASS.get(sentiment or "부정", "sentiment-negative")
                         md_line = (
@@ -894,203 +888,93 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             f"{article['date']} | {article['source']}"
                         )
                     else:
-                        md_line = (
-                            f"[{article['title']}]({article['link']}) "
-                            f"{article['date']} | {article['source']}"
-                        )
+                        md_line = f"[{article['title']}]({article['link']}) {article['date']} | {article['source']}"
 
-                    cols = st.columns([0.04, 0.96])
-                    with cols[0]:
+                    col_chk, col_txt = st.columns([0.04, 0.96])
+                    with col_chk:
                         checked = st.checkbox(
                             "", value=st.session_state.article_checked.get(key, False),
                             key=f"news_{key}"
                         )
-                    with cols[1]:
+                    with col_txt:
                         st.markdown(md_line, unsafe_allow_html=True)
                     st.session_state.article_checked[key] = checked
 
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
-        with st.container(border=True):
-            selected_articles = []
-            for keyword, articles in results.items():
-                for idx, article in enumerate(articles):
-                    unique_id = re.sub(r'\W+', '', article['link'])[-16:]
-                    key = f"{keyword}_{idx}_{unique_id}"
-                    cache_key = f"summary_{key}"
-                    if st.session_state.article_checked.get(key, False):
-                        if cache_key in st.session_state:
-                            one_line, summary, sentiment, full_text = st.session_state[cache_key]
-                        else:
-                            one_line, summary, sentiment, full_text = summarize_article_from_url(
-                                article['link'], article['title'], do_summary=enable_summary
-                            )
-                            st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+        selected_articles = []
+        for keyword, articles in results.items():
+            for idx, article in enumerate(articles):
+                uid = re.sub(r'\W+', '', article['link'])[-16:]
+                key = f"{keyword}_{idx}_{uid}"
+                cache_key = f"summary_{key}"
+                if st.session_state.article_checked.get(key, False):
+                    if cache_key in st.session_state:
+                        one_line, summary, sentiment, _ = st.session_state[cache_key]
+                    else:
+                        one_line, summary, sentiment, _ = summarize_article_from_url(article['link'], article['title'], enable_summary)
+                        st.session_state[cache_key] = (one_line, summary, sentiment, _)
 
-                        selected_articles.append({
-                            "키워드": keyword,
-                            "기사제목": safe_title(article.get('title')),
-                            "요약": one_line,
-                            "요약본": summary,
-                            "감성": sentiment,
-                            "링크": article['link'],
-                            "날짜": article['date'],
-                            "출처": article['source']
-                        })
+                    selected_articles.append({
+                        "키워드": keyword,
+                        "기사제목": safe_title(article.get("title")),
+                        "요약": one_line,
+                        "요약본": summary,
+                        "감성": sentiment,
+                        "링크": article["link"],
+                        "날짜": article["date"],
+                        "출처": article["source"]
+                    })
 
-                        if show_sentiment_badge:
-                            st.markdown(
-                                f"#### [{article['title']}]({article['link']}) "
-                                f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>",
-                                unsafe_allow_html=True
-                            )
-                        else:
-                            st.markdown(f"#### [{article['title']}]({article['link']})", unsafe_allow_html=True)
-                        st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
-                        if enable_summary:
-                            st.markdown(f"- **한 줄 요약:** {one_line}")
-                        st.markdown(f"- **감성분석:** `{sentiment}`")
-                        st.markdown("---")
-                        render_selected_important_articles()
+                    st.markdown(f"#### [{article['title']}]({article['link']})", unsafe_allow_html=True)
+                    st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
+                    if enable_summary:
+                        st.markdown(f"- **한 줄 요약:** {one_line}")
+                    st.markdown(f"- **감성분석:** `{sentiment}`")
+                    st.markdown("---")
 
-            st.session_state.selected_articles = selected_articles
-            st.write(f"선택된 기사 개수: {len(selected_articles)}")
-            render_selected_important_articles()
-
-            st.download_button(
-                label="📥 맞춤 엑셀 다운로드",
-                data=get_excel_download_with_favorite_and_excel_company_col(
-                    st.session_state.selected_articles,
-                    favorite_categories,
-                    excel_company_categories
-                ).getvalue(),
-                file_name="뉴스요약_맞춤형.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-        # ✅ 중요기사 확정/교체 기능 삽입
-        st.markdown("### ⭐ 중요 기사 확정/교체")
-
-        if st.button("🤖 OpenAI로 중요 기사 자동선정"):
-            from openai import OpenAI
-            OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-            client = OpenAI(api_key=OPENAI_API_KEY)
-
-            selected_articles = {}
-            for category, companies in favorite_categories.items():
-                for company in companies:
-                    articles = st.session_state.search_results.get(company, [])
-                    if not articles:
-                        selected_articles[company] = {"긍정": None, "부정": None}
-                        continue
-                    keywords = list(set(ALL_COMMON_FILTER_KEYWORDS + st.session_state.get("industry_sub", [])))
-                    target_articles = [a for a in articles if any(kw in a["title"] for kw in keywords)]
-                    if not target_articles:
-                        selected_articles[company] = {"긍정": None, "부정": None}
-                        continue
-                    prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
-                    prompt = (
-                        f"[필터 키워드]\n{', '.join(keywords)}\n\n"
-                        f"[기사 목록]\n{prompt_list}\n\n"
-                        "각 기사에 대해 감성(긍정/부정)을 판단하고, 제목에 키워드가 포함된 뉴스 기준으로\n"
-                        "- 긍정 뉴스 1건\n- 부정 뉴스 1건\n 형태로 골라주세요.\n"
-                        "[긍정]: (제목)\n[부정]: (제목)"
-                    )
-                    try:
-                        res = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role": "user", "content": prompt}],
-                            max_tokens=800,
-                            temperature=0.3
-                        )
-                        from re import search
-                        txt = res.choices[0].message.content.strip()
-                        pos_title = search(r"\[긍정\]:\s*(.+)", txt)
-                        neg_title = search(r"\[부정\]:\s*(.+)", txt)
-                        pos_title = pos_title.group(1).strip() if pos_title else ""
-                        neg_title = neg_title.group(1).strip() if neg_title else ""
-
-                        def match_article(title):
-                            for a in target_articles:
-                                if title in a["title"]:
-                                    return a
-                            return None
-
-                        selected_articles[company] = {
-                            "긍정": match_article(pos_title),
-                            "부정": match_article(neg_title)
-                        }
-                    except:
-                        selected_articles[company] = {"긍정": None, "부정": None}
-
-            st.session_state.selected_important_articles = selected_articles
-            st.success("자동선정 완료!")
-            st.rerun()
-
-        for company, each in st.session_state.selected_important_articles.items():
-            st.markdown(f"**📌 {company}**")
-            for senti in ["긍정", "부정"]:
-                a = each.get(senti)
-                label = f"[{senti}] {a['title'][:40]}..." if a else f"[{senti}] 없음"
-                if st.checkbox(label, key=f"important_select_{company}_{senti}"):
-                    st.session_state.important_article_selected = {"company": company, "sentiment": senti}
-
-        if st.button("❌ 선택된 중요기사 삭제"):
-            tgt = st.session_state.important_article_selected
-            comp, senti = tgt.get("company"), tgt.get("sentiment")
-            if comp and senti:
-                st.session_state.selected_important_articles[comp][senti] = None
-                st.success("삭제 완료")
-                st.session_state.important_article_selected = {"company": None, "sentiment": None}
-                st.experimental_rerun()
-            else:
-                st.warning("먼저 삭제할 항목을 체크하세요.")
-
-        if st.button("🔁 선택 기사로 교체", key="replace_article_btn_main"):
-            tgt = st.session_state.important_article_selected
-            comp, senti = tgt.get("company"), tgt.get("sentiment")
-            if not (comp and senti):
-                st.warning("우측에서 교체할 대상 슬롯을 체크하세요.")
-            else:
-                found = False
-                for keyword2, arts in st.session_state.search_results.items():
-                    for idx2, art in enumerate(arts):
-                        uid = re.sub(r'\W+', '', art["link"])[-16:]
-                        cache_key = f"{keyword2}_{idx2}_{uid}"
-                        if st.session_state.article_checked.get(cache_key):
-                            st.session_state.selected_important_articles[comp][senti] = art
-                            st.success("교체 완료!")
-                            st.session_state.article_checked[cache_key] = False
-                            st.session_state.important_article_selected = {"company": None, "sentiment": None}
-                            st.experimental_rerun()
-                            found = True
-                if not found:
-                    st.warning("좌측에서 기사 1개 선택 필요")
-
-        # ✅ 최종 중요기사 엑셀 다운로드
-        st.markdown("---")
-        st.markdown("📥 **최종 확정 중요기사 엑셀 다운로드**")
-        data = []
-        for comp, val in st.session_state.selected_important_articles.items():
-            def format_link(a):
-                return f'=HYPERLINK("{a["link"]}", "({a["date"]}) {a["title"]}")' if a else ""
-            data.append({
-                "기업명": comp,
-                "긍정 뉴스": format_link(val.get("긍정")),
-                "부정 뉴스": format_link(val.get("부정"))
-            })
-        df = pd.DataFrame(data)
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            df.to_excel(writer, index=False)
-        output.seek(0)
+        st.session_state.selected_articles = selected_articles
+        st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
         st.download_button(
-            label="📁 엑셀 다운로드",
-            data=output,
-            file_name="최종중요기사.xlsx",
+            label="📥 맞춤 엑셀 다운로드",
+            data=get_excel_download_with_favorite_and_excel_company_col(
+                st.session_state.selected_articles,
+                favorite_categories,
+                excel_company_categories
+            ).getvalue(),
+            file_name="뉴스요약_맞춤형.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        # 📥 최종 엑셀 다운로드
+        st.markdown("---")
+        st.markdown("📥 중요기사 엑셀 다운로드")
+
+        excel_rows = []
+        for comp in st.session_state.search_results.keys():
+            each = st.session_state.selected_important_articles.get(comp, {"긍정": None, "부정": None})
+            def link_text(a):
+                return f'=HYPERLINK("{a["link"]}", "({a["date"]}) {a["title"]}")' if a else ""
+            excel_rows.append({
+                "기업명": comp,
+                "긍정 뉴스": link_text(each.get("긍정")),
+                "부정 뉴스": link_text(each.get("부정"))
+            })
+
+        df_excel = pd.DataFrame(excel_rows)
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+            df_excel.to_excel(writer, index=False)
+        excel_buffer.seek(0)
+
+        st.download_button(
+            label="📁 중요기사_최종확정 엑셀 다운로드",
+            data=excel_buffer,
+            file_name="중요기사_최종.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
 
 if st.session_state.search_results:
     filtered_results = {}
