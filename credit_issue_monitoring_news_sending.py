@@ -732,6 +732,70 @@ def generate_important_article_excel(search_results, common_keywords, industry_k
     output.seek(0)
     return output
 
+def run_generate_important_articles_and_store():
+    import re
+    from openai import OpenAI
+
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    if not OPENAI_API_KEY:
+        st.error("❌ OpenAI API 키가 설정되지 않았습니다.")
+        return
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    selected_articles = {}
+
+    with st.spinner("🤖 OpenAI로 중요 기사 자동 선정 중..."):
+        for company in st.session_state.search_results.keys():  # 🔥 현재 검색된 키워드만
+            articles = st.session_state.search_results.get(company, [])
+            if not articles:
+                selected_articles[company] = {"긍정": None, "부정": None}
+                continue
+
+            keywords = list(set(ALL_COMMON_FILTER_KEYWORDS + st.session_state.get("industry_sub", [])))
+            filtered = [a for a in articles if any(kw in a["title"] for kw in keywords)]
+
+            if not filtered:
+                selected_articles[company] = {"긍정": None, "부정": None}
+                continue
+
+            prompt_list = "\n".join([f"{i+1}. {a['title']}" for i, a in enumerate(filtered)])
+            prompt = (
+                f"[필터 키워드]\n{', '.join(keywords)}\n\n"
+                f"[기사 목록]\n{prompt_list}\n\n"
+                f"중요한 기사 2개를 고르세요.\n"
+                "[긍정]: (기사 제목)\n[부정]: (기사 제목)"
+            )
+
+            try:
+                res = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1024,
+                    temperature=0.3
+                )
+                content = res.choices[0].message.content.strip()
+                pos = re.search(r"\[긍정\]:\s*(.+)", content)
+                neg = re.search(r"\[부정\]:\s*(.+)", content)
+                pos_title = pos.group(1).strip() if pos else ""
+                neg_title = neg.group(1).strip() if neg else ""
+
+                def match(title):
+                    for art in filtered:
+                        if title and title in art["title"]:
+                            return art
+                    return None
+
+                selected_articles[company] = {
+                    "긍정": match(pos_title),
+                    "부정": match(neg_title)
+                }
+            except Exception as e:
+                st.warning(f"{company}: OpenAI 응답 오류 - {e}")
+                selected_articles[company] = {"긍정": None, "부정": None}
+
+    st.session_state.selected_important_articles = selected_articles
+    st.success("✅ 중요 기사 자동선정 완료!")
+
 def render_selected_important_articles():
     st.markdown("### ⭐ 중요 기사 확정 / 교체")
 
@@ -1047,69 +1111,6 @@ if st.session_state.search_results:
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
-def run_generate_important_articles_and_store():
-    import re
-    from openai import OpenAI
-
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-    if not OPENAI_API_KEY:
-        st.error("❌ OpenAI API 키가 설정되지 않았습니다.")
-        return
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    selected_articles = {}
-
-    with st.spinner("🤖 OpenAI로 중요 기사 자동 선정 중..."):
-        for company in st.session_state.search_results.keys():  # 🔥 현재 검색된 키워드만
-            articles = st.session_state.search_results.get(company, [])
-            if not articles:
-                selected_articles[company] = {"긍정": None, "부정": None}
-                continue
-
-            keywords = list(set(ALL_COMMON_FILTER_KEYWORDS + st.session_state.get("industry_sub", [])))
-            filtered = [a for a in articles if any(kw in a["title"] for kw in keywords)]
-
-            if not filtered:
-                selected_articles[company] = {"긍정": None, "부정": None}
-                continue
-
-            prompt_list = "\n".join([f"{i+1}. {a['title']}" for i, a in enumerate(filtered)])
-            prompt = (
-                f"[필터 키워드]\n{', '.join(keywords)}\n\n"
-                f"[기사 목록]\n{prompt_list}\n\n"
-                f"중요한 기사 2개를 고르세요.\n"
-                "[긍정]: (기사 제목)\n[부정]: (기사 제목)"
-            )
-
-            try:
-                res = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=1024,
-                    temperature=0.3
-                )
-                content = res.choices[0].message.content.strip()
-                pos = re.search(r"\[긍정\]:\s*(.+)", content)
-                neg = re.search(r"\[부정\]:\s*(.+)", content)
-                pos_title = pos.group(1).strip() if pos else ""
-                neg_title = neg.group(1).strip() if neg else ""
-
-                def match(title):
-                    for art in filtered:
-                        if title and title in art["title"]:
-                            return art
-                    return None
-
-                selected_articles[company] = {
-                    "긍정": match(pos_title),
-                    "부정": match(neg_title)
-                }
-            except Exception as e:
-                st.warning(f"{company}: OpenAI 응답 오류 - {e}")
-                selected_articles[company] = {"긍정": None, "부정": None}
-
-    st.session_state.selected_important_articles = selected_articles
-    st.success("✅ 중요 기사 자동선정 완료!")
 
 def render_article_replacement_ui():
     keyword = st.session_state.get("keyword_to_replace")
