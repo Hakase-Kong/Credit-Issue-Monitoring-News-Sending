@@ -470,12 +470,26 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
             break
     return articles[:limit]
 
+# (1) 뉴스 fetch 후 articles에 키워드 주입!
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
     for k in keyword_list:
         articles = fetch_naver_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
+        for art in articles:
+            art["키워드"] = k  # 🔑 반드시 키워드 명시
         st.session_state.search_results[k] = articles
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
+
+# (2) 교체시 반드시 '회사명'을 기사['키워드']로 채움!
+# 예시(필요한 부분만):
+new_article = {
+    "회사명": selected_article.get("키워드", ""),
+    "감성": sentiment,
+    "제목": selected_article["title"],
+    "링크": selected_article["link"],
+    "날짜": selected_article["date"],
+    "출처": selected_article["source"]
+}
 
 def summarize_article_from_url(article_url, title, do_summary=True):
     cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
