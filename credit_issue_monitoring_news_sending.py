@@ -474,8 +474,11 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
     for k in keyword_list:
         articles = fetch_naver_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
+        
+        # ✅ 여기가 핵심 (뉴스 기사마다 키워드 필드 부여)
         for art in articles:
-            art["키워드"] = k  # 🔑 반드시 키워드 명시
+            art["키워드"] = k  # ← 반드시 포함
+
         st.session_state.search_results[k] = articles
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
