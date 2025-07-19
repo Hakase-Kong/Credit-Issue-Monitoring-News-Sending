@@ -867,7 +867,8 @@ def render_articles_with_single_summary_and_telegram(
         selected_articles = []
         for keyword, articles in filtered_results.items():
             st.markdown(f"#### 🔍 키워드: {keyword}")
-            for article in articles[:show_limit]:
+            limit = show_limit.get(keyword, 5)  # ← ✅ 슬라이싱용 정수 추출
+            for article in articles[:limit]:
                 if st.checkbox(f"{article['title']} ✅", key=article["link"]):
                     selected_articles.append(article)
                 st.caption(article["pubDate"])
