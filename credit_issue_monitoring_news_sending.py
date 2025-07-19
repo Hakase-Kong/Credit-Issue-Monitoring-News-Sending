@@ -742,7 +742,7 @@ def render_selected_important_articles():
             run_generate_important_articles_and_store()
             st.rerun()
     with col2:
-        if st.button("🔁 선택 기사로 교체"):
+        if st.button("🔁 선택 기사로 교체", key="replace_article_btn_main"):
             comp = st.session_state.important_article_selected.get("company")
             senti = st.session_state.important_article_selected.get("sentiment")
             if not (comp and senti):
@@ -985,7 +985,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
             else:
                 st.warning("먼저 삭제할 항목을 체크하세요.")
 
-        if st.button("🔁 선택 기사로 교체"):
+        if st.button("🔁 선택 기사로 교체", key="replace_article_btn_main"):
             tgt = st.session_state.important_article_selected
             comp, senti = tgt.get("company"), tgt.get("sentiment")
             if not (comp and senti):
