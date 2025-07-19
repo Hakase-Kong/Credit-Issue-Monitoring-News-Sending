@@ -800,7 +800,6 @@ def render_important_article_review_and_download():
         )
         if checked:
             new_selection.append(idx)
-
     st.session_state.important_selected_index = new_selection
 
     col_action1, col_action2 = st.columns([0.5, 0.5])
@@ -811,7 +810,7 @@ def render_important_article_review_and_download():
                 if 0 <= idx < len(st.session_state["important_articles_preview"]):
                     st.session_state["important_articles_preview"].pop(idx)
             st.session_state.important_selected_index = []
-            st.experimental_rerun()
+            st.rerun()
 
     with col_action2:
         if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
@@ -820,17 +819,18 @@ def render_important_article_review_and_download():
                 st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
             else:
                 from_key = left_selected[0]
-                parts = from_key.split("_")
-                if len(parts) >= 3:
-                    keyword, idx = parts[0], int(parts[1])
-                    # 왼쪽에서 실제 기사 정보 찾기
+                # from_key 예시: f"{keyword}_{idx}_{unique_id}"
+                key_parts = from_key.split("_")
+                if len(key_parts) >= 3:
+                    keyword = key_parts[0]
+                    idx = int(key_parts[1])  # ← 인덱스 반드시 int로!
                     left_articles = st.session_state.search_results.get(keyword, [])
                     if 0 <= idx < len(left_articles):
                         source_article = left_articles[idx]
                         cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
                         summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
 
-                        # 감성 분석 가져오기 또는 생성
+                        # 감성 분석
                         if summary_key in st.session_state:
                             one_line, summary, sentiment, full_text = st.session_state[summary_key]
                         else:
@@ -839,23 +839,20 @@ def render_important_article_review_and_download():
                             )
                             st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
 
-                        # 새 기사 객체 (제목을 "왼쪽에서 선택한 기사"로 반드시 반영)
                         new_article = {
                             "회사명": keyword,
                             "감성": sentiment,
-                            "제목": source_article["title"],   # ← 이 줄이 정확히 제목 반영
+                            "제목": source_article["title"],  # ← 반드시 여기서 제목을 그대로 씀!!
                             "링크": source_article["link"],
                             "날짜": source_article["date"],
                             "출처": source_article["source"]
                         }
-
                         replace_idx = st.session_state.important_selected_index[0]
                         st.session_state["important_articles_preview"][replace_idx] = new_article
 
-                        # 왼쪽 체크 해제: 체크 key(정확히!)
+                        # 체크박스 해제
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-                        # 오른쪽 체크(선택) 해제
                         st.session_state.important_selected_index = []
 
                         st.success("기사 교체 완료")
