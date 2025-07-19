@@ -932,9 +932,9 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     st.markdown(f"- **감성분석:** `{sentiment}`")
                     st.markdown("---")
 
-                    render_selected_important_articles()
-                    render_article_replacement_ui()
-                    download_final_important_articles_excel()
+                render_selected_important_articles()
+                render_article_replacement_ui()
+                download_final_important_articles_excel()
 
         st.session_state.selected_articles = selected_articles
         st.write(f"선택된 기사 개수: {len(selected_articles)}")
