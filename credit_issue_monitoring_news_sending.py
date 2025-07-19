@@ -800,7 +800,7 @@ def render_selected_important_articles():
 
     col1, col2, col3 = st.columns([0.5, 0.25, 0.25])
     with col1:
-        if st.button("🤖 OpenAI로 중요 기사 자동선정", key="btn_openai_auto_selected_articles"):
+        if st.button("🤖 OpenAI로 중요 기사 자동선정", key="btn_openai_auto_selected_articles_main"):
             run_generate_important_articles_and_store()
             st.rerun()
     with col2:
