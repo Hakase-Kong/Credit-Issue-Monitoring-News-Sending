@@ -878,7 +878,3 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
-
-키워드별 중요기사 엑셀 다운로드를 누르면
-선택된 기사들을 키워드별로 뉴스 검색결과처럼 나타내줬으면 좋겠어.
-그리고 나서 선택된 기사들이 마음에 들지 않으면 왼쪽(뉴스 검색 결과) 기사와 교체 할 수 있게 만들어 줄 수 있을까? 그리고 나서 맨 밑에서 최종적으로 엑셀로 추출할 수 있게 만드는거야
