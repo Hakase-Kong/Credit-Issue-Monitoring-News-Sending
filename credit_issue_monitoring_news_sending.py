@@ -775,7 +775,7 @@ def render_important_article_review_and_download():
             if len(left_selected) != 1 or len(st.session_state.important_selected_index) != 1:
                 st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
             else:
-                # 해당 기사 정보를 왼쪽에서 추출
+                # 왼쪽 기사 정보 가져오기
                 from_key = left_selected[0]
                 parts = from_key.split("_")
                 if len(parts) >= 3:
@@ -783,14 +783,22 @@ def render_important_article_review_and_download():
                     source_article = st.session_state.search_results.get(keyword, [])[idx]
                     cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
                     summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
+
+                    # 감성 요약: 캐시에 없으면 새로 생성
                     if summary_key in st.session_state:
                         one_line, summary, sentiment, full_text = st.session_state[summary_key]
                     else:
                         one_line, summary, sentiment, full_text = summarize_article_from_url(
-                        source_article['link'], source_article['title']
+                            source_article["link"], source_article["title"]
                         )
                         st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
-                    # 교체 실행
+
+                    # 왼쪽(뉴스 요약 목록)에서 감성분석 미리보기를 가능케 함
+                    st.session_state.article_checked_left[from_key] = True
+                    st.session_state.article_checked[from_key] = True
+
+                    # 새 중요 기사로 교체
+                    replace_idx = st.session_state.important_selected_index[0]
                     new_article = {
                         "회사명": keyword,
                         "감성": sentiment,
@@ -799,12 +807,15 @@ def render_important_article_review_and_download():
                         "날짜": source_article["date"],
                         "출처": source_article["source"]
                     }
-
-                    replace_idx = st.session_state.important_selected_index[0]
                     st.session_state["important_articles_preview"][replace_idx] = new_article
+
+                    # 상태 리셋
                     st.session_state.important_selected_index = []
+                    for key in st.session_state.article_checked_left.keys():
+                        st.session_state.article_checked_left[key] = False
+
                     st.success("기사 교체 완료")
-                    st.rerun()
+                    st.experimental_rerun()
 
     st.markdown("---")
     st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
