@@ -772,105 +772,119 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     return result
 
 def render_important_article_review_and_download():
-    st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
+    with st.container():
+        st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
-    if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
-        with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
-            important_articles = generate_important_article_list(
-                search_results=st.session_state.search_results,
-                common_keywords=ALL_COMMON_FILTER_KEYWORDS,
-                industry_keywords=st.session_state.get("industry_sub", []),
-                favorites=favorite_categories
-            )
-            st.session_state.important_articles_preview = important_articles
-            st.session_state.important_selected_index = []
+        # 중요 기사 자동 선정
+        if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
+            with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
+                important_articles = generate_important_article_list(
+                    search_results=st.session_state.search_results,
+                    common_keywords=ALL_COMMON_FILTER_KEYWORDS,
+                    industry_keywords=st.session_state.get("industry_sub", []),
+                    favorites=favorite_categories
+                )
+                st.session_state.important_articles_preview = important_articles
+                st.session_state.important_selected_index = []
 
-    if not st.session_state.get("important_articles_preview"):
-        st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
-        return
+        # 중요 기사 후보 없을 경우
+        if not st.session_state.get("important_articles_preview"):
+            st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
+            return
 
-    st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
+        st.markdown("🎯 **중요 기사 목록**")
 
-    new_selection = []
-    for idx, article in enumerate(st.session_state["important_articles_preview"]):
-        checked = st.checkbox(
-            f"{article['회사명']} | {article['감성']} | {article['제목'][:40]}...",
-            key=f"important_chk_{idx}",
-            value=(idx in st.session_state.important_selected_index)
+        # 체크 상태 반영만 수행 (로딩 없이)
+        new_selection = []
+        for idx, article in enumerate(st.session_state["important_articles_preview"]):
+            cols = st.columns([0.05, 0.95])
+            with cols[0]:
+                checked = st.checkbox("", key=f"important_chk_{idx}",
+                                      value=(idx in st.session_state.important_selected_index))
+            if checked:
+                new_selection.append(idx)
+
+            with cols[1]:
+                st.markdown(
+                    f"**{article['회사명']}** | {article['감성']} | "
+                    f"[{article['제목']}]({article['링크']}) | {article['날짜']} | {article['출처']}"
+                )
+
+        # 상태 업데이트: 선택 인덱스만 변경
+        st.session_state.important_selected_index = new_selection
+
+        # 삭제/교체 버튼
+        col_action1, col_action2 = st.columns(2)
+
+        with col_action1:
+            if st.button("🗑 선택한 기사 삭제"):
+                for idx in sorted(st.session_state.important_selected_index, reverse=True):
+                    if 0 <= idx < len(st.session_state["important_articles_preview"]):
+                        st.session_state["important_articles_preview"].pop(idx)
+                st.session_state.important_selected_index = []
+                st.success("✅ 선택한 기사를 삭제했습니다.")
+                st.rerun()
+
+        with col_action2:
+            if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
+                left_selected = [k for k, v in st.session_state.article_checked_left.items() if v]
+                if len(left_selected) != 1 or len(st.session_state.important_selected_index) != 1:
+                    st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
+                else:
+                    from_key = left_selected[0]
+                    key_parts = from_key.split("_")
+                    if len(key_parts) >= 3:
+                        keyword = key_parts[0]
+                        idx = int(key_parts[1])
+                        articles = st.session_state.search_results.get(keyword, [])
+                        if 0 <= idx < len(articles):
+                            selected_article = articles[idx]
+                            cleaned_link_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
+                            summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
+
+                            if summary_key in st.session_state:
+                                one_line, summary, sentiment, full_text = st.session_state[summary_key]
+                            else:
+                                one_line, summary, sentiment, full_text = summarize_article_from_url(
+                                    selected_article["link"], selected_article["title"]
+                                )
+                                st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
+
+                            new_article = {
+                                "회사명": keyword,
+                                "감성": sentiment,
+                                "제목": selected_article["title"],
+                                "링크": selected_article["link"],
+                                "날짜": selected_article["date"],
+                                "출처": selected_article["source"]
+                            }
+
+                            replace_idx = st.session_state.important_selected_index[0]
+                            st.session_state["important_articles_preview"][replace_idx] = new_article
+
+                            st.session_state.article_checked_left[from_key] = False
+                            st.session_state.article_checked[from_key] = False
+                            st.session_state.important_selected_index = []
+
+                            st.success("✅ 기사 교체 완료")
+                            st.rerun()
+
+        # --- 엑셀 다운로드 ---
+        st.markdown("---")
+        st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
+
+        output_excel = build_important_excel_same_format(
+            st.session_state["important_articles_preview"],
+            favorite_categories,
+            excel_company_categories
         )
-        if checked:
-            new_selection.append(idx)
-    st.session_state.important_selected_index = new_selection
 
-    col_action1, col_action2 = st.columns([0.5, 0.5])
-
-    with col_action1:
-        if st.button("🗑 선택한 기사 삭제"):
-            for idx in sorted(st.session_state.important_selected_index, reverse=True):
-                if 0 <= idx < len(st.session_state["important_articles_preview"]):
-                    st.session_state["important_articles_preview"].pop(idx)
-            st.session_state.important_selected_index = []
-            st.rerun()
-
-    with col_action2:
-        if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
-            left_selected = [k for k, v in st.session_state.article_checked_left.items() if v]
-            if len(left_selected) != 1 or len(st.session_state.important_selected_index) != 1:
-                st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
-            else:
-                from_key = left_selected[0]
-                # from_key 예시: f"{keyword}_{idx}_{unique_id}"
-                key_parts = from_key.split("_")
-                if len(key_parts) >= 3:
-                    keyword = key_parts[0]
-                    idx = int(key_parts[1])  # ← 인덱스 반드시 int로!
-                    left_articles = st.session_state.search_results.get(keyword, [])
-                    if 0 <= idx < len(left_articles):
-                        source_article = left_articles[idx]
-                        cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
-                        summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
-
-                        # 감성 분석
-                        if summary_key in st.session_state:
-                            one_line, summary, sentiment, full_text = st.session_state[summary_key]
-                        else:
-                            one_line, summary, sentiment, full_text = summarize_article_from_url(
-                                source_article["link"], source_article["title"]
-                            )
-                            st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
-
-                        new_article = {
-                            "회사명": keyword,
-                            "감성": sentiment,
-                            "제목": source_article["title"],  # ← 반드시 여기서 제목을 그대로 씀!!
-                            "링크": source_article["link"],
-                            "날짜": source_article["date"],
-                            "출처": source_article["source"]
-                        }
-                        replace_idx = st.session_state.important_selected_index[0]
-                        st.session_state["important_articles_preview"][replace_idx] = new_article
-
-                        # 체크박스 해제
-                        st.session_state.article_checked_left[from_key] = False
-                        st.session_state.article_checked[from_key] = False
-                        st.session_state.important_selected_index = []
-
-                        st.success("기사 교체 완료")
-                        st.rerun()
-
-    st.markdown("---")
-    st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
-    output_excel = build_important_excel_same_format(
-        st.session_state["important_articles_preview"],
-        favorite_categories,
-        excel_company_categories
-    )
-    st.download_button(
-        label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
-        data=output_excel.getvalue(),
-        file_name="중요뉴스_최종선정_양식.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.download_button(
+            label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
+            data=output_excel.getvalue(),
+            file_name="중요뉴스_최종선정_양식.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     def build_excel_from_preview(preview_data):
         rows = []
