@@ -784,13 +784,12 @@ def render_important_article_review_and_download():
                     cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
                     summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
                     if summary_key in st.session_state:
-                        one_line, summary, sentiment, _ = st.session_state[summary_key]
+                        one_line, summary, sentiment, full_text = st.session_state[summary_key]
                     else:
-                        one_line, summary, sentiment, _ = summarize_article_from_url(
-                            source_article['link'], source_article['title']
+                        one_line, summary, sentiment, full_text = summarize_article_from_url(
+                        source_article['link'], source_article['title']
                         )
-                        st.session_state[summary_key] = (one_line, summary, sentiment, _)
-
+                        st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
                     # 교체 실행
                     new_article = {
                         "회사명": keyword,
