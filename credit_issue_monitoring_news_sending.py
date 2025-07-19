@@ -865,7 +865,7 @@ def render_important_article_review_and_download():
                         st.session_state.article_checked_left[key] = False
 
                     st.success("기사 교체 완료")
-                    st.experimental_rerun()
+                    st.rerun()
 
     st.markdown("---")
     st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
@@ -899,6 +899,7 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
 
 
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
@@ -953,7 +954,11 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         )
                     with cols[1]:
                         st.markdown(md_line, unsafe_allow_html=True)
+
                     st.session_state.article_checked_left[key] = checked
+                    if checked:
+                        st.session_state.article_checked[key] = True
+
 
 
     with col_summary:
