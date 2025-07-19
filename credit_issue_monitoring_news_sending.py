@@ -774,7 +774,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 def render_important_article_review_and_download():
     st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
-    # 🚀 자동 선정 버튼
     if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
         with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
             important_articles = generate_important_article_list(
@@ -812,20 +811,15 @@ def render_important_article_review_and_download():
                 if 0 <= idx < len(st.session_state["important_articles_preview"]):
                     st.session_state["important_articles_preview"].pop(idx)
             st.session_state.important_selected_index = []
-            st.rerun()
+            st.experimental_rerun()
 
     with col_action2:
         if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
-            # 왼쪽에서 선택된 기사를 찾음
-            left_selected = []
-            for key, val in st.session_state.article_checked_left.items():
-                if val:
-                    left_selected.append(key)
+            left_selected = [k for k, v in st.session_state.article_checked_left.items() if v]
 
             if len(left_selected) != 1 or len(st.session_state.important_selected_index) != 1:
                 st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
             else:
-                # 왼쪽 기사 정보 가져오기
                 from_key = left_selected[0]
                 parts = from_key.split("_")
                 if len(parts) >= 3:
@@ -834,7 +828,7 @@ def render_important_article_review_and_download():
                     cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
                     summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
 
-                    # 감성 요약: 캐시에 없으면 새로 생성
+                    # 감성 분석 가져오기 또는 수행
                     if summary_key in st.session_state:
                         one_line, summary, sentiment, full_text = st.session_state[summary_key]
                     else:
@@ -843,12 +837,7 @@ def render_important_article_review_and_download():
                         )
                         st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
 
-                    # 왼쪽(뉴스 요약 목록)에서 감성분석 미리보기를 가능케 함
-                    st.session_state.article_checked_left[from_key] = True
-                    st.session_state.article_checked[from_key] = True
-
-                    # 새 중요 기사로 교체
-                    replace_idx = st.session_state.important_selected_index[0]
+                    # 새 기사 생성
                     new_article = {
                         "회사명": keyword,
                         "감성": sentiment,
@@ -857,18 +846,36 @@ def render_important_article_review_and_download():
                         "날짜": source_article["date"],
                         "출처": source_article["source"]
                     }
+
+                    # 교체 실행
+                    replace_idx = st.session_state.important_selected_index[0]
                     st.session_state["important_articles_preview"][replace_idx] = new_article
 
-                    # 상태 리셋
+                    # ✅ 왼쪽 기사 체크 해제
+                    st.session_state.article_checked_left[from_key] = False
+                    st.session_state.article_checked[from_key] = False
+
+                    # ✅ 오른쪽 선택 해제
                     st.session_state.important_selected_index = []
-                    for key in st.session_state.article_checked_left.keys():
-                        st.session_state.article_checked_left[key] = False
 
                     st.success("기사 교체 완료")
                     st.rerun()
 
     st.markdown("---")
     st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
+
+    # ✅ 맞춤양식으로 저장
+    output_excel = build_important_excel_same_format(
+        st.session_state["important_articles_preview"],
+        favorite_categories,
+        excel_company_categories
+    )
+    st.download_button(
+        label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
+        data=output_excel.getvalue(),
+        file_name="중요뉴스_최종선정_양식.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
     def build_excel_from_preview(preview_data):
         rows = []
@@ -887,20 +894,6 @@ def render_important_article_review_and_download():
             df.to_excel(writer, index=False, sheet_name='중요뉴스확정')
         output.seek(0)
         return output
-
-        output_excel = build_important_excel_same_format(
-            st.session_state["important_articles_preview"],
-            favorite_categories,
-            excel_company_categories
-        )
-        st.download_button(
-            label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
-            data=output_excel.getvalue(),
-            file_name="중요뉴스_최종선정_양식.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-
 
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
     SENTIMENT_CLASS = {
