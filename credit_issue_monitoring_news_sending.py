@@ -816,7 +816,6 @@ def render_important_article_review_and_download():
     with col_action2:
         if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
             left_selected = [k for k, v in st.session_state.article_checked_left.items() if v]
-
             if len(left_selected) != 1 or len(st.session_state.important_selected_index) != 1:
                 st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
             else:
@@ -824,47 +823,46 @@ def render_important_article_review_and_download():
                 parts = from_key.split("_")
                 if len(parts) >= 3:
                     keyword, idx = parts[0], int(parts[1])
-                    source_article = st.session_state.search_results.get(keyword, [])[idx]
-                    cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
-                    summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
+                    # 왼쪽에서 실제 기사 정보 찾기
+                    left_articles = st.session_state.search_results.get(keyword, [])
+                    if 0 <= idx < len(left_articles):
+                        source_article = left_articles[idx]
+                        cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
+                        summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
 
-                    # 감성 분석 가져오기 또는 수행
-                    if summary_key in st.session_state:
-                        one_line, summary, sentiment, full_text = st.session_state[summary_key]
-                    else:
-                        one_line, summary, sentiment, full_text = summarize_article_from_url(
-                            source_article["link"], source_article["title"]
-                        )
-                        st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
+                        # 감성 분석 가져오기 또는 생성
+                        if summary_key in st.session_state:
+                            one_line, summary, sentiment, full_text = st.session_state[summary_key]
+                        else:
+                            one_line, summary, sentiment, full_text = summarize_article_from_url(
+                                source_article["link"], source_article["title"]
+                            )
+                            st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
 
-                    # 새 기사 생성
-                    new_article = {
-                        "회사명": keyword,
-                        "감성": sentiment,
-                        "제목": source_article["title"],
-                        "링크": source_article["link"],
-                        "날짜": source_article["date"],
-                        "출처": source_article["source"]
-                    }
+                        # 새 기사 객체 (제목을 "왼쪽에서 선택한 기사"로 반드시 반영)
+                        new_article = {
+                            "회사명": keyword,
+                            "감성": sentiment,
+                            "제목": source_article["title"],   # ← 이 줄이 정확히 제목 반영
+                            "링크": source_article["link"],
+                            "날짜": source_article["date"],
+                            "출처": source_article["source"]
+                        }
 
-                    # 교체 실행
-                    replace_idx = st.session_state.important_selected_index[0]
-                    st.session_state["important_articles_preview"][replace_idx] = new_article
+                        replace_idx = st.session_state.important_selected_index[0]
+                        st.session_state["important_articles_preview"][replace_idx] = new_article
 
-                    # ✅ 왼쪽 기사 체크 해제
-                    st.session_state.article_checked_left[from_key] = False
-                    st.session_state.article_checked[from_key] = False
+                        # 왼쪽 체크 해제: 체크 key(정확히!)
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_key] = False
+                        # 오른쪽 체크(선택) 해제
+                        st.session_state.important_selected_index = []
 
-                    # ✅ 오른쪽 선택 해제
-                    st.session_state.important_selected_index = []
-
-                    st.success("기사 교체 완료")
-                    st.rerun()
+                        st.success("기사 교체 완료")
+                        st.rerun()
 
     st.markdown("---")
     st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
-
-    # ✅ 맞춤양식으로 저장
     output_excel = build_important_excel_same_format(
         st.session_state["important_articles_preview"],
         favorite_categories,
