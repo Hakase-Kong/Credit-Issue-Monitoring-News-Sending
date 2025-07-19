@@ -786,6 +786,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 def render_important_article_review_and_download():
     st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
+    # 자동 선정 버튼
     if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
         with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
             important_articles = generate_important_article_list(
@@ -797,11 +798,13 @@ def render_important_article_review_and_download():
             st.session_state.important_articles_preview = important_articles
             st.session_state.important_selected_index = []
 
+    # 중요 기사 미리보기 존재 확인
     if not st.session_state.get("important_articles_preview"):
         st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
         return
 
     st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
+    # 체크박스 UI 및 인덱스 관리
     new_selection = []
     for idx, article in enumerate(st.session_state["important_articles_preview"]):
         checked = st.checkbox(
@@ -837,10 +840,11 @@ def render_important_article_review_and_download():
                     left_articles = st.session_state.search_results.get(keyword, [])
                     if 0 <= idx < len(left_articles):
                         source_article = left_articles[idx]
+                        # 캐시 키 생성
                         cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
                         summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
 
-                        # 감성 분석
+                        # 감성은 캐시에서/없으면 새로 분석
                         if summary_key in st.session_state:
                             one_line, summary, sentiment, full_text = st.session_state[summary_key]
                         else:
@@ -849,7 +853,7 @@ def render_important_article_review_and_download():
                             )
                             st.session_state[summary_key] = (one_line, summary, sentiment, full_text)
 
-                        # 반드시 왼쪽 뉴스의 제목/링크/날짜/출처 그대로!
+                        # **왼쪽 뉴스의 제목/링크/날짜/출처 그대로 복사**
                         new_article = {
                             "회사명": keyword,
                             "감성": sentiment,
@@ -861,11 +865,12 @@ def render_important_article_review_and_download():
                         replace_idx = st.session_state.important_selected_index[0]
                         st.session_state["important_articles_preview"][replace_idx] = new_article
 
+                        # 체크 해제 및 인덱스 초기화
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
                         st.session_state.important_selected_index = []
 
-                        st.success("기사 교체 완료")
+                        st.success("기사 교체 완료: " + new_article["제목"])
                         st.rerun()
 
     st.markdown("---")
