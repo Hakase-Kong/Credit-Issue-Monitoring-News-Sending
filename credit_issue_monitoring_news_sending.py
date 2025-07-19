@@ -805,7 +805,7 @@ def render_important_article_review_and_download():
                     st.session_state["important_articles_preview"][replace_idx] = new_article
                     st.session_state.important_selected_index = []
                     st.success("기사 교체 완료")
-                    st.experimental_rerun()
+                    st.rerun()
 
     st.markdown("---")
     st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
