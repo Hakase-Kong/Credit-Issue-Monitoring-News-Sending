@@ -786,6 +786,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 def render_important_article_review_and_download():
     st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
+    # 자동 생성 기능 동일...
     if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
         with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
             important_articles = generate_important_article_list(
@@ -817,7 +818,6 @@ def render_important_article_review_and_download():
 
     with col_action1:
         if st.button("🗑 선택한 기사 삭제"):
-            # 내림차순 정렬 후 pop
             for idx in sorted(st.session_state.important_selected_index, reverse=True):
                 if 0 <= idx < len(st.session_state["important_articles_preview"]):
                     st.session_state["important_articles_preview"].pop(idx)
@@ -826,50 +826,73 @@ def render_important_article_review_and_download():
 
     with col_action2:
         if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
-            # 왼쪽 체크박스에서 단 1개만 선택된 경우만 진행
+            # 1. 왼쪽에서 체크한 기사 'key'(고유키) 추출
             left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
             right_selected_indexes = st.session_state.important_selected_index
             if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
                 st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
             else:
-                from_key = left_selected_keys[0]  # 예: 현대캐피탈_1_abc1234defg5678
-                key_parts = from_key.split("_")
-                if len(key_parts) >= 3:
-                    keyword = key_parts[0]
-                    idx = int(key_parts[1])
-                    left_articles = st.session_state.search_results.get(keyword, [])
-                    if 0 <= idx < len(left_articles):
-                        # 1:1로 정확히 그 기사 데이터만 추출
-                        src_article = left_articles[idx]
-                        # (선택적) 감성 재분석
-                        cleaned_id = re.sub(r'\W+', '', src_article['link'])[-16:]
-                        summary_key = f"summary_{keyword}_{idx}_{cleaned_id}"
-                        if summary_key in st.session_state:
-                            _, _, sentiment, _ = st.session_state[summary_key]
-                        else:
-                            _, _, sentiment, _ = summarize_article_from_url(
-                                src_article["link"], src_article["title"]
-                            )
-                            st.session_state[summary_key] = ("", "", sentiment, "")
-                        # 왼쪽 기사의 내용을 반드시 100% 복사
-                        new_article = {
-                            "회사명": keyword,
-                            "감성": sentiment,
-                            "제목": src_article["title"],
-                            "링크": src_article["link"],
-                            "날짜": src_article["date"],
-                            "출처": src_article["source"]
-                        }
-                        # 실제 교체
-                        target_idx = right_selected_indexes[0]
-                        st.session_state["important_articles_preview"][target_idx] = new_article
+                # 2. 체크박스 key에서 실기사의 link(고유값) 추출
+                from_key = left_selected_keys[0]
+                # 키 생성 방식: f"{keyword}_{idx}_{unique_id}", 마지막 unique_id가 URL에서 따오는 고유값임
+                # => 유일하게 링크로 기사 일치 가능
+                # Search 전체 기사들을 flatten해서 일치 링크 찾기
+                selected_link = None
+                m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
+                if m:
+                    key_tail = m.group(1)
+                    for kw, art_list in st.session_state.search_results.items():
+                        for art in art_list:
+                            uid = re.sub(r'\W+', '', art['link'])[-16:]
+                            if uid == key_tail:
+                                selected_link = art['link']
+                                selected_article = art
+                                break
+                        if selected_link:
+                            break
+                else:
+                    st.warning("왼쪽 기사 선택 키 해석 오류")
+                    return
+                # 3. 혹시 중복 기사(동일 링크) 있을 경우 반드시 첫 일치 기사 채택
+                if not selected_link:
+                    st.warning("왼쪽에서 선택한 기사에 대응하는 링크를 찾을 수 없습니다.")
+                    return
 
-                        # 상태 초기화 (체크 해제, 교체 인덱스 해제)
-                        st.session_state.article_checked_left[from_key] = False
-                        st.session_state.article_checked[from_key] = False
-                        st.session_state.important_selected_index = []
-                        st.success("기사 교체 완료: " + new_article["제목"])
-                        st.rerun()
+                keyword = selected_article.get("키워드", None) or selected_article.get("company", None) or ""
+                sentiment = None
+                # 감성 캐시/재분석
+                cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
+                summary_key = f"summary_{keyword}_{0}_{cleaned_id}"
+                for k in st.session_state.keys():
+                    if k.startswith("summary_") and cleaned_id in k:
+                        _, _, sentiment, _ = st.session_state[k]
+                        break
+
+                # 없으면 새로 분석
+                if sentiment is None:
+                    _, _, sentiment, _ = summarize_article_from_url(
+                        selected_article["link"], selected_article["title"]
+                    )
+                    st.session_state[summary_key] = ("", "", sentiment, "")
+
+                # 4. **기사 본문 그대로 복사**
+                new_article = {
+                    "회사명": keyword if keyword else "",
+                    "감성": sentiment,
+                    "제목": selected_article["title"],
+                    "링크": selected_article["link"],
+                    "날짜": selected_article["date"],
+                    "출처": selected_article["source"]
+                }
+                target_idx = right_selected_indexes[0]
+                st.session_state["important_articles_preview"][target_idx] = new_article
+
+                # 모든 체크 해제
+                st.session_state.article_checked_left[from_key] = False
+                st.session_state.article_checked[from_key] = False
+                st.session_state.important_selected_index = []
+                st.success("기사 교체 완료: " + new_article["제목"])
+                st.rerun()
 
     st.markdown("---")
     st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
