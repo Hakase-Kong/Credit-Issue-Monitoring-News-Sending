@@ -781,7 +781,8 @@ def render_important_article_review_and_download():
                 if len(parts) >= 3:
                     keyword, idx = parts[0], int(parts[1])
                     source_article = st.session_state.search_results.get(keyword, [])[idx]
-                    summary_key = f"summary_{keyword}_{idx}_{re.sub(r'\\W+', '', source_article['link'])[-16:]}"
+                    cleaned_link_id = re.sub(r'\W+', '', source_article['link'])[-16:]
+                    summary_key = f"summary_{keyword}_{idx}_{cleaned_link_id}"
                     if summary_key in st.session_state:
                         one_line, summary, sentiment, _ = st.session_state[summary_key]
                     else:
