@@ -870,31 +870,23 @@ def render_important_article_review_and_download():
                     return
 
                 keyword = extract_keyword_from_link(st.session_state.search_results, selected_article["link"])
+                sentiment = None  # 초기화
 
-                new_article = {
-                    "회사명": keyword,
-                    "감성": sentiment,
-                    "제목": selected_article["title"],
-                    "링크": selected_article["link"],
-                    "날짜": selected_article["date"],
-                    "출처": selected_article["source"]
-                }
-                # 감성 캐시/재분석
+                # 2. 감성 캐시 먼저 탐색 (summary_key는 캐시 키 예시)
                 cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
-                summary_key = f"summary_{keyword}_{0}_{cleaned_id}"
                 for k in st.session_state.keys():
                     if k.startswith("summary_") and cleaned_id in k:
                         _, _, sentiment, _ = st.session_state[k]
                         break
 
-                # 없으면 새로 분석
-                if sentiment is None:
+                # 3. 없으면 새로 분석
+                if not sentiment:
                     _, _, sentiment, _ = summarize_article_from_url(
                         selected_article["link"], selected_article["title"]
                     )
+                    summary_key = f"summary_{keyword}_{0}_{cleaned_id}"
                     st.session_state[summary_key] = ("", "", sentiment, "")
 
-                # 4. **기사 본문 그대로 복사**
                 new_article = {
                     "회사명": keyword if keyword else "",
                     "감성": sentiment,
