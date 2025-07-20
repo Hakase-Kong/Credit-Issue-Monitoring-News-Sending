@@ -783,17 +783,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 continue
     return result
 
-def extract_keyword_from_link(search_results, article_link):
-    """
-    주어진 기사 링크에 해당하는 키워드를 search_results에서 추론한다.
-    반환값: 키워드 문자열 (못 찾으면 "알수없음")
-    """
-    for keyword, articles in search_results.items():
-        for article in articles:
-            if article["link"] == article_link:
-                return keyword
-    return "알수없음"
-
 def render_important_article_review_and_download():
     st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
@@ -869,24 +858,24 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽에서 선택한 기사에 대응하는 링크를 찾을 수 없습니다.")
                     return
 
-                keyword = extract_keyword_from_link(st.session_state.search_results, selected_article["link"])
-                sentiment = None  # 초기화
-
-                # 2. 감성 캐시 먼저 탐색 (summary_key는 캐시 키 예시)
+                keyword = selected_article.get("키워드", None) or selected_article.get("company", None) or ""
+                sentiment = None
+                # 감성 캐시/재분석
                 cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
+                summary_key = f"summary_{keyword}_{0}_{cleaned_id}"
                 for k in st.session_state.keys():
                     if k.startswith("summary_") and cleaned_id in k:
                         _, _, sentiment, _ = st.session_state[k]
                         break
 
-                # 3. 없으면 새로 분석
-                if not sentiment:
+                # 없으면 새로 분석
+                if sentiment is None:
                     _, _, sentiment, _ = summarize_article_from_url(
                         selected_article["link"], selected_article["title"]
                     )
-                    summary_key = f"summary_{keyword}_{0}_{cleaned_id}"
                     st.session_state[summary_key] = ("", "", sentiment, "")
 
+                # 4. **기사 본문 그대로 복사**
                 new_article = {
                     "회사명": keyword if keyword else "",
                     "감성": sentiment,
