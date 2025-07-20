@@ -304,28 +304,30 @@ with st.expander("🧩 공통 필터 옵션 (항상 적용됨)"):
     for major, subs in common_filter_categories.items():
         st.markdown(f"**{major}**: {', '.join(subs)}")
 
-with st.expander("🏭 산업별 필터 옵션"):
+with st.expander("🏭 산업별 필터 옵션 (대분류별 소분류 필터링)"):
     use_industry_filter = st.checkbox("이 필터 적용", value=True, key="use_industry_filter")
-    col_major, col_sub = st.columns([1, 1])
-    with col_major:
-        selected_majors = st.multiselect(
-            "대분류(산업)",
-            list(industry_filter_categories.keys()),
-            key="industry_majors",
-            default=st.session_state.cat_major_autoset if st.session_state.cat_major_autoset else None
-        )
-    with col_sub:
-        sub_options = []
-        for major in selected_majors:
-            sub_options.extend(industry_filter_categories.get(major, []))
-        sub_options = sorted(set(sub_options))
-        selected_sub = st.multiselect(
-            "소분류(필터 키워드)",
-            sub_options,
-            default=sub_options,
-            key="industry_sub"
-        )
+    
+    # 세션 변수 초기화
+    if "industry_major_sub_map" not in st.session_state:
+        st.session_state.industry_major_sub_map = {}
 
+    # UI: 선택된 산업군에서 자동 매핑된 대분류 추출
+    selected_major_map = get_industry_majors_from_favorites(selected_categories)
+
+    updated_map = {}
+    for major in selected_major_map:
+        options = industry_filter_categories.get(major, [])
+        default_selected = options if major not in st.session_state.industry_major_sub_map else st.session_state.industry_major_sub_map[major]
+        selected_sub = st.multiselect(
+            f"{major} 소분류 키워드",
+            options,
+            default=default_selected,
+            key=f"subfilter_{major}"
+        )
+        updated_map[major] = selected_sub
+
+    st.session_state.industry_major_sub_map = updated_map
+    
 # --- 중복 기사 제거 기능 체크박스 포함된 키워드 필터 옵션 ---
 with st.expander("🔍 키워드 필터 옵션"):
     require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", value=True, key="require_exact_keyword_in_title_or_content")
@@ -572,35 +574,50 @@ if category_search_clicked and selected_categories:
         )
 
 def article_passes_all_filters(article):
-    filters = []
-    filters.append(ALL_COMMON_FILTER_KEYWORDS)
-    if st.session_state.get("use_industry_filter", False):
-        filters.append(st.session_state.get("industry_sub", []))
-
-    # 제외 키워드 필터링
+    # 제외 키워드
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
-        return False
-
-    # ✅ 키워드가 제목 또는 본문에 온전히 포함되었는지 강제 검증
-    all_keywords = []
-    if "keyword_input" in st.session_state:
-        all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
-    if "cat_multi" in st.session_state:
-        for cat in st.session_state["cat_multi"]:
-            all_keywords.extend(favorite_categories[cat])
-    if not article_contains_exact_keyword(article, all_keywords):
         return False
 
     # 날짜 필터
     try:
         pub_date = datetime.strptime(article['date'], '%Y-%m-%d').date()
-        if pub_date < st.session_state.get("start_date", datetime.today().date()) or pub_date > st.session_state.get("end_date", datetime.today().date()):
+        if pub_date < st.session_state.get("start_date") or pub_date > st.session_state.get("end_date"):
             return False
     except:
         return False
 
-    return or_keyword_filter(article, *filters)
+    # 키워드 포함 여부 체크
+    all_keywords = []
+    if "keyword_input" in st.session_state:
+        all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
+    if "cat_multi" in st.session_state:
+        for cat in st.session_state["cat_multi"]:
+            all_keywords.extend(favorite_categories.get(cat, []))
+    if not article_contains_exact_keyword(article, all_keywords):
+        return False
 
+    # --- 공통 필터 키워드 적용 ---
+    if not or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS):
+        return False
+
+    # --- 산업별 필터 (대분류별 소분류 키워드 적용) ---
+    if st.session_state.get("use_industry_filter", False):
+        keyword = article.get("키워드")
+        matched_major = None
+        for cat, companies in favorite_categories.items():
+            if keyword in companies:
+                majors = get_industry_majors_from_favorites([cat])
+                if majors:
+                    matched_major = majors[0]  # 복수 매핑되는 경우 첫 번째만 활용
+                    break
+
+        if matched_major:
+            sub_keyword_filter = st.session_state.industry_major_sub_map.get(matched_major, [])
+            if sub_keyword_filter:
+                if not or_keyword_filter(article, sub_keyword_filter):
+                    return False
+
+    return True
 
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
