@@ -467,7 +467,8 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
                 "title": re.sub("<.*?>", "", title),
                 "link": item["link"],
                 "date": pub_date.strftime("%Y-%m-%d"),
-                "source": source
+                "source": source,
+                "키워드": query  # ★ 필수!
             })
 
         if len(items) < 100:
