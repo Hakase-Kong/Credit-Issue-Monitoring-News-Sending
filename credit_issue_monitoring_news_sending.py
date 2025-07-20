@@ -783,6 +783,17 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 continue
     return result
 
+def extract_keyword_from_link(search_results, article_link):
+    """
+    주어진 기사 링크에 해당하는 키워드를 search_results에서 추론한다.
+    반환값: 키워드 문자열 (못 찾으면 "알수없음")
+    """
+    for keyword, articles in search_results.items():
+        for article in articles:
+            if article["link"] == article_link:
+                return keyword
+    return "알수없음"
+
 def render_important_article_review_and_download():
     st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
