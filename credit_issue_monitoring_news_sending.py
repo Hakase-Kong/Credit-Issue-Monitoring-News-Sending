@@ -10,6 +10,7 @@ from openai import OpenAI
 import newspaper
 import difflib
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 
 # --- CSS 스타일 ---
