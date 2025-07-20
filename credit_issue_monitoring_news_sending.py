@@ -476,8 +476,7 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
     results = {}
 
-    # 키워드 수와 시스템 CPU 수를 고려한 동적 max_workers 설정
-    max_workers = min(len(keyword_list), max(4, (multiprocessing.cpu_count() or 2) * 2))
+    max_workers = min(len(keyword_list), (multiprocessing.cpu_count() or 4) * 2)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_keyword = {
