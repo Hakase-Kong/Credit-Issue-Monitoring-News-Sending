@@ -6,3 +6,4 @@ newspaper3k
 telepot
 xlsxwriter
 lxml_html_clean
+multiprocessing
