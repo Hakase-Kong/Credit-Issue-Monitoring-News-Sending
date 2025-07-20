@@ -10,8 +10,6 @@ from openai import OpenAI
 import newspaper
 import difflib
 from urllib.parse import urlparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import multiprocessing
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -467,8 +465,7 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
                 "title": re.sub("<.*?>", "", title),
                 "link": item["link"],
                 "date": pub_date.strftime("%Y-%m-%d"),
-                "source": source,
-                "키워드": query  # ★ 필수!
+                "source": source
             })
 
         if len(items) < 100:
@@ -476,26 +473,8 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
     return articles[:limit]
 
 def process_keywords(keyword_list, start_date, end_date, require_keyword_in_title=False):
-    results = {}
-
-    max_workers = 3
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_keyword = {
-            executor.submit(fetch_naver_news, k, start_date, end_date, require_keyword_in_title): k
-            for k in keyword_list
-        }
-
-        for future in as_completed(future_to_keyword):
-            keyword = future_to_keyword[future]
-            try:
-                articles = future.result()
-                results[keyword] = articles
-            except Exception as e:
-                st.error(f"❗ 키워드 '{keyword}' 처리 중 오류 발생: {e}")
-                results[keyword] = []
-
-    for k, articles in results.items():
+    for k in keyword_list:
+        articles = fetch_naver_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
         st.session_state.search_results[k] = articles
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
