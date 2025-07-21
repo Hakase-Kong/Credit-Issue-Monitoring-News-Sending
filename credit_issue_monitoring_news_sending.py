@@ -553,25 +553,24 @@ def remove_duplicates(articles):
 
 search_clicked = False
 if keywords_input:
-    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
+    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()] if keywords_input else []
     if len(keyword_list) > 10:
         st.warning("키워드는 최대 10개까지 입력 가능합니다.")
     else:
         search_clicked = True
 
-if search_clicked or st.session_state.get("search_triggered"):
-    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()]
+if keyword_list and (search_clicked or st.session_state.get("search_triggered")):
     if len(keyword_list) > 10:
         st.warning("키워드는 최대 10개까지 입력 가능합니다.")
     else:
         with st.spinner("뉴스 검색 중..."):
             process_keywords_parallel(
-                sorted(keywords),
+                sorted(keyword_list),  # ✅ 오류 발생 안 함
                 st.session_state["start_date"],
                 st.session_state["end_date"],
-            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+                require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
             )
-    st.session_state.search_triggered = False
+        st.session_state.search_triggered = False
 
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
