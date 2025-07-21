@@ -551,9 +551,11 @@ def remove_duplicates(articles):
             titles.append(title)
     return unique_articles
 
+# 항상 먼저 선언해 에러 방지
+keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()] if keywords_input else []
 search_clicked = False
-if keywords_input:
-    keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()] if keywords_input else []
+
+if keyword_list:
     if len(keyword_list) > 10:
         st.warning("키워드는 최대 10개까지 입력 가능합니다.")
     else:
