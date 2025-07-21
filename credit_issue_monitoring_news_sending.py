@@ -566,7 +566,7 @@ if search_clicked or st.session_state.get("search_triggered"):
     else:
         with st.spinner("뉴스 검색 중..."):
             process_keywords_parallel(
-                keyword_list,
+                sorted(keywords),
                 st.session_state["start_date"],
                 st.session_state["end_date"],
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
