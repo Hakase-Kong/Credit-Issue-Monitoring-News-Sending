@@ -579,10 +579,10 @@ if category_search_clicked and selected_categories:
         for cat in selected_categories:
             keywords.update(favorite_categories[cat])
         process_keywords_parallel(
-            keyword_list,
+            sorted(keywords),  # ✅ 수정: keyword_list → sorted(keywords)
             st.session_state["start_date"],
             st.session_state["end_date"],
-        require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
 
 def article_passes_all_filters(article):
