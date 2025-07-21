@@ -10,6 +10,18 @@ from openai import OpenAI
 import newspaper
 import difflib
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def process_keywords_parallel(keyword_list, start_date, end_date, require_keyword_in_title=False):
+    def fetch_and_store(k):
+        return k, fetch_naver_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
+    with ThreadPoolExecutor(max_workers=min(8, len(keyword_list))) as executor:
+        futures = [executor.submit(fetch_and_store, k) for k in keyword_list]
+        for future in as_completed(futures):
+            k, articles = future.result()
+            st.session_state.search_results[k] = articles
+            if k not in st.session_state.show_limit:
+                st.session_state.show_limit[k] = 5
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -553,11 +565,11 @@ if search_clicked or st.session_state.get("search_triggered"):
         st.warning("키워드는 최대 10개까지 입력 가능합니다.")
     else:
         with st.spinner("뉴스 검색 중..."):
-            process_keywords(
+            process_keywords_parallel(
                 keyword_list,
                 st.session_state["start_date"],
                 st.session_state["end_date"],
-                require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
             )
     st.session_state.search_triggered = False
 
@@ -566,11 +578,11 @@ if category_search_clicked and selected_categories:
         keywords = set()
         for cat in selected_categories:
             keywords.update(favorite_categories[cat])
-        process_keywords(
-            sorted(keywords),
+        process_keywords_parallel(
+            keyword_list,
             st.session_state["start_date"],
             st.session_state["end_date"],
-            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+        require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
 
 def article_passes_all_filters(article):
