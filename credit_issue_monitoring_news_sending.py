@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 def process_keywords_parallel(keyword_list, start_date, end_date, require_keyword_in_title=False):
     def fetch_and_store(k):
         return k, fetch_naver_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
-    with ThreadPoolExecutor(max_workers=min(8, len(keyword_list))) as executor:
+    with ThreadPoolExecutor(max_workers=min(5, len(keyword_list))) as executor:
         futures = [executor.submit(fetch_and_store, k) for k in keyword_list]
         for future in as_completed(futures):
             k, articles = future.result()
@@ -556,23 +556,17 @@ keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()] if ke
 search_clicked = False
 
 if keyword_list:
-    if len(keyword_list) > 10:
-        st.warning("키워드는 최대 10개까지 입력 가능합니다.")
-    else:
         search_clicked = True
 
 if keyword_list and (search_clicked or st.session_state.get("search_triggered")):
-    if len(keyword_list) > 10:
-        st.warning("키워드는 최대 10개까지 입력 가능합니다.")
-    else:
-        with st.spinner("뉴스 검색 중..."):
-            process_keywords_parallel(
-                sorted(keyword_list),  # ✅ 오류 발생 안 함
-                st.session_state["start_date"],
-                st.session_state["end_date"],
-                require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
-            )
-        st.session_state.search_triggered = False
+    with st.spinner("뉴스 검색 중..."):
+        process_keywords_parallel(
+            sorted(keyword_list),  # ✅ 오류 발생 안 함
+            st.session_state["start_date"],
+            st.session_state["end_date"],
+            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+        )
+    st.session_state.search_triggered = False
 
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
