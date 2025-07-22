@@ -23,58 +23,6 @@ def process_keywords_parallel(keyword_list, start_date, end_date, require_keywor
             if k not in st.session_state.show_limit:
                 st.session_state.show_limit[k] = 5
 
-def fetch_with_retries(keyword, start_date, end_date, require_keyword_in_title=False, max_retries=3, delay=0.5):
-    """
-    단일 키워드에 대해 네이버 뉴스 fetch를 3회까지 재시도. 실패 시 None 반환.
-    """
-    for attempt in range(max_retries):
-        try:
-            articles = fetch_naver_news(keyword, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
-            if articles:  # 기사 정상 수신
-                return articles
-        except Exception as e:
-            st.warning(f"[{keyword}] 재시도 {attempt+1}회차 실패: {e}")
-        time.sleep(delay)
-    return None  # 최종 실패
-
-def process_keywords_parallel(keyword_list, start_date, end_date, require_keyword_in_title=False):
-    """
-    병렬 처리 후 각 키워드 검색 결과 저장, 실패한 키워드는 순차 재시도 + 상태 저장
-    """
-    failed_keywords = []
-
-    def fetch_and_store(k):
-        articles = fetch_with_retries(k, start_date, end_date, require_keyword_in_title)
-        return k, articles
-    
-    with ThreadPoolExecutor(max_workers=min(8, len(keyword_list))) as executor:
-        futures = [executor.submit(fetch_and_store, k) for k in keyword_list]
-        for future in as_completed(futures):
-            k, articles = future.result()
-            if articles is not None:
-                st.session_state.search_results[k] = articles
-                if k not in st.session_state.show_limit:
-                    st.session_state.show_limit[k] = 5
-            else:
-                failed_keywords.append(k)
-
-    # ✅ 최종 순차 재시도
-    final_failed = []
-    for k in failed_keywords:
-        st.info(f"🔁 '{k}' - 병렬 실패, 순차 재시도 중...")
-        articles = fetch_with_retries(k, start_date, end_date, require_keyword_in_title, max_retries=1)
-        if articles is not None:
-            st.session_state.search_results[k] = articles
-            if k not in st.session_state.show_limit:
-                st.session_state.show_limit[k] = 5
-        else:
-            final_failed.append(k)
-
-    # ✅ 실패 키워드 저장 및 로그
-    st.session_state["failed_keywords"] = final_failed
-    if final_failed:
-        st.warning(f"❗ 다음 키워드는 모든 재시도 실패로 누락됨: {', '.join(final_failed)}")
-
 # --- CSS 스타일 ---
 st.markdown("""
 <style>
@@ -619,17 +567,11 @@ if keyword_list and (search_clicked or st.session_state.get("search_triggered"))
     else:
         with st.spinner("뉴스 검색 중..."):
             process_keywords_parallel(
-                sorted(keyword_list),
+                sorted(keyword_list),  # ✅ 오류 발생 안 함
                 st.session_state["start_date"],
                 st.session_state["end_date"],
                 require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
             )
-        st.session_state.search_triggered = False
-
-        # ✅ 실패 키워드 경고 출력
-        failed_keywords = st.session_state.get("failed_keywords", [])
-        if failed_keywords:
-            st.warning("❗ 다음 키워드는 검색 요청이 반복 실패하여 기사 결과가 없습니다:\n\n" + ", ".join(failed_keywords))
         st.session_state.search_triggered = False
 
 if category_search_clicked and selected_categories:
@@ -638,16 +580,11 @@ if category_search_clicked and selected_categories:
         for cat in selected_categories:
             keywords.update(favorite_categories[cat])
         process_keywords_parallel(
-            sorted(keywords),
+            sorted(keywords),  # ✅ 수정: keyword_list → sorted(keywords)
             st.session_state["start_date"],
             st.session_state["end_date"],
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
-
-    # ✅ 실패 키워드 출력
-    failed_keywords = st.session_state.get("failed_keywords", [])
-    if failed_keywords:
-        st.warning("❗ 다음 키워드는 기사 검색이 반복 실패했습니다:\n\n" + ", ".join(failed_keywords))
 
 def article_passes_all_filters(article):
     # 제외 키워드
