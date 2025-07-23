@@ -914,6 +914,14 @@ def render_important_article_review_and_download():
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
+        with col_del:
+            if st.button("🗑 선택 기사 삭제"):
+                for idx in sorted(st.session_state.important_selected_index, reverse=True):
+                    if 0 <= idx < len(st.session_state["important_articles_preview"]):
+                        st.session_state["important_articles_preview"].pop(idx)
+                st.session_state.important_selected_index = []
+                st.rerun()
+
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -956,67 +964,6 @@ def render_important_article_review_and_download():
                 if not sentiment:
                     _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
 
-                new_article = {
-                    "회사명": keyword,
-                    "감성": sentiment or "",
-                    "제목": selected_article["title"],
-                    "링크": selected_article["link"],
-                    "날짜": selected_article["date"],
-                    "출처": selected_article["source"]
-                }
-                st.session_state["important_articles_preview"][target_idx] = new_article
-                st.session_state.article_checked_left[from_key] = False
-                st.session_state.article_checked[from_key] = False
-                st.session_state.important_selected_index = []
-                st.success("중요 기사 교체 완료: " + new_article["제목"])
-                st.rerun()
-
-        with col_del:
-            if st.button("🗑 선택 기사 삭제"):
-                for idx in sorted(st.session_state.important_selected_index, reverse=True):
-                    if 0 <= idx < len(st.session_state["important_articles_preview"]):
-                        st.session_state["important_articles_preview"].pop(idx)
-                st.session_state.important_selected_index = []
-                st.rerun()
-
-        with col_rep:
-            if st.button("🔁 선택 기사 교체"):
-                left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
-                right_selected_indexes = st.session_state.important_selected_index
-                if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
-                    st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
-                    return
-
-                from_key = left_selected_keys[0]
-                target_idx = right_selected_indexes[0]
-
-                selected_article = None
-                m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
-                if m:
-                    key_tail = m.group(1)
-                    for kw, art_list in st.session_state.search_results.items():
-                        for art in art_list:
-                            uid = re.sub(r'\W+', '', art['link'])[-16:]
-                            if uid == key_tail:
-                                selected_article = art
-                                keyword = kw
-                                break
-                        if selected_article:
-                            break
-
-                if not selected_article:
-                    st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
-                    return
-                
-                cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
-                sentiment = None
-                for k in st.session_state.keys():
-                    if k.startswith("summary_") and cleaned_id in k:
-                        sentiment = st.session_state[k][2]
-                        break
-                if not sentiment:
-                    _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
-                
                 new_article = {
                     "회사명": keyword,
                     "감성": sentiment or "",
