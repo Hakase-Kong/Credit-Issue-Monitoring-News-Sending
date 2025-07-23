@@ -279,9 +279,9 @@ st.set_page_config(layout="wide")
 col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
 with col_title:
     st.markdown(
-        "<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>"
-        "<a href='https://credit-issue-monitoring.onrender.com/' target='_blank' style='text-decoration:none; color:#1a1a1a;'>"
-        "📊 Credit Issue Monitoring</a></h1>",
+        "&lt;h1 style='color:#1a1a1a; margin-bottom:0.5rem;'&gt;"
+        "&lt;a href='https://credit-issue-monitoring-news-sending.onrender.com/' target='_blank' style='text-decoration:none; color:#1a1a1a;'&gt;"
+        "📊 Credit Issue Monitoring&lt;/a&gt;&lt;/h1&gt;",
         unsafe_allow_html=True
     )
 with col_option1:
