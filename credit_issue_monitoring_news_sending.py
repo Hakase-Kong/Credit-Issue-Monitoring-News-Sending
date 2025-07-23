@@ -23,6 +23,16 @@ def process_keywords_parallel(keyword_list, start_date, end_date, require_keywor
             if k not in st.session_state.show_limit:
                 st.session_state.show_limit[k] = 5
 
+def fetch_full_title_from_originallink(originallink):
+    try:
+        from newspaper import Article
+        article = Article(originallink)
+        article.download()
+        article.parse()
+        return article.title.strip()
+    except Exception:
+        return None
+
 # --- CSS 스타일 ---
 st.markdown("""
 <style>
@@ -506,8 +516,17 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
             if source_domain.startswith("www."):
                 source_domain = source_domain[4:]
 
+            # 제목에서 태그 제거
+            clean_title = re.sub("<.*?>", "", title)
+
+            # 제목에 ...이 있을 때 전체 제목 보강 시도
+            if "..." in clean_title and item.get("originallink"):
+                full_title = fetch_full_title_from_originallink(item["originallink"])
+                if full_title and len(full_title) > len(clean_title):
+                    clean_title = full_title
+
             articles.append({
-                "title": re.sub("<.*?>", "", title),
+                "title": clean_title,
                 "link": item["link"],
                 "date": pub_date.strftime("%Y-%m-%d"),
                 "source": source_domain
