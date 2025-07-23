@@ -704,10 +704,6 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
             if source_domain.startswith("www."):
                 source_domain = source_domain[4:]
 
-            # 언론사 필터링: ALLOWED_SOURCES에 없으면 스킵
-            if source_domain not in ALLOWED_SOURCES:
-                continue
-
             articles.append({
                 "title": re.sub("<.*?>", "", title),
                 "link": item["link"],
