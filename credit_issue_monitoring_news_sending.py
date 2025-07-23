@@ -46,8 +46,20 @@ EXCLUDE_TITLE_KEYWORDS = [
     "코스피", "코스닥", "주가", "주식", "증시", "시세", "마감", "장중", "장마감", "거래량", "거래대금", "상한가", "하한가",
     "봉사", "후원", "기부", "우승", "무승부", "패배", "스포츠", "스폰서", "지속가능", "ESG", "위촉", "이벤트", "사전예약", "챔프전",
     "프로모션", "연극", "공연", "어르신", "링컨", "에비에이터", "NH퍼플통장", "골라담기",
-    "음악회", "사이버대"
+    "음악회", "교향악단", "사이버대", "신진서", "안성준", "GS칼텍스배", "프로기전", "다문화", "와인25플러스", "과채주스", "책Dream", "책드림", "트로페오",
+    "브랜드데이", "쇼핑라이브", "산학협력 컨퍼런스", "녹색상품", "소비자가 뽑은", "캠페인", "나눔", "챔피언십", "사회공헌", "성금"
 ]
+
+# 필터링할 언론사 도메인 리스트 (www. 제거된 도메인 기준)
+ALLOWED_SOURCES = {
+    "news.einfomax.co.kr", "yna.co.kr", "newsis.com", "mk.co.kr", "news1.kr", "mt.co.kr", "hankyung.com",
+    "joongang.co.kr", "chosun.com", "edaily.co.kr", "biz.heraldcorp.com", "kmib.co.kr", "seoul.co.kr",
+    "thebell.co.kr", "fnnews.com", "ichannela.com", "donga.com", "hani.co.kr", "news.jtbc.co.kr",
+    "khan.co.kr", "imnews.imbc.com", "mbn.co.kr", "news.sbs.co.kr", "tvchosun.com", "ytn.co.kr",
+    "biz.chosun.com", "media.naver.com", "ohmynews.com", "ajunews.com", "sedaily.com", "asiae.co.kr",
+    "hankookilbo.com", "nocutnews.co.kr", "bloter.net", "segye.com", "bizwatch.co.kr", "newsprime.co.kr",
+    "meconomynews.com", "newsway.co.kr"
+}
 
 def exclude_by_title_keywords(title, exclude_keywords):
     for word in exclude_keywords:
@@ -468,18 +480,24 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
             if exclude_by_title_keywords(re.sub("<.*?>", "", title), EXCLUDE_TITLE_KEYWORDS):
                 continue
 
-            # 언론사명 가져오기 + 기본값 처리 + 도메인 기반 추출 보완
             source = item.get("source")
             if not source or source.strip() == "":
                 source = infer_source_from_url(item.get("originallink", ""))
                 if not source:
                     source = "Naver"
+            source_domain = source.lower()
+            if source_domain.startswith("www."):
+                source_domain = source_domain[4:]
+
+            # 언론사 필터링: ALLOWED_SOURCES에 없으면 스킵
+            if source_domain not in ALLOWED_SOURCES:
+                continue
 
             articles.append({
                 "title": re.sub("<.*?>", "", title),
                 "link": item["link"],
                 "date": pub_date.strftime("%Y-%m-%d"),
-                "source": source
+                "source": source_domain
             })
 
         if len(items) < 100:
@@ -582,52 +600,62 @@ if category_search_clicked and selected_categories:
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
 
-def article_passes_all_filters(article):
-    # 제외 키워드
-    if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
-        return False
+def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_keyword_in_title=False):
+    headers = {
+        "X-Naver-Client-Id": NAVER_CLIENT_ID,
+        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
+    }
+    articles = []
+    for start in range(1, 1001, 100):
+        if len(articles) >= limit:
+            break
+        params = {
+            "query": query,
+            "display": 100,
+            "start": start,
+            "sort": "date"
+        }
+        response = requests.get("https://openapi.naver.com/v1/search/news.json", headers=headers, params=params)
+        if response.status_code != 200:
+            break
 
-    # 날짜 필터
-    try:
-        pub_date = datetime.strptime(article['date'], '%Y-%m-%d').date()
-        if pub_date < st.session_state.get("start_date") or pub_date > st.session_state.get("end_date"):
-            return False
-    except:
-        return False
+        items = response.json().get("items", [])
+        for item in items:
+            title, desc = item["title"], item["description"]
+            pub_date = datetime.strptime(item["pubDate"], "%a, %d %b %Y %H:%M:%S %z").date()
 
-    # 키워드 포함 필터
-    all_keywords = []
-    if "keyword_input" in st.session_state:
-        all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
-    if "cat_multi" in st.session_state:
-        for cat in st.session_state["cat_multi"]:
-            all_keywords.extend(favorite_categories.get(cat, []))
-    if not article_contains_exact_keyword(article, all_keywords):
-        return False
+            if start_date and pub_date < start_date:
+                continue
+            if end_date and pub_date > end_date:
+                continue
+            if not filter_by_issues(title, desc, [query], require_keyword_in_title):
+                continue
+            if exclude_by_title_keywords(re.sub("<.*?>", "", title), EXCLUDE_TITLE_KEYWORDS):
+                continue
 
-    # 공통 필터 OR 산업별 필터 → OR 구조로 개선 가능
-    common_passed = or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS)
+            source = item.get("source")
+            if not source or source.strip() == "":
+                source = infer_source_from_url(item.get("originallink", ""))
+                if not source:
+                    source = "Naver"
+            source_domain = source.lower()
+            if source_domain.startswith("www."):
+                source_domain = source_domain[4:]
 
-    industry_passed = True
-    if st.session_state.get("use_industry_filter", False):
-        keyword = article.get("키워드")
-        matched_major = None
-        for cat, companies in favorite_categories.items():
-            if keyword in companies:
-                majors = get_industry_majors_from_favorites([cat])
-                if majors:
-                    matched_major = majors[0]
-                    break
-        if matched_major:
-            sub_keyword_filter = st.session_state.industry_major_sub_map.get(matched_major, [])
-            if sub_keyword_filter:
-                industry_passed = or_keyword_filter(article, sub_keyword_filter)
+            # 언론사 필터링: ALLOWED_SOURCES에 없으면 스킵
+            if source_domain not in ALLOWED_SOURCES:
+                continue
 
-    # 기존은 and → or 변경 가능
-    if not (common_passed or industry_passed):
-        return False
+            articles.append({
+                "title": re.sub("<.*?>", "", title),
+                "link": item["link"],
+                "date": pub_date.strftime("%Y-%m-%d"),
+                "source": source_domain
+            })
 
-    return True
+        if len(items) < 100:
+            break
+    return articles[:limit]
 
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
