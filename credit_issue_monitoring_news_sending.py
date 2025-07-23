@@ -47,6 +47,7 @@ EXCLUDE_TITLE_KEYWORDS = [
     "봉사", "후원", "기부", "우승", "무승부", "패배", "스포츠", "스폰서", "지속가능", "ESG", "위촉", "이벤트", "사전예약", "챔프전",
     "프로모션", "연극", "공연", "어르신", "링컨", "에비에이터", "NH퍼플통장", "골라담기"
 ]
+
 def exclude_by_title_keywords(title, exclude_keywords):
     for word in exclude_keywords:
         if word in title:
@@ -593,7 +594,7 @@ def article_passes_all_filters(article):
     except:
         return False
 
-    # 키워드 포함 여부 체크
+    # 키워드 포함 필터
     all_keywords = []
     if "keyword_input" in st.session_state:
         all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
@@ -603,11 +604,10 @@ def article_passes_all_filters(article):
     if not article_contains_exact_keyword(article, all_keywords):
         return False
 
-    # --- 공통 필터 키워드 적용 ---
-    if not or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS):
-        return False
+    # 공통 필터 OR 산업별 필터 → OR 구조로 개선 가능
+    common_passed = or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS)
 
-    # --- 산업별 필터 (대분류별 소분류 키워드 적용) ---
+    industry_passed = True
     if st.session_state.get("use_industry_filter", False):
         keyword = article.get("키워드")
         matched_major = None
@@ -615,14 +615,16 @@ def article_passes_all_filters(article):
             if keyword in companies:
                 majors = get_industry_majors_from_favorites([cat])
                 if majors:
-                    matched_major = majors[0]  # 복수 매핑되는 경우 첫 번째만 활용
+                    matched_major = majors[0]
                     break
-
         if matched_major:
             sub_keyword_filter = st.session_state.industry_major_sub_map.get(matched_major, [])
             if sub_keyword_filter:
-                if not or_keyword_filter(article, sub_keyword_filter):
-                    return False
+                industry_passed = or_keyword_filter(article, sub_keyword_filter)
+
+    # 기존은 and → or 변경 가능
+    if not (common_passed or industry_passed):
+        return False
 
     return True
 
