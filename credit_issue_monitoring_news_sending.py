@@ -36,6 +36,17 @@ st.markdown("""
 .flex-grow { flex: 1 1 0%; }
 .flex-btn { min-width: 90px; }
 </style>
+
+""", unsafe_allow_html=True)
+st.markdown("""
+<style>
+.news-title { 
+    word-break: break-all !important; 
+    white-space: normal !important; 
+    display: block !important;
+    overflow: visible !important;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # --- 제외 키워드 ---
@@ -1106,8 +1117,10 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         if show_sentiment_badge and cache_key in st.session_state:
                             _, _, sentiment, _ = st.session_state[cache_key]
                         badge_html = f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>" if sentiment else ""
-                        st.markdown(f"[{article['title']}]({article['link']}) {badge_html} {article['date']} | {article['source']}", unsafe_allow_html=True)
-
+                        st.markdown(
+                            f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> {badge_html} {article['date']} | {article['source']}",
+                            unsafe_allow_html=True
+                        )
                     st.session_state.article_checked_left[key] = checked
                     if checked:
                         st.session_state.article_checked[key] = True
@@ -1145,7 +1158,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         })
 
                         st.markdown(
-                            f"#### [{article['title']}]({article['link']}) "
+                            f"#### <span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
                             f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>",
                             unsafe_allow_html=True
                         )
