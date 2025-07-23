@@ -556,6 +556,60 @@ def article_contains_exact_keyword(article, keywords):
             return True
     return False
 
+def article_passes_all_filters(article):
+    # 제목에 제외 키워드가 포함되면 제외
+    if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
+        return False
+
+    # 날짜 범위 필터링
+    try:
+        pub_date = datetime.strptime(article['date'], '%Y-%m-%d').date()
+        if pub_date < st.session_state.get("start_date") or pub_date > st.session_state.get("end_date"):
+            return False
+    except:
+        return False
+
+    # 키워드 필터: 입력 키워드 OR 카테고리 키워드에 포함되어야 함
+    all_keywords = []
+    if "keyword_input" in st.session_state:
+        all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
+    if "cat_multi" in st.session_state:
+        for cat in st.session_state["cat_multi"]:
+            all_keywords.extend(favorite_categories.get(cat, []))
+    if not article_contains_exact_keyword(article, all_keywords):
+        return False
+
+    # 언론사 도메인 필터링
+    source = article.get('source', '').lower()
+    if source.startswith("www."):
+        source = source[4:]
+    if source not in ALLOWED_SOURCES:
+        return False
+
+    # 공통 키워드 필터 조건 (OR 조건)
+    common_passed = or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS)
+
+    # 산업 필터 조건 (사용 시)
+    industry_passed = True
+    if st.session_state.get("use_industry_filter", False):
+        keyword = article.get("키워드")
+        matched_major = None
+        for cat, companies in favorite_categories.items():
+            if keyword in companies:
+                majors = get_industry_majors_from_favorites([cat])
+                if majors:
+                    matched_major = majors[0]
+                    break
+        if matched_major:
+            sub_keyword_filter = st.session_state.industry_major_sub_map.get(matched_major, [])
+            if sub_keyword_filter:
+                industry_passed = or_keyword_filter(article, sub_keyword_filter)
+
+    if not (common_passed or industry_passed):
+        return False
+
+    return True
+
 # --- 중복 기사 제거 함수 ---
 def is_similar(title1, title2, threshold=0.5):
     ratio = difflib.SequenceMatcher(None, title1, title2).ratio()
