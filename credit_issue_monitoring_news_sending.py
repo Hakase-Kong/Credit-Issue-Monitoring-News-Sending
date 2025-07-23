@@ -810,10 +810,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     return result
 
 def extract_keyword_from_link(search_results, article_link):
-    """
-    주어진 기사 링크에 해당하는 키워드를 search_results에서 추론한다.
-    반환값: 키워드 문자열 (못 찾으면 "알수없음")
-    """
     for keyword, articles in search_results.items():
         for article in articles:
             if article["link"] == article_link:
@@ -865,36 +861,40 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
                 else:
                     from_key = left_selected_keys[0]
-
-                    # 선택한 왼쪽 기사 정보 파싱
-                    selected_article = None
+                    # --- 유니크ID로 기사 탐색 ---
                     m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
-                    if m:
-                        key_tail = m.group(1)
-                        for kw, arts in st.session_state.search_results.items():
-                            for art in arts:
-                                uid = re.sub(r'\W+', '', art['link'])[-16:]
-                                if uid == key_tail:
-                                    selected_article = art
-                                    keyword = kw
-                                    break
-                            if selected_article:
+                    if not m:
+                        st.warning("기사 식별자 파싱 실패")
+                        return
+                    key_tail = m.group(1)
+                    selected_article = None
+                    article_link = None
+                    for kw, arts in st.session_state.search_results.items():
+                        for art in arts:
+                            uid = re.sub(r'\W+', '', art['link'])[-16:]
+                            if uid == key_tail:
+                                selected_article = art
+                                article_link = art["link"]
                                 break
-                    
-                    if not selected_article:
+                        if selected_article: break
+
+                    if not selected_article or not article_link:
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
                         return
-                    
-                    # 감성 정보 확인 또는 요약 및 감성 다시 생성
+
+                    # 🔷 회사명을 항상 extract_keyword_from_link로 찾음!
+                    keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
+
+                    # 감성 정보 확인 또는 요약/감성 다시 생성
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
                     for k in st.session_state.keys():
                         if k.startswith("summary_") and cleaned_id in k:
-                            sentiment = st.session_state[k][2]  # (one_line, summary, sentiment, full_text)
+                            sentiment = st.session_state[k][2]
                             break
                     if not sentiment:
                         _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
-                    
+
                     new_article = {
                         "회사명": keyword,
                         "감성": sentiment or "",
@@ -903,8 +903,7 @@ def render_important_article_review_and_download():
                         "날짜": selected_article["date"],
                         "출처": selected_article["source"]
                     }
-                    
-                    # 중복 확인 후 추가
+
                     important = st.session_state.get("important_articles_preview", [])
                     if any(a["링크"] == new_article["링크"] for a in important):
                         st.info("이미 중요 기사 목록에 존재하는 기사입니다.")
@@ -913,6 +912,63 @@ def render_important_article_review_and_download():
                         st.session_state["important_articles_preview"] = important
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
+
+        with col_rep:
+            if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
+                left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
+                right_selected_indexes = st.session_state.important_selected_index
+                if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
+                    st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
+                    return
+
+                from_key = left_selected_keys[0]
+                target_idx = right_selected_indexes[0]
+                m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
+                if not m:
+                    st.warning("기사 식별자 파싱 실패")
+                    return
+                key_tail = m.group(1)
+                selected_article = None
+                article_link = None
+                for kw, art_list in st.session_state.search_results.items():
+                    for art in art_list:
+                        uid = re.sub(r'\W+', '', art['link'])[-16:]
+                        if uid == key_tail:
+                            selected_article = art
+                            article_link = art["link"]
+                            break
+                    if selected_article:
+                        break
+
+                if not selected_article or not article_link:
+                    st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
+                    return
+
+                # 🔷 회사명(키워드)은 extract_keyword_from_link로 정확히 결정
+                keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
+                cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
+                sentiment = None
+                for k in st.session_state.keys():
+                    if k.startswith("summary_") and cleaned_id in k:
+                        sentiment = st.session_state[k][2]
+                        break
+                if not sentiment:
+                    _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
+
+                new_article = {
+                    "회사명": keyword,
+                    "감성": sentiment or "",
+                    "제목": selected_article["title"],
+                    "링크": selected_article["link"],
+                    "날짜": selected_article["date"],
+                    "출처": selected_article["source"]
+                }
+                st.session_state["important_articles_preview"][target_idx] = new_article
+                st.session_state.article_checked_left[from_key] = False
+                st.session_state.article_checked[from_key] = False
+                st.session_state.important_selected_index = []
+                st.success("중요 기사 교체 완료: " + new_article["제목"])
+                st.rerun()
 
         with col_del:
             if st.button("🗑 선택한 기사 삭제"):
