@@ -40,12 +40,13 @@ st.markdown("""
 
 # --- 제외 키워드 ---
 EXCLUDE_TITLE_KEYWORDS = [
-    "야구", "축구", "배구", "농구", "골프", "e스포츠", "올림픽", "월드컵", "K리그", "프로야구", "프로축구", "프로배구", "프로농구",
+    "야구", "축구", "배구", "농구", "골프", "e스포츠", "올림픽", "월드컵", "K리그", "프로야구", "프로축구", "프로배구", "프로농구", "유도",
     "부고", "부음", "인사", "승진", "임명", "발령", "인사발령", "인사이동",
     "브랜드평판", "브랜드 평판", "브랜드 순위", "브랜드지수",
     "코스피", "코스닥", "주가", "주식", "증시", "시세", "마감", "장중", "장마감", "거래량", "거래대금", "상한가", "하한가",
     "봉사", "후원", "기부", "우승", "무승부", "패배", "스포츠", "스폰서", "지속가능", "ESG", "위촉", "이벤트", "사전예약", "챔프전",
-    "프로모션", "연극", "공연", "어르신", "링컨", "에비에이터", "NH퍼플통장", "골라담기"
+    "프로모션", "연극", "공연", "어르신", "링컨", "에비에이터", "NH퍼플통장", "골라담기",
+    "음악회", "사이버대"
 ]
 
 def exclude_by_title_keywords(title, exclude_keywords):
@@ -855,7 +856,7 @@ def render_important_article_review_and_download():
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
         with col_add:
-            if st.button("➕ 선택한 기사 추가 (왼쪽에서 1개 선택 필요)"):
+            if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
                 if len(left_selected_keys) != 1:
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
@@ -914,7 +915,7 @@ def render_important_article_review_and_download():
                         st.rerun()
 
         with col_rep:
-            if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
+            if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
                 right_selected_indexes = st.session_state.important_selected_index
                 if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
@@ -971,7 +972,7 @@ def render_important_article_review_and_download():
                 st.rerun()
 
         with col_del:
-            if st.button("🗑 선택한 기사 삭제"):
+            if st.button("🗑 선택 기사 삭제"):
                 for idx in sorted(st.session_state.important_selected_index, reverse=True):
                     if 0 <= idx < len(st.session_state["important_articles_preview"]):
                         st.session_state["important_articles_preview"].pop(idx)
@@ -979,7 +980,7 @@ def render_important_article_review_and_download():
                 st.rerun()
 
         with col_rep:
-            if st.button("🔁 선택한 기사 교체 (왼쪽에서 1개 선택 필요)"):
+            if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
                 right_selected_indexes = st.session_state.important_selected_index
                 if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
