@@ -45,7 +45,7 @@ EXCLUDE_TITLE_KEYWORDS = [
     "브랜드평판", "브랜드 평판", "브랜드 순위", "브랜드지수",
     "코스피", "코스닥", "주가", "주식", "증시", "시세", "마감", "장중", "장마감", "거래량", "거래대금", "상한가", "하한가",
     "봉사", "후원", "기부", "우승", "무승부", "패배", "스포츠", "스폰서", "지속가능", "ESG", "위촉", "이벤트", "사전예약", "챔프전",
-    "프로모션", "연극", "공연", "어르신"
+    "프로모션", "연극", "공연", "어르신", "링컨", "에비에이터", "NH퍼플통장", "골라담기"
 ]
 def exclude_by_title_keywords(title, exclude_keywords):
     for word in exclude_keywords:
@@ -537,7 +537,7 @@ def article_contains_exact_keyword(article, keywords):
     return False
 
 # --- 중복 기사 제거 함수 ---
-def is_similar(title1, title2, threshold=0.6):
+def is_similar(title1, title2, threshold=0.5):
     ratio = difflib.SequenceMatcher(None, title1, title2).ratio()
     return ratio >= threshold
 
