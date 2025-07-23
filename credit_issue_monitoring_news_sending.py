@@ -953,31 +953,11 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     key = f"{keyword}_{idx}_{unique_id}"
                     cache_key = f"summary_{key}"
 
-                    # 버튼과 체크박스, 제목 컬럼 3개 배치: [추가버튼, 체크박스, 제목+감성]
-                    cols = st.columns([0.15, 0.04, 0.81])
-
+                    # 체크박스와 제목 렌더링
+                    cols = st.columns([0.04, 0.96])
                     with cols[0]:
-                        add_key = f"add_{key}"
-                        if st.button("추가", key=add_key):
-                            new_article = {
-                                "회사명": keyword,
-                                "감성": st.session_state.get(cache_key, ("", "", "", ""))[2] or "",
-                                "제목": article["title"],
-                                "링크": article["link"],
-                                "날짜": article["date"],
-                                "출처": article["source"]
-                            }
-                            important = st.session_state.get("important_articles_preview", [])
-                            if not any(a["링크"] == new_article["링크"] for a in important):
-                                important.append(new_article)
-                                st.session_state["important_articles_preview"] = important
-                                st.success(f"중요 기사로 추가: {new_article['제목']}")
-                                st.rerun()  # st.experimental_rerun 대신 st.rerun() 사용
-
-                    with cols[1]:
                         checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
-
-                    with cols[2]:
+                    with cols[1]:
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
                             _, _, sentiment, _ = st.session_state[cache_key]
