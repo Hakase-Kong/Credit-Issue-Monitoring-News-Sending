@@ -844,7 +844,7 @@ def render_important_article_review_and_download():
         new_selection = []
         for idx, article in enumerate(st.session_state["important_articles_preview"]):
             checked = st.checkbox(
-                f"{article['회사명']} | {article['감성']} | {article['제목']}...",
+                f"{article['회사명']} | {article['감성']} | {article['제목']}",
                 key=f"important_chk_{idx}",
                 value=(idx in st.session_state.important_selected_index), on_change=None
             )
