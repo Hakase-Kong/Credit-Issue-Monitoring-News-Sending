@@ -279,9 +279,9 @@ st.set_page_config(layout="wide")
 col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
 with col_title:
     st.markdown(
-        "&lt;h1 style='color:#1a1a1a; margin-bottom:0.5rem;'&gt;"
-        "&lt;a href='https://credit-issue-monitoring-news-sending.onrender.com/' target='_blank' style='text-decoration:none; color:#1a1a1a;'&gt;"
-        "📊 Credit Issue Monitoring&lt;/a&gt;&lt;/h1&gt;",
+        "<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>"
+        "<a href='https://credit-issue-monitoring-news-sending.onrender.com/' target='_blank' style='text-decoration:none; color:#1a1a1a;'>"
+        "📊 Credit Issue Monitoring</a></h1>",
         unsafe_allow_html=True
     )
 with col_option1:
@@ -494,10 +494,6 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
             source_domain = source.lower()
             if source_domain.startswith("www."):
                 source_domain = source_domain[4:]
-
-            # 언론사 필터링: ALLOWED_SOURCES에 없으면 스킵
-            if source_domain not in ALLOWED_SOURCES:
-                continue
 
             articles.append({
                 "title": re.sub("<.*?>", "", title),
