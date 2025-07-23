@@ -359,6 +359,12 @@ with st.expander("🔍 키워드 필터 옵션"):
     require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", value=True, key="require_exact_keyword_in_title_or_content")
     # 중복 기사 제거 체크박스 추가 (기본 해제)
     remove_duplicate_articles = st.checkbox("중복 기사 제거", value=False, key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
+    filter_allowed_sources_only = st.checkbox(
+    "특정 언론사만 검색", 
+    value=True, 
+    key="filter_allowed_sources_only", 
+    help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
+)
 
 def extract_article_text(url):
     try:
@@ -576,15 +582,17 @@ def article_passes_all_filters(article):
     if "cat_multi" in st.session_state:
         for cat in st.session_state["cat_multi"]:
             all_keywords.extend(favorite_categories.get(cat, []))
+
     if not article_contains_exact_keyword(article, all_keywords):
         return False
 
-    # 언론사 도메인 필터링
-    source = article.get('source', '').lower()
-    if source.startswith("www."):
-        source = source[4:]
-    if source not in ALLOWED_SOURCES:
-        return False
+    # ✅ 언론사 도메인 필터링 (체크박스로 ON/OFF 가능)
+    if st.session_state.get("filter_allowed_sources_only", True):
+        source = article.get('source', '').lower()
+        if source.startswith("www."):
+            source = source[4:]
+        if source not in ALLOWED_SOURCES:
+            return False
 
     # 공통 키워드 필터 조건 (OR 조건)
     common_passed = or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS)
