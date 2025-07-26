@@ -1011,8 +1011,6 @@ def render_important_article_review_and_download():
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
                         st.session_state[f"news_{from_key}"] = False   # ← 이 줄 추가!
-                        st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
-
                         st.rerun()
 
         # 🗑 선택 기사 삭제 버튼 처리
