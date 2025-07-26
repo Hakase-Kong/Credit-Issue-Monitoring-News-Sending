@@ -972,7 +972,8 @@ def render_important_article_review_and_download():
                                 selected_article = art
                                 article_link = art["link"]
                                 break
-                        if selected_article: break
+                        if selected_article:
+                            break
 
                     if not selected_article or not article_link:
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
@@ -1006,10 +1007,13 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
-                        # ---------------자동 체크 해제 (두 줄)---------------
+                        # ---------------자동 체크 해제 (news_키 포함 3곳)---------------
+                        news_key = f"news_{from_key}"
+                        if news_key in st.session_state:
+                            st.session_state[news_key] = False
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-                        # -------------------------------------------------
+                        # --------------------------------------------------------------
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
@@ -1071,6 +1075,9 @@ def render_important_article_review_and_download():
                     "출처": selected_article["source"]
                 }
                 st.session_state["important_articles_preview"][target_idx] = new_article
+                news_key = f"news_{from_key}"
+                if news_key in st.session_state:
+                    st.session_state[news_key] = False
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
                 st.session_state.important_selected_index = []
@@ -1107,7 +1114,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
         for keyword, articles in results.items():
             with st.container(border=True):
                 st.markdown(f"**[{keyword}] ({len(articles)}건)**")
-
                 for idx, article in enumerate(articles):
                     unique_id = re.sub(r'\W+', '', article['link'])[-16:]
                     key = f"{keyword}_{idx}_{unique_id}"
@@ -1119,21 +1125,24 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
                             _, _, sentiment, _ = st.session_state[cache_key]
-                        badge_html = f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>" if sentiment else ""
+                        badge_html = (f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>"
+                                      f"({sentiment})</span>") if sentiment else ""
                         st.markdown(
-                            f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> {badge_html} {article['date']} | {article['source']}",
+                            f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
+                            f"{badge_html} {article['date']} | {article['source']}",
                             unsafe_allow_html=True
                         )
+                    # 업데이트 체크 상태
                     st.session_state.article_checked_left[key] = checked
                     if checked:
                         st.session_state.article_checked[key] = True
 
-    # 선택 기사 요약 및 다운로드
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
             selected_articles = []
 
+            # 선택된 기사 데이터 수집 (변경 없음)
             for keyword, articles in results.items():
                 for idx, article in enumerate(articles):
                     unique_id = re.sub(r'\W+', '', article['link'])[-16:]
@@ -1162,13 +1171,9 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
 
             st.session_state.selected_articles = selected_articles
 
-            # ---- X(삭제) 버튼이 추가된 요약/감성 결과 리스트 렌더링 ----
+            # ----------- x 버튼 오른쪽 배치, 안정적 삭제 처리 -----------
             for idx, article in enumerate(st.session_state.selected_articles):
-                del_col, content_col = st.columns([0.07, 0.93])
-                with del_col:
-                    if st.button("❌", key=f"del_selected_{idx}"):
-                        st.session_state.selected_articles.pop(idx)
-                        st.rerun()
+                content_col, del_col = st.columns([0.93, 0.07])
                 with content_col:
                     st.markdown(
                         f"#### <span class='news-title'><a href='{article['링크']}' target='_blank'>{article['기사제목']}</a></span> "
@@ -1179,7 +1184,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     if article.get("요약"):
                         st.markdown(f"- **한 줄 요약:** {article['요약']}")
                     st.markdown(f"- **감성분석:** `{article['감성']}`")
-                    st.markdown("---")
+                with del_col:
+                    if st.button("❌", key=f"del_selected_{idx}"):
+                        st.session_state.selected_articles.pop(idx)
+                        st.rerun()
+                st.markdown("---")
+
             st.write(f"선택된 기사 개수: {len(st.session_state.selected_articles)}")
 
             col_dl1, col_dl2 = st.columns([0.5, 0.5])
@@ -1195,7 +1205,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-        # 중요 기사 리뷰 UI
+        # 중요 기사 리뷰 UI 호출
         render_important_article_review_and_download()
 
 if st.session_state.search_results:
