@@ -948,6 +948,7 @@ def render_important_article_review_and_download():
         # --- 추가 버튼, 삭제 버튼, 교체 버튼 한 줄에 배치 ---
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
+        # ➕ 선택 기사 추가 버튼 처리 (체크박스 자동 해제 코드 포함)
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -970,16 +971,17 @@ def render_important_article_review_and_download():
                                 selected_article = art
                                 article_link = art["link"]
                                 break
-                        if selected_article: break
+                        if selected_article:
+                            break
 
                     if not selected_article or not article_link:
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
                         return
 
-                    # 🔷 회사명을 항상 extract_keyword_from_link로 찾음!
+                    # 회사명은 항상 extract_keyword_from_link 함수 이용
                     keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
 
-                    # 감성 정보 확인 또는 요약/감성 다시 생성
+                    # 감성 정보 확인 또는 요약/감성 생성
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
                     for k in st.session_state.keys():
@@ -1004,9 +1006,16 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
+
+                        # 🔥 여기 추가: 뉴스 검색 결과 체크박스 자동 해제
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_key] = False
+
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
+
                         st.rerun()
 
+        # 🗑 선택 기사 삭제 버튼 처리
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 for idx in sorted(st.session_state.important_selected_index, reverse=True):
@@ -1015,6 +1024,7 @@ def render_important_article_review_and_download():
                 st.session_state.important_selected_index = []
                 st.rerun()
 
+        # 🔁 선택 기사 교체 버튼 처리 (이미 체크박스 자동 해제 포함)
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1022,7 +1032,6 @@ def render_important_article_review_and_download():
                 if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
                     st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
                     return
-
                 from_key = left_selected_keys[0]
                 target_idx = right_selected_indexes[0]
                 m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
@@ -1046,7 +1055,6 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
                     return
 
-                # 🔷 회사명(키워드)은 extract_keyword_from_link로 정확히 결정
                 keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                 cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                 sentiment = None
@@ -1066,8 +1074,11 @@ def render_important_article_review_and_download():
                     "출처": selected_article["source"]
                 }
                 st.session_state["important_articles_preview"][target_idx] = new_article
+
+                # 자동 체크 해제
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
+
                 st.session_state.important_selected_index = []
                 st.success("중요 기사 교체 완료: " + new_article["제목"])
                 st.rerun()
