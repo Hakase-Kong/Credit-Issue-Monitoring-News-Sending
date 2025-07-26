@@ -1006,6 +1006,10 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
+                        # ---------------자동 체크 해제 (두 줄)---------------
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_key] = False
+                        # -------------------------------------------------
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
@@ -1024,7 +1028,6 @@ def render_important_article_review_and_download():
                 if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
                     st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
                     return
-
                 from_key = left_selected_keys[0]
                 target_idx = right_selected_indexes[0]
                 m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
@@ -1109,8 +1112,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     unique_id = re.sub(r'\W+', '', article['link'])[-16:]
                     key = f"{keyword}_{idx}_{unique_id}"
                     cache_key = f"summary_{key}"
-
-                    # 체크박스와 제목 렌더링
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
                         checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
@@ -1159,19 +1160,27 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             "출처": article['source']
                         })
 
-                        st.markdown(
-                            f"#### <span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
-                            f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>",
-                            unsafe_allow_html=True
-                        )
-                        st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
-                        if enable_summary:
-                            st.markdown(f"- **한 줄 요약:** {one_line}")
-                        st.markdown(f"- **감성분석:** `{sentiment}`")
-                        st.markdown("---")
-
             st.session_state.selected_articles = selected_articles
-            st.write(f"선택된 기사 개수: {len(selected_articles)}")
+
+            # ---- X(삭제) 버튼이 추가된 요약/감성 결과 리스트 렌더링 ----
+            for idx, article in enumerate(st.session_state.selected_articles):
+                del_col, content_col = st.columns([0.07, 0.93])
+                with del_col:
+                    if st.button("❌", key=f"del_selected_{idx}"):
+                        st.session_state.selected_articles.pop(idx)
+                        st.rerun()
+                with content_col:
+                    st.markdown(
+                        f"#### <span class='news-title'><a href='{article['링크']}' target='_blank'>{article['기사제목']}</a></span> "
+                        f"<span class='sentiment-badge {'sentiment-positive' if article['감성']=='긍정' else 'sentiment-negative'}'>({article['감성']})</span>",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(f"- **날짜/출처:** {article['날짜']} | {article['출처']}")
+                    if article.get("요약"):
+                        st.markdown(f"- **한 줄 요약:** {article['요약']}")
+                    st.markdown(f"- **감성분석:** `{article['감성']}`")
+                    st.markdown("---")
+            st.write(f"선택된 기사 개수: {len(st.session_state.selected_articles)}")
 
             col_dl1, col_dl2 = st.columns([0.5, 0.5])
             with col_dl1:
