@@ -1010,7 +1010,7 @@ def render_important_article_review_and_download():
                         # 🔥 여기 추가: 뉴스 검색 결과 체크박스 자동 해제
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-
+                        st.session_state[f"news_{from_key}"] = False   # ← 이 줄 추가!
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
 
                         st.rerun()
@@ -1122,7 +1122,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     # 체크박스와 제목 렌더링
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
-                        checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
+                        checked = st.checkbox(
+                            "",
+                            value=st.session_state.article_checked_left.get(key, False),
+                            key=f"news_{key}"
+                        )
+                        st.session_state.article_checked_left[key] = checked
                     with cols[1]:
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
