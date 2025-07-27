@@ -914,7 +914,7 @@ def extract_keyword_from_link(search_results, article_link):
 def render_important_article_review_and_download():
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
-        
+
         # 중요기사 자동 선정 버튼
         if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
@@ -926,21 +926,22 @@ def render_important_article_review_and_download():
                 )
                 st.session_state.important_articles_preview = important_articles
                 st.session_state.important_selected_index = []
-        
+
         # 중요기사 리스트 없으면 안내 메시지
         if not st.session_state.get("important_articles_preview"):
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
             return
-        
+
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
-        
+
         # 중요기사 체크박스 리스트
         new_selection = []
         for idx, article in enumerate(st.session_state["important_articles_preview"]):
             checked = st.checkbox(
                 f"{article['회사명']} | {article['감성']} | {article['제목']}",
                 key=f"important_chk_{idx}",
-                value=(idx in st.session_state.important_selected_index), on_change=None
+                value=(idx in st.session_state.important_selected_index),
+                on_change=None
             )
             if checked:
                 new_selection.append(idx)
@@ -956,7 +957,6 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
                 else:
                     from_key = left_selected_keys[0]
-                    # --- 유니크ID로 기사 탐색 ---
                     m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                     if not m:
                         st.warning("기사 식별자 파싱 실패")
@@ -971,16 +971,15 @@ def render_important_article_review_and_download():
                                 selected_article = art
                                 article_link = art["link"]
                                 break
-                        if selected_article: break
+                        if selected_article:
+                            break
 
                     if not selected_article or not article_link:
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
                         return
 
-                    # 🔷 회사명을 항상 extract_keyword_from_link로 찾음!
                     keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
 
-                    # 감성 정보 확인 또는 요약/감성 다시 생성
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
                     for k in st.session_state.keys():
@@ -1004,9 +1003,10 @@ def render_important_article_review_and_download():
                         st.info("이미 중요 기사 목록에 존재하는 기사입니다.")
                     else:
                         important.append(new_article)
+                        # 체크박스 상태 모두 False로 초기화 (중요!)
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-                        st.session_state[f"news_{from_key}"] = False 
+                        st.session_state[f"news_{from_key}"] = False
                         st.rerun()
 
         with col_del:
@@ -1048,8 +1048,8 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
                     return
 
-                # 🔷 회사명(키워드)은 extract_keyword_from_link로 정확히 결정
                 keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
+
                 cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                 sentiment = None
                 for k in st.session_state.keys():
@@ -1067,10 +1067,14 @@ def render_important_article_review_and_download():
                     "날짜": selected_article["date"],
                     "출처": selected_article["source"]
                 }
+
                 st.session_state["important_articles_preview"][target_idx] = new_article
+
+                # 체크박스 상태 모두 False 및 선택 초기화 (중요!)
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
                 st.session_state.important_selected_index = []
+                st.session_state[f"news_{from_key}"] = False
                 st.rerun()
 
         st.markdown("---")
