@@ -1006,6 +1006,7 @@ def render_important_article_review_and_download():
                         important.append(new_article)
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
+                        st.session_state[f"news_{from_key}"] = False 
                         st.rerun()
 
         with col_del:
