@@ -940,8 +940,7 @@ def render_important_article_review_and_download():
             checked = st.checkbox(
                 f"{article['회사명']} | {article['감성']} | {article['제목']}",
                 key=f"important_chk_{idx}",
-                value=(idx in st.session_state.important_selected_index),
-                on_change=None
+                value=(idx in st.session_state.important_selected_index)
             )
             if checked:
                 new_selection.append(idx)
@@ -952,6 +951,7 @@ def render_important_article_review_and_download():
 
         with col_add:
             if st.button("➕ 선택 기사 추가"):
+                # 체크박스 상태: 반드시 key 기준
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
                 if len(left_selected_keys) != 1:
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
@@ -1003,10 +1003,9 @@ def render_important_article_review_and_download():
                         st.info("이미 중요 기사 목록에 존재하는 기사입니다.")
                     else:
                         important.append(new_article)
-                        # 체크박스 상태 모두 False로 초기화 (중요!)
-                        st.session_state.article_checked_left[from_key] = False
-                        st.session_state.article_checked[from_key] = False
+                        # ★★★ 체크박스 체크 해제 딱 여기만 처리(key만 사용!)
                         st.session_state[f"news_{from_key}"] = False
+                        st.session_state.article_checked_left[from_key] = False
                         st.rerun()
 
         with col_del:
@@ -1069,12 +1068,10 @@ def render_important_article_review_and_download():
                 }
 
                 st.session_state["important_articles_preview"][target_idx] = new_article
-
-                # 체크박스 상태 모두 False 및 선택 초기화 (중요!)
-                st.session_state.article_checked_left[from_key] = False
-                st.session_state.article_checked[from_key] = False
-                st.session_state.important_selected_index = []
+                # ★★★ 교체 시도 동일하게 체크 해제는 key만!
                 st.session_state[f"news_{from_key}"] = False
+                st.session_state.article_checked_left[from_key] = False
+                st.session_state.important_selected_index = []
                 st.rerun()
 
         st.markdown("---")
