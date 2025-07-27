@@ -53,12 +53,13 @@ st.markdown("""
 EXCLUDE_TITLE_KEYWORDS = [
     "야구", "축구", "배구", "농구", "골프", "e스포츠", "올림픽", "월드컵", "K리그", "프로야구", "프로축구", "프로배구", "프로농구", "유도",
     "부고", "부음", "인사", "승진", "임명", "발령", "인사발령", "인사이동",
-    "브랜드평판", "브랜드 평판", "브랜드 순위", "브랜드지수",
+    "브랜드평판", "브랜드 평판", "브랜드 순위", "브랜드지수", "브랜드", 
     "코스피", "코스닥", "주가", "주식", "증시", "시세", "마감", "장중", "장마감", "거래량", "거래대금", "상한가", "하한가",
     "봉사", "후원", "기부", "우승", "무승부", "패배", "스포츠", "스폰서", "지속가능", "ESG", "위촉", "이벤트", "사전예약", "챔프전",
     "프로모션", "연극", "공연", "어르신", "링컨", "에비에이터", "NH퍼플통장", "골라담기",
     "음악회", "교향악단", "사이버대", "신진서", "안성준", "GS칼텍스배", "프로기전", "다문화", "와인25플러스", "과채주스", "책Dream", "책드림", "트로페오",
-    "브랜드데이", "쇼핑라이브", "산학협력 컨퍼런스", "녹색상품", "소비자가 뽑은", "캠페인", "나눔", "챔피언십", "사회공헌", "성금"
+    "브랜드데이", "쇼핑라이브", "산학협력 컨퍼런스", "녹색상품", "소비자가 뽑은", "캠페인", "나눔", "챔피언십", "사회공헌", "성금", "캠프",
+    "테니스", "집중호우", "수해 복구", "온열질환", "출시", "금융교육", "유튜브 구독자", "김장", "취약계층"
 ]
 
 # 필터링할 언론사 도메인 리스트 (www. 제거된 도메인 기준)
@@ -1003,8 +1004,8 @@ def render_important_article_review_and_download():
                         st.info("이미 중요 기사 목록에 존재하는 기사입니다.")
                     else:
                         important.append(new_article)
-                        st.session_state["important_articles_preview"] = important
-                        st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_key] = False
                         st.rerun()
 
         with col_del:
@@ -1069,7 +1070,6 @@ def render_important_article_review_and_download():
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
                 st.session_state.important_selected_index = []
-                st.success("중요 기사 교체 완료: " + new_article["제목"])
                 st.rerun()
 
         st.markdown("---")
