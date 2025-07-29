@@ -1009,12 +1009,10 @@ def render_important_article_review_and_download():
                         # 👉 체크 해제 코드 추가
                         from_key = left_selected_keys[0]
                         st.session_state.article_checked_left[from_key] = False
-                        # 만약 article_checked를 같이 쓰고 있다면 아래도 추가
                         st.session_state.article_checked[from_key] = False
+                        st.session_state[f"news_{from_key}"] = False  # ← 이 key가 실제 체크박스 key와 반드시 같아야 합니다.
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
-                        st.session_state[f"news_{from_key}"] = False
-
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 for idx in sorted(st.session_state.important_selected_index, reverse=True):
