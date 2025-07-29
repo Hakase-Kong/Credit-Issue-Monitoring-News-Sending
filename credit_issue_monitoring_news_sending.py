@@ -1003,10 +1003,10 @@ def render_important_article_review_and_download():
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
 
-                        # --- [여기서 체크박스/요약 캐시 해제 및 UI 갱신 추가] ---
+                        # 체크박스 값 해제(검색결과 체크박스까지 100% 해제)
                         st.session_state.article_checked_left[from_key] = False
-                        if from_key in st.session_state.article_checked:
-                            st.session_state.article_checked[from_key] = False
+                        st.session_state.article_checked[from_key] = False
+                        st.session_state[f"news_{from_key}"] = False   # ★ 이 줄 추가! news_{from_key} 체크박스도 해제
 
                         cache_key = f"summary_{from_key}"
                         if cache_key in st.session_state:
@@ -1075,8 +1075,8 @@ def render_important_article_review_and_download():
 
                 # 교체 시에도 체크 해제 및 캐시 삭제 적용
                 st.session_state.article_checked_left[from_key] = False
-                if from_key in st.session_state.article_checked:
-                    st.session_state.article_checked[from_key] = False
+                st.session_state.article_checked[from_key] = False
+                st.session_state[f"news_{from_key}"] = False   # ★ 이 줄 추가!
 
                 cache_key = f"summary_{from_key}"
                 if cache_key in st.session_state:
@@ -1099,7 +1099,6 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
 
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
     SENTIMENT_CLASS = {
