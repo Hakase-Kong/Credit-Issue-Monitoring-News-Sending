@@ -1012,8 +1012,8 @@ def render_important_article_review_and_download():
                         # 만약 article_checked를 같이 쓰고 있다면 아래도 추가
                         st.session_state.article_checked[from_key] = False
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
-                        st.session_state[f"news_{from_key}"] = False
                         st.rerun()
+                        st.session_state[f"news_{from_key}"] = False
 
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
