@@ -917,6 +917,7 @@ def render_important_article_review_and_download():
         pending_key = st.session_state.get("pending_add_article_key", "")
         if pending_key:
             import re
+
             m = re.match(r"^[^_]+_[0-9]+_(.+)$", pending_key)
             if m:
                 key_tail = m.group(1)
@@ -1000,7 +1001,7 @@ def render_important_article_review_and_download():
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
         with col_add:
-            # --- 여기서 기사 추가 이벤트는 pending key만 처리 ---
+            # --- 기사 추가는 pending key만 세팅 ---
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
                 if len(left_selected_keys) != 1:
