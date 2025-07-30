@@ -913,9 +913,8 @@ def extract_keyword_from_link(search_results, article_link):
 
 def render_important_article_review_and_download():
     with st.container(border=True):
-
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
-
+        
         # 중요기사 자동 선정 버튼
         if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
@@ -927,13 +926,15 @@ def render_important_article_review_and_download():
                 )
                 st.session_state.important_articles_preview = important_articles
                 st.session_state.important_selected_index = []
-
+        
+        # 중요기사 리스트 없으면 안내 메시지
         if not st.session_state.get("important_articles_preview"):
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
             return
-
+        
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
-
+        
+        # 중요기사 체크박스 리스트
         new_selection = []
         for idx, article in enumerate(st.session_state["important_articles_preview"]):
             checked = st.checkbox(
@@ -945,29 +946,22 @@ def render_important_article_review_and_download():
                 new_selection.append(idx)
         st.session_state.important_selected_index = new_selection
 
+        # --- 추가 버튼, 삭제 버튼, 교체 버튼 한 줄에 배치 ---
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
         with col_add:
-            # 선택 기사 추가 버튼 클릭 시 바로 체크 해제 및 기사 추가
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
                 if len(left_selected_keys) != 1:
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
                 else:
                     from_key = left_selected_keys[0]
-
-                    # 체트박스 상태 즉시 해제 (UI key 포함)
-                    st.session_state.article_checked_left[from_key] = False
-                    st.session_state.article_checked[from_key] = False
-                    st.session_state[f"news_{from_key}"] = False
-
-                    import re
+                    # --- 유니크ID로 기사 탐색 ---
                     m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                     if not m:
                         st.warning("기사 식별자 파싱 실패")
                         return
                     key_tail = m.group(1)
-
                     selected_article = None
                     article_link = None
                     for kw, arts in st.session_state.search_results.items():
@@ -977,14 +971,16 @@ def render_important_article_review_and_download():
                                 selected_article = art
                                 article_link = art["link"]
                                 break
-                        if selected_article:
-                            break
+                        if selected_article: break
 
                     if not selected_article or not article_link:
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
                         return
 
+                    # 🔷 회사명을 항상 extract_keyword_from_link로 찾음!
                     keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
+
+                    # 감성 정보 확인 또는 요약/감성 다시 생성
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
                     for k in st.session_state.keys():
@@ -1009,10 +1005,11 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_key] = False
+                        
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
-
-                    # 상태 변경 후 즉시 화면 갱신
-                    st.experimental_rerun()
+                        st.rerun()
 
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
@@ -1020,7 +1017,7 @@ def render_important_article_review_and_download():
                     if 0 <= idx < len(st.session_state["important_articles_preview"]):
                         st.session_state["important_articles_preview"].pop(idx)
                 st.session_state.important_selected_index = []
-                st.experimental_rerun()
+                st.rerun()
 
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
@@ -1032,14 +1029,11 @@ def render_important_article_review_and_download():
 
                 from_key = left_selected_keys[0]
                 target_idx = right_selected_indexes[0]
-
-                import re
                 m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                 if not m:
                     st.warning("기사 식별자 파싱 실패")
                     return
                 key_tail = m.group(1)
-
                 selected_article = None
                 article_link = None
                 for kw, art_list in st.session_state.search_results.items():
@@ -1056,6 +1050,7 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
                     return
 
+                # 🔷 회사명(키워드)은 extract_keyword_from_link로 정확히 결정
                 keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                 cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                 sentiment = None
@@ -1077,10 +1072,9 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"][target_idx] = new_article
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
-                st.session_state[f"news_{from_key}"] = False
                 st.session_state.important_selected_index = []
                 st.success("중요 기사 교체 완료: " + new_article["제목"])
-                st.experimental_rerun()
+                st.rerun()
 
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
