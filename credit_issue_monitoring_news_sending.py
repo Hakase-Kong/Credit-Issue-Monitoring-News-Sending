@@ -913,26 +913,77 @@ def extract_keyword_from_link(search_results, article_link):
 
 def render_important_article_review_and_download():
     with st.container(border=True):
-        # ===== [1] pending_add_article_key가 존재하면 여기서 기사 추가 처리 =====
-        pending_key = st.session_state.get("pending_add_article_key", "")
-        if pending_key:
-            import re
 
-            m = re.match(r"^[^_]+_[0-9]+_(.+)$", pending_key)
-            if m:
-                key_tail = m.group(1)
-                selected_article = None
-                article_link = None
-                for kw, arts in st.session_state.search_results.items():
-                    for art in arts:
-                        uid = re.sub(r'\W+', '', art['link'])[-16:]
-                        if uid == key_tail:
-                            selected_article = art
-                            article_link = art["link"]
+        st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
+
+        # 중요기사 자동 선정 버튼
+        if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
+            with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
+                important_articles = generate_important_article_list(
+                    search_results=st.session_state.search_results,
+                    common_keywords=ALL_COMMON_FILTER_KEYWORDS,
+                    industry_keywords=st.session_state.get("industry_sub", []),
+                    favorites=favorite_categories
+                )
+                st.session_state.important_articles_preview = important_articles
+                st.session_state.important_selected_index = []
+
+        if not st.session_state.get("important_articles_preview"):
+            st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
+            return
+
+        st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
+
+        new_selection = []
+        for idx, article in enumerate(st.session_state["important_articles_preview"]):
+            checked = st.checkbox(
+                f"{article['회사명']} | {article['감성']} | {article['제목']}",
+                key=f"important_chk_{idx}",
+                value=(idx in st.session_state.important_selected_index), on_change=None
+            )
+            if checked:
+                new_selection.append(idx)
+        st.session_state.important_selected_index = new_selection
+
+        col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
+
+        with col_add:
+            # 선택 기사 추가 버튼 클릭 시 바로 체크 해제 및 기사 추가
+            if st.button("➕ 선택 기사 추가"):
+                left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
+                if len(left_selected_keys) != 1:
+                    st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
+                else:
+                    from_key = left_selected_keys[0]
+
+                    # 체트박스 상태 즉시 해제 (UI key 포함)
+                    st.session_state.article_checked_left[from_key] = False
+                    st.session_state.article_checked[from_key] = False
+                    st.session_state[f"news_{from_key}"] = False
+
+                    import re
+                    m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
+                    if not m:
+                        st.warning("기사 식별자 파싱 실패")
+                        return
+                    key_tail = m.group(1)
+
+                    selected_article = None
+                    article_link = None
+                    for kw, arts in st.session_state.search_results.items():
+                        for art in arts:
+                            uid = re.sub(r'\W+', '', art['link'])[-16:]
+                            if uid == key_tail:
+                                selected_article = art
+                                article_link = art["link"]
+                                break
+                        if selected_article:
                             break
-                    if selected_article:
-                        break
-                if selected_article and article_link:
+
+                    if not selected_article or not article_link:
+                        st.warning("선택한 기사 정보를 찾을 수 없습니다.")
+                        return
+
                     keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
@@ -958,62 +1009,9 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
-                        st.success(f"중요 기사 목록에 추가되었습니다: {new_article['제목']}")
-                else:
-                    st.warning("선택한 기사 정보를 찾을 수 없습니다.")
-            else:
-                st.warning("기사 식별자 파싱 실패")
-            # 반드시 처리 후 값 비우기(중복 실행 방지)
-            st.session_state["pending_add_article_key"] = ""
-            st.experimental_rerun()   # 이 rerun은 중복 Article 추가되는 현상을 방지
+                        st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
 
-        st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
-        
-        # 중요기사 자동 선정 버튼
-        if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
-            with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
-                important_articles = generate_important_article_list(
-                    search_results=st.session_state.search_results,
-                    common_keywords=ALL_COMMON_FILTER_KEYWORDS,
-                    industry_keywords=st.session_state.get("industry_sub", []),
-                    favorites=favorite_categories
-                )
-                st.session_state.important_articles_preview = important_articles
-                st.session_state.important_selected_index = []
-        
-        if not st.session_state.get("important_articles_preview"):
-            st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
-            return
-        
-        st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
-        
-        new_selection = []
-        for idx, article in enumerate(st.session_state["important_articles_preview"]):
-            checked = st.checkbox(
-                f"{article['회사명']} | {article['감성']} | {article['제목']}",
-                key=f"important_chk_{idx}",
-                value=(idx in st.session_state.important_selected_index), on_change=None
-            )
-            if checked:
-                new_selection.append(idx)
-        st.session_state.important_selected_index = new_selection
-
-        col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
-
-        with col_add:
-            # --- 기사 추가는 pending key만 세팅 ---
-            if st.button("➕ 선택 기사 추가"):
-                left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
-                if len(left_selected_keys) != 1:
-                    st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
-                else:
-                    from_key = left_selected_keys[0]
-                    # 체크박스 해제
-                    st.session_state.article_checked_left[from_key] = False
-                    st.session_state.article_checked[from_key] = False
-                    st.session_state[f"news_{from_key}"] = False
-                    # pending처리
-                    st.session_state["pending_add_article_key"] = from_key
+                    # 상태 변경 후 즉시 화면 갱신
                     st.experimental_rerun()
 
         with col_del:
@@ -1022,7 +1020,7 @@ def render_important_article_review_and_download():
                     if 0 <= idx < len(st.session_state["important_articles_preview"]):
                         st.session_state["important_articles_preview"].pop(idx)
                 st.session_state.important_selected_index = []
-                st.rerun()
+                st.experimental_rerun()
 
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
@@ -1034,11 +1032,14 @@ def render_important_article_review_and_download():
 
                 from_key = left_selected_keys[0]
                 target_idx = right_selected_indexes[0]
+
+                import re
                 m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                 if not m:
                     st.warning("기사 식별자 파싱 실패")
                     return
                 key_tail = m.group(1)
+
                 selected_article = None
                 article_link = None
                 for kw, art_list in st.session_state.search_results.items():
@@ -1076,9 +1077,10 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"][target_idx] = new_article
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
+                st.session_state[f"news_{from_key}"] = False
                 st.session_state.important_selected_index = []
                 st.success("중요 기사 교체 완료: " + new_article["제목"])
-                st.rerun()
+                st.experimental_rerun()
 
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
