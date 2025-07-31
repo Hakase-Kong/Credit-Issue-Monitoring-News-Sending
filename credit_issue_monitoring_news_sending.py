@@ -955,18 +955,6 @@ def render_important_article_review_and_download():
                 if len(left_selected_keys) != 1:
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
                 else:
-                    # 체크박스 100% 해제 코드 추가
-                    for k in list(st.session_state.article_checked_left.keys()):
-                        news_key = f"news_{k}"
-                        if news_key in st.session_state:
-                            st.session_state[news_key] = False
-                        st.session_state.article_checked_left[k] = False
-
-                    for k in list(st.session_state.article_checked.keys()):
-                        news_key = f"news_{k}"
-                        if news_key in st.session_state:
-                            st.session_state[news_key] = False
-                        st.session_state.article_checked[k] = False
                     from_key = left_selected_keys[0]
                     # --- 유니크ID로 기사 탐색 ---
                     m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
