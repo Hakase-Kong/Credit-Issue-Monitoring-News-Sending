@@ -1005,11 +1005,14 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
-                        # 체크박스 해제 (실제 렌더와 1:1인 key 전부 해제!)
+                        # ... 이미 new_article 빌드 등 처리 후
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
+                        ui_checkbox_key = f"news_{from_key}"
+                        if ui_checkbox_key in st.session_state:
+                            st.session_state[ui_checkbox_key] = False
+    
                         st.session_state.important_selected_index = []
-                        st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
         with col_del:
