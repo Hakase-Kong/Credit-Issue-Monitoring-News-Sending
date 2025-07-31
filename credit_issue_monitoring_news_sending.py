@@ -1006,9 +1006,9 @@ def render_important_article_review_and_download():
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
                         for cb_key in st.session_state.article_checked:
-                            st.session_state.article_checked[cb_key] = False
+                            st.session_state[f"news_{cb_key}"] = False  # 강제로 체크박스 키에 맞게 False 설정
                         for cb_key in st.session_state.article_checked_left:
-                            st.session_state.article_checked_left[cb_key] = False
+                            st.session_state[f"news_{cb_key}"] = False
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
