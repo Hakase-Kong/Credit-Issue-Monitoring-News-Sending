@@ -1005,14 +1005,11 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
-                        # ... 이미 new_article 빌드 등 처리 후
-                        st.session_state.article_checked_left[from_key] = False
-                        st.session_state.article_checked[from_key] = False
-                        ui_checkbox_key = f"news_{from_key}"
-                        st.session_state[ui_checkbox_key] = False
-                        st.session_state.article_checked_left[from_key] = False
-                        st.session_state.article_checked[from_key] = False
-                        st.session_state.important_selected_index = []
+                        for cb_key in st.session_state.article_checked:
+                            st.session_state.article_checked[cb_key] = False
+                        for cb_key in st.session_state.article_checked_left:
+                            st.session_state.article_checked_left[cb_key] = False
+                        st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
         with col_del:
@@ -1120,8 +1117,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
                         checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
-                        st.session_state.article_checked_left[key] = checked
-                        st.session_state.article_checked[key] = checked
                     with cols[1]:
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
