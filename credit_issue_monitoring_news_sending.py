@@ -1009,9 +1009,9 @@ def render_important_article_review_and_download():
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
                         ui_checkbox_key = f"news_{from_key}"
-                        if ui_checkbox_key in st.session_state:
-                            st.session_state[ui_checkbox_key] = False
-    
+                        st.session_state[ui_checkbox_key] = False
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_key] = False
                         st.session_state.important_selected_index = []
                         st.rerun()
 
@@ -1120,6 +1120,8 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
                         checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
+                        st.session_state.article_checked_left[key] = checked
+                        st.session_state.article_checked[key] = checked
                     with cols[1]:
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
