@@ -940,7 +940,8 @@ def render_important_article_review_and_download():
             checked = st.checkbox(
                 f"{article['회사명']} | {article['감성']} | {article['제목']}",
                 key=f"important_chk_{idx}",
-                value=(idx in st.session_state.important_selected_index), on_change=None
+                value=(idx in st.session_state.important_selected_index),
+                on_change=None
             )
             if checked:
                 new_selection.append(idx)
@@ -956,7 +957,6 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
                 else:
                     from_key = left_selected_keys[0]
-                    # --- 유니크ID로 기사 탐색 ---
                     m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                     if not m:
                         st.warning("기사 식별자 파싱 실패")
@@ -1005,9 +1005,11 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
+                        # 체크박스 해제(왼쪽) - 반드시 실제 체크박스 key와 동일하게!
+                        st.session_state["news_" + from_key] = False       # ✅ 실제 체크박스 위젯 키 해제
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-                        
+
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
@@ -1070,6 +1072,7 @@ def render_important_article_review_and_download():
                     "출처": selected_article["source"]
                 }
                 st.session_state["important_articles_preview"][target_idx] = new_article
+                st.session_state["news_" + from_key] = False      # ✅ 반드시 체크박스까지 해제!
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
                 st.session_state.important_selected_index = []
