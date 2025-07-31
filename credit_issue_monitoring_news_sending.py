@@ -1005,10 +1005,9 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
-                        st.session_state.article_checked_left[from_key] = False   # <- 여기 추가
+                        st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-                        st.session_state[f"news_{from_key}"] = False   # ← 이 라인 추가 
-                        st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
+                        st.session_state[f"news_{from_key}"] = False
                         st.rerun()
 
         with col_del:
