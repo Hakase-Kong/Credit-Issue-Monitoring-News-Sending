@@ -571,11 +571,11 @@ def article_contains_exact_keyword(article, keywords):
     return False
 
 def article_passes_all_filters(article):
-    # 1. 제목에 제외 키워드가 포함되면 제외
+    # 제목에 제외 키워드가 포함되면 제외
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
 
-    # 2. 날짜 범위 필터링
+    # 날짜 범위 필터링
     try:
         pub_date = datetime.strptime(article['date'], '%Y-%m-%d').date()
         if pub_date < st.session_state.get("start_date") or pub_date > st.session_state.get("end_date"):
@@ -583,17 +583,18 @@ def article_passes_all_filters(article):
     except:
         return False
 
-    # 3. 키워드 필터: 입력 키워드, 카테고리 키워드 중 하나라도 있어야 통과(여러 키워드 중 하나 포함만 해도 됨 -> 해당 조건은 and/or와 상관없이 기존 동작 유지)
+    # 키워드 필터: 입력 키워드 및 카테고리 키워드 집합 준비
     all_keywords = []
     if "keyword_input" in st.session_state:
         all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
     if "cat_multi" in st.session_state:
         for cat in st.session_state["cat_multi"]:
             all_keywords.extend(favorite_categories.get(cat, []))
-    if not article_contains_exact_keyword(article, all_keywords):
-        return False
 
-    # 4. 언론사 도메인 필터링 (사용자가 활성화한 경우만)
+    # 키워드 필터(입력 및 카테고리 키워드) 통과 여부
+    keyword_passed = article_contains_exact_keyword(article, all_keywords)
+
+    # 언론사 도메인 필터링 (특정 언론사만 필터링)
     if st.session_state.get("filter_allowed_sources_only", True):
         source = article.get('source', '').lower()
         if source.startswith("www."):
@@ -601,15 +602,13 @@ def article_passes_all_filters(article):
         if source not in ALLOWED_SOURCES:
             return False
 
-    # 5. 공통키워드 필터: 반드시(AND) 통과해야 함
-    if ALL_COMMON_FILTER_KEYWORDS:  # 키워드가 비어있으면 통과
-        if not or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS):
-            return False
+    # 공통 필터 조건 (OR 조건)
+    common_passed = or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS)
 
-    # 6. 산업별 필터: (사용시) 반드시(AND) 통과해야 함
+    # 산업별 필터 조건
+    industry_passed = True
     if st.session_state.get("use_industry_filter", False):
-        # => 선택된 산업의 major 추적 및 하위키워드 추출
-        keyword = article.get("키워드")
+        keyword = article.get("키워드")  # 회사명 또는 키워드 항목명
         matched_major = None
         for cat, companies in favorite_categories.items():
             if keyword in companies:
@@ -619,11 +618,17 @@ def article_passes_all_filters(article):
                     break
         if matched_major:
             sub_keyword_filter = st.session_state.industry_major_sub_map.get(matched_major, [])
-            if sub_keyword_filter:  # 필터가 비어있으면 체크 안함
-                if not or_keyword_filter(article, sub_keyword_filter):
-                    return False
+            if sub_keyword_filter:
+                industry_passed = or_keyword_filter(article, sub_keyword_filter)
 
-    # 모든 조건을 통과했으면 True 반환
+    # AND/OR 조건 체크박스에 따라 필터링 로직 분기
+    if st.session_state.get("condition_and", True):  # 체크박스 ON이면 AND 조건
+        if not (common_passed and industry_passed and keyword_passed):
+            return False
+    else:  # 체크박스 OFF이면 OR 조건
+        if not (common_passed or industry_passed or keyword_passed):
+            return False
+
     return True
 
 # --- 중복 기사 제거 함수 ---
