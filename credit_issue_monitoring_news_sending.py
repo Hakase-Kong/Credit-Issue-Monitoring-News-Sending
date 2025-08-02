@@ -1159,7 +1159,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         # 3중 상태 동기화
                         st.session_state.article_checked_left[key] = checked
                         st.session_state.article_checked[key] = checked
-                        st.session_state[f"news_{key}"] = checked
 
                     with cols[1]:
                         sentiment = ""
