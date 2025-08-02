@@ -99,6 +99,13 @@ if "important_selected_index" not in st.session_state:
 if "article_checked_left" not in st.session_state:
     st.session_state.article_checked_left = {}
 
+if "to_uncheck_key" in st.session_state:
+    key_to_uncheck = st.session_state.pop("to_uncheck_key")
+
+    st.session_state.article_checked_left[key_to_uncheck] = False
+    st.session_state.article_checked[key_to_uncheck] = False
+    st.session_state[f"news_{key_to_uncheck}"] = False
+
 # --- 즐겨찾기 카테고리(변경 금지) ---
 favorite_categories = {
     "국/공채": [],
@@ -1034,9 +1041,7 @@ def render_important_article_review_and_download():
                         st.session_state["important_articles_preview"] = important
 
                         # ==== 체크박스 3중 해제 및 UI 갱신 ====
-                        st.session_state.article_checked_left[from_key] = False
-                        st.session_state.article_checked[from_key] = False
-                        st.session_state[f"news_{from_key}"] = False
+                        st.session_state["to_uncheck_key"] = from_key
 
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
