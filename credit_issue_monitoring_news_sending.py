@@ -1142,7 +1142,14 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     # 체크박스와 제목 렌더링
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
-                        checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
+                        checked = st.checkbox(
+                            "", 
+                            value=st.session_state.article_checked.get(key, False), 
+                            key=f"news_{key}"
+                        )
+                        st.session_state.article_checked_left[key] = checked
+                        if checked:
+                            st.session_state.article_checked[key] = True
                     with cols[1]:
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
