@@ -300,6 +300,11 @@ with col_option1:
     show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False, key="show_sentiment_badge")
 with col_option2:
     enable_summary = st.checkbox("요약 기능 적용", value=False, key="enable_summary")
+    condition_and = st.checkbox(
+        "공통필터, 산업별필터, 키워드필터를 AND 조건으로 적용",
+        value=True,
+        key="condition_and"
+    )
 
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
 with col_kw_input:
