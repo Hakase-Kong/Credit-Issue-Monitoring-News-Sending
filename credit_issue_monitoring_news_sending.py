@@ -299,13 +299,16 @@ with col_title:
 with col_option1:
     show_sentiment_badge = st.checkbox("감성분석 배지표시", value=False, key="show_sentiment_badge")
 with col_option2:
-    enable_summary = st.checkbox("요약 기능", value=False, key="enable_summary")
-    condition_and = st.checkbox(
-        "필터 AND조건",
-        value=False,
-        key="condition_and"
-    )
-
+    col_sum, col_and = st.columns([0.55, 0.45])
+    with col_sum:
+        enable_summary = st.checkbox("요약 기능", value=False, key="enable_summary")
+    with col_and:
+        condition_and = st.checkbox(
+            "필터 AND조건",
+            value=False,
+            key="condition_and"
+        )
+        
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
 with col_kw_input:
     keywords_input = st.text_input(label="", value="", key="keyword_input", label_visibility="collapsed")
