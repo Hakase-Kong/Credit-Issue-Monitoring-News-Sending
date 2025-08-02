@@ -378,7 +378,7 @@ with st.expander("🏭 산업별 필터 옵션 (대분류별 소분류 필터링
 with st.expander("🔍 키워드 필터 옵션"):
     require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", value=True, key="require_exact_keyword_in_title_or_content")
     # 중복 기사 제거 체크박스 추가 (기본 해제)
-    remove_duplicate_articles = st.checkbox("중복 기사 제거", value=False, key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
+    remove_duplicate_articles = st.checkbox("중복 기사 제거", value=True, key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
     filter_allowed_sources_only = st.checkbox(
     "특정 언론사만 검색", 
     value=True, 
@@ -1031,6 +1031,10 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
+                        # === 체크 해제 부분 추가! ===
+                        from_key = left_selected_keys[0]
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_ke
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
