@@ -288,7 +288,7 @@ def get_industry_majors_from_favorites(selected_categories):
 
 # --- UI 시작 ---
 st.set_page_config(layout="wide")
-col_title, col_option1, col_option2 = st.columns([0.6, 0.2, 0.2])
+col_title, col_option1, col_option2 = st.columns([0.5, 0.2, 0.3])
 with col_title:
     st.markdown(
         "<h1 style='color:#1a1a1a; margin-bottom:0.5rem;'>"
@@ -928,8 +928,21 @@ def render_important_article_review_and_download():
         # 중요기사 자동 선정 버튼
         if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
+                # 필터링 및 중복제거 적용된 결과 생성
+                filtered_results_for_important = {}
+
+                for keyword, articles in st.session_state.search_results.items():
+                    filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+
+                    if st.session_state.get("remove_duplicate_articles", False):
+                        filtered_articles = remove_duplicates(filtered_articles)
+
+                    if filtered_articles:
+                        filtered_results_for_important[keyword] = filtered_articles
+
+                # 필터링된 결과만 자동 선정 함수에 전달
                 important_articles = generate_important_article_list(
-                    search_results=st.session_state.search_results,
+                    search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
                     industry_keywords=st.session_state.get("industry_sub", []),
                     favorites=favorite_categories
