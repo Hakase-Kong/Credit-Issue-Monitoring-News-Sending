@@ -297,12 +297,12 @@ with col_title:
         unsafe_allow_html=True
     )
 with col_option1:
-    show_sentiment_badge = st.checkbox("기사목록에 감성분석 배지 표시", value=False, key="show_sentiment_badge")
+    show_sentiment_badge = st.checkbox("감성분석 배지표시", value=False, key="show_sentiment_badge")
 with col_option2:
-    enable_summary = st.checkbox("요약 기능 적용", value=False, key="enable_summary")
+    enable_summary = st.checkbox("요약 기능", value=False, key="enable_summary")
     condition_and = st.checkbox(
-        "공통필터, 산업별필터, 키워드필터를 AND 조건으로 적용",
-        value=True,
+        "필터 AND조건",
+        value=False,
         key="condition_and"
     )
 
