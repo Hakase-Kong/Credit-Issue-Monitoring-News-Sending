@@ -973,10 +973,17 @@ def render_important_article_review_and_download():
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
+                st.write("DEBUG: left_selected_keys =", left_selected_keys)  # 확인용 출력
                 if len(left_selected_keys) != 1:
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
                 else:
                     from_key = left_selected_keys[0]
+                    st.write("DEBUG: from_key =", from_key)
+                    st.write("DEBUG: news_key =", f"news_{from_key}")
+                    st.write("DEBUG: st.session_state keys related to news:")
+                    for k in st.session_state.keys():
+                        if k.startswith("news_"):
+                            st.write(k)
                     # --- 유니크ID로 기사 탐색 ---
                     m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                     if not m:
