@@ -1241,7 +1241,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
         with st.container(border=True):
             selected_articles = []
 
-            # ★ 산업별 소분류 키워드 통합 리스트 (필터로 줄때만 생성)
+            # 산업별 키워드 통합 (필터용)
             industry_keywords_all = []
             if st.session_state.get("use_industry_filter", False):
                 for sublist in st.session_state.industry_major_sub_map.values():
@@ -1262,12 +1262,10 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             )
                             st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
 
-                        # ★ 요약/본문을 article dict에 반드시 추가!
                         article["full_text"] = full_text if full_text else ""
                         article["요약"] = one_line if one_line else ""
                         article["요약본"] = summary if summary else ""
 
-                        # ★ 실제로 포함된 필터 키워드 추출 (공통+산업)
                         filter_hits = matched_filter_keywords(
                             article,
                             ALL_COMMON_FILTER_KEYWORDS,
@@ -1287,7 +1285,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             "full_text": full_text
                         })
 
-                        # --- 최종 마크다운 출력: '필터로 인식된 키워드' ---
                         st.markdown(
                             f"#### <span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
                             f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>",
@@ -1300,10 +1297,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             st.markdown(f"- **한 줄 요약:** {one_line}")
                         st.markdown(f"- **감성분석:** `{sentiment}`")
                         st.markdown("---")
+
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
-            col_dl1, col_dl2 = st.columns([0.5, 0.5])
+            col_dl1, col_dl2, col_dl3 = st.columns([0.4, 0.4, 0.2])
+
             with col_dl1:
                 st.download_button(
                     label="📥 맞춤 엑셀 다운로드",
@@ -1315,6 +1314,15 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+            with col_dl2:
+                # 추가: 선택된 기사 체크박스 전체 해제 버튼
+                if st.button("🗑 선택 해제 (전체)"):
+                    # 전체 체크 상태 False로 변경
+                    for key in st.session_state.article_checked.keys():
+                        st.session_state.article_checked[key] = False
+                    # 강제 rerun 하여 UI 즉시 갱신
+                    st.rerun()
 
         # 중요 기사 리뷰 UI
         render_important_article_review_and_download()
