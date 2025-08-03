@@ -401,53 +401,77 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
-def summarize_and_sentiment_with_openai(text, do_summary=True):
-    if not OPENAI_API_KEY:
-        return "OpenAI API 키가 설정되지 않았습니다.", None, None, None
-    lang = detect_lang(text)
-    if lang == "ko":
-        prompt = (
-            ("아래 기사 본문을 감성분석(긍정/부정만)하고" +
-             ("\n- [한 줄 요약]: 기사 전체 내용을 한 문장으로 요약" if do_summary else "") +
-             "\n- [감성]: 기사 전체의 감정을 긍정/부정 중 하나로만 답해줘. 중립은 절대 답하지 마. 파산, 자금난 등 부정적 사건이 중심이면 반드시 '부정'으로 답해줘.\n\n"
-             "아래 포맷으로 답변해줘:\n" +
-             ("[한 줄 요약]: (여기에 한 줄 요약)\n" if do_summary else "") +
-             "[감성]: (긍정/부정 중 하나만)\n\n"
-             "[기사 본문]\n" + text)
-        )
-    else:
-        prompt = (
-            ("Analyze the following news article for sentiment (positive/negative only)." +
-             ("\n- [One-line Summary]: Summarize the entire article in one sentence." if do_summary else "") +
-             "\n- [Sentiment]: Classify the overall sentiment as either positive or negative ONLY. Never answer 'neutral'. If the article is about bankruptcy, crisis, etc., answer 'negative'.\n\n"
-             "Respond in this format:\n" +
-             ("[One-line Summary]: (your one-line summary)\n" if do_summary else "") +
-             "[Sentiment]: (positive/negative only)\n\n"
-             "[ARTICLE]\n" + text)
-        )
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": prompt}
-        ],
-        max_tokens=1024,
-        temperature=0.3
+def summarize_and_sentiment_prompt_template(text=None, do_summary=True):
+    """
+    기사 본문 텍스트 없이, 감성분석/한줄요약 프롬프트 템플릿만 반환.
+    (프롬프트 생성만 필요할 때 사용. 실제 기사본문 text 삽입 X)
+    """
+    def detect_lang(sample):
+        # 한글 존재시 "ko", 아니면 "en"
+        if sample and any('\uac00' <= c <= '\ud7a3' for c in sample):
+            return "ko"
+        return "en"
+
+    lang = detect_lang(text or "")
+
+    system_prompt_ko = (
+        "너는 경제 및 비즈니스 뉴스 기사 요약/분석 전문 AI야. "
+        "아래 본문을 분석할 때 최대한 객관적으로 접근하고, 아래 지침을 반드시 따른다. "
+        "요약 시 핵심 인물, 기업(또는 조직명), 사건, 결과가 빠지지 않게 작성한다. "
+        "감성 분류는 반드시 '긍정/부정' 중에서만 답하고, 부정 사건(파산, 대규모 구조조정, 자금난, 손실, 소송 등)이 중심이면 반드시 '부정'으로 분류한다. "
+        "아래의 예시 및 형식에 따라 답하라."
     )
-    answer = response.choices[0].message.content.strip()
+    ko_prompt = """
+아래 기사 본문을 분석해 다음 항목을 모두 채워 응답하라.
+
+[한 줄 요약]: 내용 전체의 핵심 사건, 주요 인물/기업/단체, 결과까지 모두 포함한 한 문장
+[감성]: 긍정 or 부정 ( 둘 중 하나만! )
+[주요 키워드]: (뉴스 핵심에 포함된 인물, 기업, 단체명 콤마 분리, 없으면 '없음')
+
+※ 감성 판단 예시:
+- 파산, 구조조정, 대량 해고, 적자 등 '부정적 사건(예: {파산, 자금난, 적자, 소송, 감원, 리콜})'이 중심이면 반드시 [감성]: 부정 으로!
+- 신사업, 투자, 실적 증가 등 긍정적 시그널이 중심이면 [감성]: 긍정
+- 중립/불분명하게 보여도, 중심 메시지 기준 긍정/부정 중 하나로 골라!
+
+반드시 아래 양식/예시를 따라야 한다:
+[한 줄 요약]: ~
+[감성]: 긍정 or 부정
+[주요 키워드]: ~
+
+[기사 본문]
+"""
+    system_prompt_en = (
+        "You are an expert AI for summarizing and analyzing business/financial news. "
+        "Analyze the article objectively and strictly follow these instructions: "
+        "The one-line summary must contain key entities (companies, people), the main event, and outcome, without omitting essential details. "
+        "Sentiment must be either 'positive' or 'negative' only (never answer 'neutral'). "
+        "If the article is centered on negative events (bankruptcy, heavy layoffs, legal disputes, losses, etc.), classify as 'negative'. "
+        "Follow the response format and examples given."
+    )
+    en_prompt = """
+Analyze the following news article and respond **strictly in the following format**:
+
+[One-line Summary]: One sentence covering the key event, main entity/person/organization, and the result or impact.
+[Sentiment]: positive or negative (no other answers allowed)
+[Key Entities]: (Comma-separated, extract all main companies, people, organizations mentioned. 'None' if nothing specific.)
+
+Sentiment guidelines:
+- If the main topic is a negative event (e.g., bankruptcy, losses, layoffs, legal issues, recall), always mark [Sentiment]: negative.
+- For clear positives (e.g., major investments, strong profits, product launch), mark as [Sentiment]: positive.
+- Even if ambiguous, choose based on the article's overall message—ONLY positive or negative.
+
+Follow the exact output format below:
+[One-line Summary]: ~
+[Sentiment]: positive or negative
+[Key Entities]: ~
+
+[ARTICLE]
+"""
+
     if lang == "ko":
-        m1 = re.search(r"\[한 줄 요약\]:\s*(.+)", answer)
-        m3 = re.search(r"\[감성\]:\s*(.+)", answer)
+        return system_prompt_ko, ko_prompt
     else:
-        m1 = re.search(r"\[One-line Summary\]:\s*(.+)", answer)
-        m3 = re.search(r"\[Sentiment\]:\s*(.+)", answer)
-    one_line = m1.group(1).strip() if (do_summary and m1) else ""
-    summary = ""
-    sentiment = m3.group(1).strip() if m3 else ""
-    if sentiment.lower() in ['neutral', '중립', '']:
-        sentiment = '부정' if lang == "ko" else 'negative'
-    if lang == "en":
-        sentiment = '긍정' if sentiment.lower() == 'positive' else '부정'
-    return one_line, summary, sentiment, text
+        return system_prompt_en, en_prompt
 
 def infer_source_from_url(url):
     domain = urlparse(url).netloc
