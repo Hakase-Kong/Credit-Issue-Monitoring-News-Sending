@@ -301,7 +301,7 @@ with col_option1:
 with col_option2:
     col_sum, col_and = st.columns([0.55, 0.45])
     with col_sum:
-        enable_summary = st.checkbox("요약 기능", value=False, key="enable_summary")
+        enable_summary = st.checkbox("요약 기능", value=True, key="enable_summary")
     with col_and:
         condition_and = st.checkbox(
             "필터 AND조건",
@@ -426,6 +426,7 @@ def summarize_and_sentiment_with_openai(text, do_summary=True):
 아래 기사 본문을 분석해 다음 세가지를 정확히 응답하라.
 
 [한 줄 요약]: 주요 인물/기업, 사건, 결과 포함
+[검색 키워드]: 이 기사가 검색에 사용된 키워드를 콤마(,)로 모두 명시 
 [감성]: 긍정 또는 부정 (둘 중 하나만)
 [주요 키워드]: 인물, 기업, 조직명만 콤마(,)로, 없으면 없음
 
@@ -440,6 +441,7 @@ def summarize_and_sentiment_with_openai(text, do_summary=True):
 Analyze the article and extract these three exactly:
 
 [One-line Summary]: One sentence, include entity, event, outcome
+[Search Keywords]: Comma-separated list of keywords used to retrieve this article  
 [Sentiment]: positive or negative (only one)
 [Key Entities]: All mentioned companies/people/org, comma separated, or None
 
@@ -494,7 +496,7 @@ Analyze the article and extract these three exactly:
         sentiment = '감성 추출 실패'
 
     # 7. 누락, 빈값 보정 (오류 메시지 반환 절대 방지)
-    if not one_line or one_line.lower() in ["none", ""]:
+    if not ` or one_line.lower() in ["none", ""]:
         one_line = "요약 추출 실패"
     if not sentiment or sentiment.lower() in ["none", "중립", "neutral", ""]:
         sentiment = "감성 추출 실패"
