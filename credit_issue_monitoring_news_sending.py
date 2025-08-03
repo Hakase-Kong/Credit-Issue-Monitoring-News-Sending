@@ -989,6 +989,16 @@ def extract_article_text(url):
         return article.text
     except Exception as e:
         return f"본문 추출 오류: {e}"
+    
+def extract_keyword_from_link(search_results, article_link):
+    """
+    뉴스검색결과 dict와 기사 링크로 해당 기사의 키워드(회사명/카테고리)를 추출
+    """
+    for kw, arts in search_results.items():
+        for art in arts:
+            if art.get("link") == article_link:
+                return kw
+    return ""
 
 def render_important_article_review_and_download():
     with st.container(border=True):
@@ -997,19 +1007,14 @@ def render_important_article_review_and_download():
         # 중요기사 자동 선정 버튼
         if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
-                # 필터링 및 중복제거 적용된 결과 생성
                 filtered_results_for_important = {}
-
                 for keyword, articles in st.session_state.search_results.items():
                     filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-
                     if st.session_state.get("remove_duplicate_articles", False):
                         filtered_articles = remove_duplicates(filtered_articles)
-
                     if filtered_articles:
                         filtered_results_for_important[keyword] = filtered_articles
 
-                # 필터링된 결과만 자동 선정 함수에 전달
                 important_articles = generate_important_article_list(
                     search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
@@ -1019,14 +1024,14 @@ def render_important_article_review_and_download():
                 st.session_state.important_articles_preview = important_articles
                 st.session_state.important_selected_index = []
         
-        # 중요기사 리스트 없으면 안내 메시지
+        # 중요기사 후보 없으면 안내 메시지
         if not st.session_state.get("important_articles_preview"):
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
             return
         
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
-        
-        # 중요기사 체크박스 리스트
+
+        # 중요기사 체크박스 리스트 (인덱스 기반)
         new_selection = []
         for idx, article in enumerate(st.session_state["important_articles_preview"]):
             checked = st.checkbox(
@@ -1038,9 +1043,11 @@ def render_important_article_review_and_download():
                 new_selection.append(idx)
         st.session_state.important_selected_index = new_selection
 
-        # --- 추가 버튼, 삭제 버튼, 교체 버튼 한 줄에 배치 ---
+        st.markdown("---")
+        # --- 3개 버튼 한 줄로
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
-
+        
+        # ⭐ 추가 버튼: 왼쪽 뉴스결과에서 체크한 기사 1개만 추가 (중복X)
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1048,7 +1055,7 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
                 else:
                     from_key = left_selected_keys[0]
-                    # --- 유니크ID로 기사 탐색 ---
+                    # key: "keyword_idx_uid"
                     m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                     if not m:
                         st.warning("기사 식별자 파싱 실패")
@@ -1069,10 +1076,10 @@ def render_important_article_review_and_download():
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
                         return
 
-                    # 🔷 회사명을 항상 extract_keyword_from_link로 찾음!
+                    # 🔷 회사명(=뉴스 검색 키워드) 정확히 추출
                     keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
 
-                    # 감성 정보 확인 또는 요약/감성 다시 생성
+                    # 감성 정보: 캐시→없으면 즉시 분석
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
                     for k in st.session_state.keys():
@@ -1097,9 +1104,13 @@ def render_important_article_review_and_download():
                     else:
                         important.append(new_article)
                         st.session_state["important_articles_preview"] = important
+                        # 체크 해제
+                        st.session_state.article_checked_left[from_key] = False
+                        st.session_state.article_checked[from_key] = False
                         st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
                         st.rerun()
 
+        # 🗑️ 삭제 버튼: 오른쪽 체크된 중요기사 전부 삭제
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 for idx in sorted(st.session_state.important_selected_index, reverse=True):
@@ -1108,6 +1119,7 @@ def render_important_article_review_and_download():
                 st.session_state.important_selected_index = []
                 st.rerun()
 
+        # 🔁 교체 버튼: 왼쪽 뉴스 한 개와 오른쪽 중요기사 한 개 정확 1:1 교체
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1115,7 +1127,6 @@ def render_important_article_review_and_download():
                 if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
                     st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
                     return
-
                 from_key = left_selected_keys[0]
                 target_idx = right_selected_indexes[0]
                 m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
@@ -1139,7 +1150,6 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
                     return
 
-                # 🔷 회사명(키워드)은 extract_keyword_from_link로 정확히 결정
                 keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                 cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                 sentiment = None
@@ -1165,6 +1175,7 @@ def render_important_article_review_and_download():
                 st.success("중요 기사 교체 완료: " + new_article["제목"])
                 st.rerun()
 
+        # --- 엑셀 다운로드 ---
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
         output_excel = build_important_excel_same_format(
@@ -1178,7 +1189,7 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
+        
 def matched_filter_keywords(article, common_keywords, industry_keywords):
     """
     기사 제목/요약/본문에서 실제로 포함된 필터 키워드 리스트 반환
