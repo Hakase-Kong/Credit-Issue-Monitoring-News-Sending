@@ -1208,7 +1208,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
                             _, _, sentiment, _ = st.session_state[cache_key]
-                        badge_html = f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>" if sentiment else ""
+                        badge_html = f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>" if sentiment else ""
                         st.markdown(
                             f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> {badge_html} {article['date']} | {article['source']}",
                             unsafe_allow_html=True
@@ -1222,7 +1222,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
             selected_articles = []
-
             for keyword, articles in results.items():
                 for idx, article in enumerate(articles):
                     unique_id = re.sub(r'\W+', '', article['link'])[-16:]
@@ -1251,15 +1250,15 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
 
                         st.markdown(
                             f"#### <span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
-                            f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>({sentiment})</span>",
+                            f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>",
                             unsafe_allow_html=True
                         )
+                        st.markdown(f"- **검색 키워드:** `{keyword}`")   # ★ 이 줄을 **반드시 추가**!
                         st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
                         if enable_summary:
                             st.markdown(f"- **한 줄 요약:** {one_line}")
                         st.markdown(f"- **감성분석:** `{sentiment}`")
                         st.markdown("---")
-
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
