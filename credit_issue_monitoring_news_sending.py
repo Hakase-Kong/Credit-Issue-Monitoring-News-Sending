@@ -1197,7 +1197,9 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
     return list(set(matched_common + matched_industry))
 
 
-def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
+def render_articles_with_single_summary_and_telegram(
+    results, show_limit, show_sentiment_badge=True, enable_summary=True
+):
     SENTIMENT_CLASS = {
         "긍정": "sentiment-positive",
         "부정": "sentiment-negative"
@@ -1219,7 +1221,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                     key = f"{keyword}_{idx}_{unique_id}"
                     cache_key = f"summary_{key}"
 
-                    # 체크박스와 제목 렌더링
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
                         checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
@@ -1242,7 +1243,6 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
         with st.container(border=True):
             selected_articles = []
 
-            # 산업별 키워드 통합 (필터용)
             industry_keywords_all = []
             if st.session_state.get("use_industry_filter", False):
                 for sublist in st.session_state.industry_major_sub_map.values():
@@ -1302,7 +1302,7 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
-            col_dl1, col_dl2, col_dl3 = st.columns([0.4, 0.4, 0.2])
+            col_dl1, col_dl2 = st.columns([0.55, 0.45])
 
             with col_dl1:
                 st.download_button(
@@ -1318,10 +1318,9 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
 
             with col_dl2:
                 if st.button("🗑 선택 해제 (전체)"):
-                    # 0.15초 지연으로 체크상태 최신화 후 동작
+                    # 아주 짧게 delay를 주거나 바로 체크 해제 (폼 아님)
                     time.sleep(0.15)
-                    keys = list(st.session_state.article_checked.keys())
-                    for key in keys:
+                    for key in list(st.session_state.article_checked.keys()):
                         st.session_state.article_checked[key] = False
                     st.rerun()
 
