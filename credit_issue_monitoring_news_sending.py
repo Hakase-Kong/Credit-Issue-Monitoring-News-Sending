@@ -11,6 +11,7 @@ import newspaper
 import difflib
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 def process_keywords_parallel(keyword_list, start_date, end_date, require_keyword_in_title=False):
     def fetch_and_store(k):
@@ -1316,12 +1317,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                 )
 
             with col_dl2:
-                # 추가: 선택된 기사 체크박스 전체 해제 버튼
                 if st.button("🗑 선택 해제 (전체)"):
-                    # 전체 체크 상태 False로 변경
-                    for key in st.session_state.article_checked.keys():
+                    # 0.15초 지연으로 체크상태 최신화 후 동작
+                    time.sleep(0.15)
+                    keys = list(st.session_state.article_checked.keys())
+                    for key in keys:
                         st.session_state.article_checked[key] = False
-                    # 강제 rerun 하여 UI 즉시 갱신
                     st.rerun()
 
         # 중요 기사 리뷰 UI
