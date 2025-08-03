@@ -1047,68 +1047,66 @@ def render_important_article_review_and_download():
         # --- 3개 버튼 한 줄로
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
         
-        # ⭐ 추가 버튼: 왼쪽 뉴스결과에서 체크한 기사 1개만 추가 (중복X)
+        # ⭐ 추가 버튼: 왼쪽 뉴스결과에서 체크한 기사들을 (1개 이상 복수 선택) 전부 추가 (중복X)
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
-                if len(left_selected_keys) != 1:
-                    st.warning("왼쪽 뉴스검색 결과에서 기사 1개만 선택해 주세요.")
+                if len(left_selected_keys) == 0:
+                    st.warning("왼쪽 뉴스검색 결과에서 적어도 1개 이상 선택해 주세요.")
                 else:
-                    from_key = left_selected_keys[0]
-                    # key: "keyword_idx_uid"
-                    m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
-                    if not m:
-                        st.warning("기사 식별자 파싱 실패")
-                        return
-                    key_tail = m.group(1)
-                    selected_article = None
-                    article_link = None
-                    for kw, arts in st.session_state.search_results.items():
-                        for art in arts:
-                            uid = re.sub(r'\W+', '', art['link'])[-16:]
-                            if uid == key_tail:
-                                selected_article = art
-                                article_link = art["link"]
-                                break
-                        if selected_article: break
-
-                    if not selected_article or not article_link:
-                        st.warning("선택한 기사 정보를 찾을 수 없습니다.")
-                        return
-
-                    # 🔷 회사명(=뉴스 검색 키워드) 정확히 추출
-                    keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
-
-                    # 감성 정보: 캐시→없으면 즉시 분석
-                    cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
-                    sentiment = None
-                    for k in st.session_state.keys():
-                        if k.startswith("summary_") and cleaned_id in k:
-                            sentiment = st.session_state[k][2]
-                            break
-                    if not sentiment:
-                        _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
-
-                    new_article = {
-                        "회사명": keyword,
-                        "감성": sentiment or "",
-                        "제목": selected_article["title"],
-                        "링크": selected_article["link"],
-                        "날짜": selected_article["date"],
-                        "출처": selected_article["source"]
-                    }
-
+                    added_count = 0
                     important = st.session_state.get("important_articles_preview", [])
-                    if any(a["링크"] == new_article["링크"] for a in important):
-                        st.info("이미 중요 기사 목록에 존재하는 기사입니다.")
-                    else:
-                        important.append(new_article)
-                        st.session_state["important_articles_preview"] = important
-                        # 체크 해제
+                    for from_key in left_selected_keys:
+                        m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
+                        if not m:
+                            continue
+                        key_tail = m.group(1)
+                        selected_article = None
+                        article_link = None
+                        for kw, arts in st.session_state.search_results.items():
+                            for art in arts:
+                                uid = re.sub(r'\W+', '', art['link'])[-16:]
+                                if uid == key_tail:
+                                    selected_article = art
+                                    article_link = art["link"]
+                                    break
+                            if selected_article: break
+
+                        if not selected_article or not article_link:
+                            continue
+
+                        keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
+                        cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
+                        sentiment = None
+                        for k in st.session_state.keys():
+                            if k.startswith("summary_") and cleaned_id in k:
+                                sentiment = st.session_state[k][2]
+                                break
+                        if not sentiment:
+                            _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
+
+                        new_article = {
+                            "회사명": keyword,
+                            "감성": sentiment or "",
+                            "제목": selected_article["title"],
+                            "링크": selected_article["link"],
+                            "날짜": selected_article["date"],
+                            "출처": selected_article["source"]
+                        }
+
+                        if not any(a["링크"] == new_article["링크"] for a in important):
+                            important.append(new_article)
+                            added_count += 1
+                        # 선택 해제
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-                        st.success("중요 기사 목록에 추가되었습니다: " + new_article["제목"])
-                        st.rerun()
+
+                    st.session_state["important_articles_preview"] = important
+                    if added_count > 0:
+                        st.success(f"{added_count}건의 기사가 중요 기사 목록에 추가되었습니다.")
+                    else:
+                        st.info("추가된 새로운 기사가 없습니다.")
+                    st.rerun()
 
         # 🗑️ 삭제 버튼: 오른쪽 체크된 중요기사 전부 삭제
         with col_del:
