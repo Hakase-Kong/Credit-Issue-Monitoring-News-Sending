@@ -999,17 +999,12 @@ def render_important_article_review_and_download():
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
                 # 필터링 및 중복제거 적용된 결과 생성
                 filtered_results_for_important = {}
-
                 for keyword, articles in st.session_state.search_results.items():
                     filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-
                     if st.session_state.get("remove_duplicate_articles", False):
                         filtered_articles = remove_duplicates(filtered_articles)
-
                     if filtered_articles:
                         filtered_results_for_important[keyword] = filtered_articles
-
-                # 필터링된 결과만 자동 선정 함수에 전달
                 important_articles = generate_important_article_list(
                     search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
@@ -1071,14 +1066,13 @@ def render_important_article_review_and_download():
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
                         st.session_state.article_checked_left[from_key] = False
                         st.rerun()
-
                     # 중복 추가 방지
                     if any(a["링크"] == article_link for a in important_articles):
                         st.info("이미 중요 기사 목록에 존재하는 기사입니다.")
                         st.session_state.article_checked_left[from_key] = False
                         st.rerun()
 
-                    # 🔷 회사명, 감성 추출
+                    # 회사명, 감성 추출
                     keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
