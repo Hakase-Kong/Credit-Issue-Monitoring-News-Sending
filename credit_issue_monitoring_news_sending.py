@@ -1085,7 +1085,6 @@ def render_important_article_review_and_download():
                             break
                     if not sentiment:
                         _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
-
                     new_article = {
                         "회사명": keyword,
                         "감성": sentiment or "",
@@ -1096,7 +1095,6 @@ def render_important_article_review_and_download():
                     }
                     important_articles.append(new_article)
                     st.session_state["important_articles_preview"] = important_articles
-                    # 체크박스 해제, 상태 sync
                     st.session_state.article_checked_left[from_key] = False
                     st.rerun()
 
