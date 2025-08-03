@@ -1204,7 +1204,6 @@ def render_articles_with_single_summary_and_telegram(
         "긍정": "sentiment-positive",
         "부정": "sentiment-negative"
     }
-
     if "article_checked" not in st.session_state:
         st.session_state.article_checked = {}
 
@@ -1212,32 +1211,50 @@ def render_articles_with_single_summary_and_telegram(
 
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
-        for keyword, articles in results.items():
-            with st.container(border=True):
-                st.markdown(f"**[{keyword}] ({len(articles)}건)**")
+        with st.form("article_selection_form", clear_on_submit=False):
+            checked_keys = []
+            for keyword, articles in results.items():
+                with st.container(border=True):
+                    st.markdown(f"**[{keyword}] ({len(articles)}건)**")
+                    for idx, article in enumerate(articles):
+                        unique_id = re.sub(r'\W+', '', article['link'])[-16:]
+                        key = f"{keyword}_{idx}_{unique_id}"
+                        cache_key = f"summary_{key}"
 
-                for idx, article in enumerate(articles):
-                    unique_id = re.sub(r'\W+', '', article['link'])[-16:]
-                    key = f"{keyword}_{idx}_{unique_id}"
-                    cache_key = f"summary_{key}"
+                        cols = st.columns([0.04, 0.96])
+                        with cols[0]:
+                            checked = st.checkbox(
+                                "", 
+                                value=st.session_state.article_checked.get(key, False), 
+                                key=f"news_{key}"
+                            )
+                        with cols[1]:
+                            sentiment = ""
+                            if show_sentiment_badge and cache_key in st.session_state:
+                                _, _, sentiment, _ = st.session_state[cache_key]
+                            badge_html = f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>" if sentiment else ""
+                            st.markdown(
+                                f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> {badge_html} {article['date']} | {article['source']}",
+                                unsafe_allow_html=True
+                            )
+                        st.session_state.article_checked_left[key] = checked
+                        if checked:
+                            st.session_state.article_checked[key] = True
+                        checked_keys.append(key)
 
-                    cols = st.columns([0.04, 0.96])
-                    with cols[0]:
-                        checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
-                    with cols[1]:
-                        sentiment = ""
-                        if show_sentiment_badge and cache_key in st.session_state:
-                            _, _, sentiment, _ = st.session_state[cache_key]
-                        badge_html = f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>" if sentiment else ""
-                        st.markdown(
-                            f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> {badge_html} {article['date']} | {article['source']}",
-                            unsafe_allow_html=True
-                        )
-                    st.session_state.article_checked_left[key] = checked
-                    if checked:
-                        st.session_state.article_checked[key] = True
+            st.markdown("---")
+            col_dl1, col_dl2 = st.columns([0.6, 0.4])
+            with col_dl1:
+                download = st.form_submit_button("📥 맞춤 엑셀 다운로드")
+            with col_dl2:
+                uncheck = st.form_submit_button("🗑 선택 해제 (전체)")
+                if uncheck:
+                    for key in checked_keys:
+                        st.session_state.article_checked[key] = False
+                    st.experimental_rerun()
+            # 폼 내 제출이 일어난 경우 rerun으로 바로 동기화됨
 
-    # 선택 기사 요약 및 다운로드
+    # ------- 이하 기존대로(선택 기사 요약/감성 분석) -------
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
@@ -1302,29 +1319,6 @@ def render_articles_with_single_summary_and_telegram(
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
-            col_dl1, col_dl2 = st.columns([0.55, 0.45])
-
-            with col_dl1:
-                st.download_button(
-                    label="📥 맞춤 엑셀 다운로드",
-                    data=get_excel_download_with_favorite_and_excel_company_col(
-                        st.session_state.selected_articles,
-                        favorite_categories,
-                        excel_company_categories
-                    ).getvalue(),
-                    file_name="뉴스요약_맞춤형.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            with col_dl2:
-                if st.button("🗑 선택 해제 (전체)"):
-                    # 아주 짧게 delay를 주거나 바로 체크 해제 (폼 아님)
-                    time.sleep(0.15)
-                    for key in list(st.session_state.article_checked.keys()):
-                        st.session_state.article_checked[key] = False
-                    st.rerun()
-
-        # 중요 기사 리뷰 UI
         render_important_article_review_and_download()
 
 if st.session_state.search_results:
