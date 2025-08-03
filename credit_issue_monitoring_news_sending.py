@@ -496,7 +496,7 @@ Analyze the article and extract these three exactly:
         sentiment = '감성 추출 실패'
 
     # 7. 누락, 빈값 보정 (오류 메시지 반환 절대 방지)
-    if not ` or one_line.lower() in ["none", ""]:
+    if not one_line or one_line.lower() in ["none", ""]:
         one_line = "요약 추출 실패"
     if not sentiment or sentiment.lower() in ["none", "중립", "neutral", ""]:
         sentiment = "감성 추출 실패"
