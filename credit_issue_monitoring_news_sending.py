@@ -1205,6 +1205,9 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
     matched_industry = [kw for kw in industry_keywords if kw in text_long]
     return list(set(matched_common + matched_industry))
 
+
+
+
 if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
