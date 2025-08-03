@@ -991,13 +991,13 @@ def extract_article_text(url):
         return f"본문 추출 오류: {e}"
 
 def render_important_article_review_and_download():
-    # 초기화 중요기사 선택 체크 상태 (중복 방지)
+    # '중요기사 선택 체크박스' 상태 초기화
     if "important_article_checked" not in st.session_state:
         st.session_state.important_article_checked = {}
 
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
-        
+
         # 중요기사 자동 선정 버튼
         if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
@@ -1015,104 +1015,103 @@ def render_important_article_review_and_download():
                     favorites=favorite_categories
                 )
                 st.session_state.important_articles_preview = important_articles
-                st.session_state.important_article_checked = {}  # 초기화
-                
+                st.session_state.important_article_checked = {}  # 선택 상태 초기화
+
+        # 중요기사 후보가 없으면 안내 메시지 후 종료
         if not st.session_state.get("important_articles_preview"):
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
             return
-        
+
         st.markdown("🎯 **중요 기사 목록 (교체/삭제할 기사 선택 가능)**")
-        
-        # 중요기사 리스트 + 체크박스
+
+        # 중요기사 리스트 출력 및 체크박스 생성
         for idx, article in enumerate(st.session_state["important_articles_preview"]):
             key = f"important_chk_{idx}"
             checked = st.checkbox(
                 label=f"{article['회사명']} | {article['감성']} | [{article['제목']}]({article['링크']})",
                 key=key,
                 value=st.session_state.important_article_checked.get(key, False),
-                help="교체/삭제 대상 선택"
+                help="교체/삭제 대상으로 선택"
             )
             st.session_state.important_article_checked[key] = checked
 
         st.markdown("---")
 
-        # 3개 버튼을 한 줄에 배치
+        # 버튼 3개 묶어서 한 행에 배치
         col_add, col_replace, col_delete = st.columns([0.33, 0.33, 0.33])
 
         with col_add:
             if st.button("➕ 뉴스검색결과 선택 기사 추가"):
-                # 뉴스검색결과에서 선택된 기사 가져오기
+                # 뉴스검색결과에서 선택된 기사 리스트
                 selected_news_articles = []
                 for key, checked in st.session_state.article_checked.items():
                     if checked:
-                        # key: e.g. keyword_idx_uniqid, key 구조와 methods가 다를수 있으므로 조심 필요
-                        # 불러온 기사 정보 재구성 (간단하게 링크 등으로 필터링)
-                        # 일단 전체 articles에서 matching key를 찾는 형태로 대체 가능
-                        # 여기서는 session_state 내 article 정보 끌어오기 편한 구조로 변환 예시:
-                        # 사용자 선택된 뉴스검색 기사를 st.session_state.selected_articles에 미리 저장하므로 활용
-                        pass
+                        # st.session_state.selected_articles에는 선택된 기사 객체 리스트 저장됨
+                        pass  # 실제 로직은 전체 리스트에서 가져오니 pass 처리함
 
-                # 대체로 간단하게, st.session_state.selected_articles를 사용하므로 해당 리스트 추가
+                # 실제 선택된 뉴스 기사 추가 (중복 링크 있는 기사 제외)
                 for art in st.session_state.get("selected_articles", []):
-                    # duplicates 방지: 링크 중복 체크하여 추가
                     if all(art["링크"] != existing["링크"] for existing in st.session_state.important_articles_preview):
                         st.session_state.important_articles_preview.append(art)
-                # 선택 해제
+                # 선택 체크박스 모두 해제
                 for key in st.session_state.article_checked.keys():
                     st.session_state.article_checked[key] = False
                 st.success("뉴스검색결과 선택 기사가 중요기사 목록에 추가되었습니다.")
 
         with col_replace:
             if st.button("🔁 뉴스검색결과 선택 기사와 교체"):
-                # 중요기사 체크 선택, 뉴스검색결과 체크 선택 둘 다 수량 확인 필요
                 important_selected_keys = [key for key, val in st.session_state.important_article_checked.items() if val]
-                news_selected = [art for art in st.session_state.get("selected_articles", []) if any(art["링크"] == k.split("_")[-1] for k in st.session_state.article_checked if st.session_state.article_checked[k])]  # 링크 비교식 보완 필요
-                # 간단히 뉴스검색결과 체크기사 리스트 준비
+                # 뉴스검색결과에서 선택된 기사 리스트
                 news_selected = [art for art in st.session_state.get("selected_articles", []) if any(st.session_state.article_checked.get(k, False) for k in st.session_state.article_checked)]
-                # 개수 맞춰 확인
+
+                # 중요기사 선택된 수와 뉴스검색 선택된 수가 같아야 함
                 if len(important_selected_keys) != len(news_selected):
                     st.error("중요기사에서 선택한 기사 수와 뉴스검색결과에서 선택한 기사 수가 일치해야 합니다.")
                 else:
-                    # 교체 수행
-                    # key에 따라 중요기사 리스트 요소 인덱스 구함 (idx 파싱)
+                    # 중요기사 선택 key에서 인덱스 추출 및 정렬
                     indexes = []
                     for key in important_selected_keys:
                         try:
-                            idx = int(key.split("_")[-1])  # key = important_chk_숫자
+                            idx = int(key.split("_")[-1])
                             indexes.append(idx)
-                        except:
+                        except Exception:
                             pass
-                    # 인덱스 정렬 역순으로 교체(삭제 시 인덱스 안맞는 문제 방지)
                     indexes.sort()
+
+                    # 교체 수행. 인덱스 오름차순으로 교체
                     for i, idx in enumerate(indexes):
                         if idx < len(st.session_state.important_articles_preview):
                             st.session_state.important_articles_preview[idx] = news_selected[i]
-                    # 선택 해제
+
+                    # 체크박스 모두 해제
                     for key in important_selected_keys:
                         st.session_state.important_article_checked[key] = False
                     for key in st.session_state.article_checked.keys():
                         st.session_state.article_checked[key] = False
+
                     st.success("선택된 중요기사가 뉴스검색결과 선택 기사로 교체되었습니다.")
 
         with col_delete:
             if st.button("🗑 선택 중요기사 삭제"):
-                remove_idxs = []
+                remove_indexes = []
                 for key, val in st.session_state.important_article_checked.items():
                     if val:
                         try:
                             idx = int(key.split("_")[-1])
-                            remove_idxs.append(idx)
-                        except:
+                            remove_indexes.append(idx)
+                        except Exception:
                             pass
-                # 인덱스 내림차순 정렬 후 제거 (안 그러면 인덱스 꼬임)
-                for idx in sorted(remove_idxs, reverse=True):
+                # 내림차순으로 정렬해 삭제 (인덱스 꼬임 방지)
+                for idx in sorted(remove_indexes, reverse=True):
                     if idx < len(st.session_state.important_articles_preview):
                         del st.session_state.important_articles_preview[idx]
-                # 선택 상태 초기화
+
+                # 삭제 후 선택 상태 초기화
                 st.session_state.important_article_checked = {}
+
                 st.success("선택된 중요기사가 삭제되었습니다.")
 
-        # 구분선과 다운로드 버튼
+        # 구분선 및 엑셀 다운로드 버튼
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
         output_excel = build_important_excel_same_format(
@@ -1126,7 +1125,6 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
 
 def render_articles_with_single_summary_and_telegram(
     results, show_limit, show_sentiment_badge=True, enable_summary=True
