@@ -1195,6 +1195,7 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
     matched_industry = [kw for kw in industry_keywords if kw in text_long]
     return list(set(matched_common + matched_industry))
 
+
 def render_articles_with_single_summary_and_telegram(results, show_limit, show_sentiment_badge=True, enable_summary=True):
     SENTIMENT_CLASS = {
         "긍정": "sentiment-positive",
@@ -1239,12 +1240,13 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
             selected_articles = []
-            # 🔥 여기서 한 번만 준비 (산업 소분류 통합)
+
+            # ★ 산업별 소분류 키워드 통합 리스트 (필터로 줄때만 생성)
             industry_keywords_all = []
             if st.session_state.get("use_industry_filter", False):
-                industry_keywords_all = []
                 for sublist in st.session_state.industry_major_sub_map.values():
                     industry_keywords_all.extend(sublist)
+
             for keyword, articles in results.items():
                 for idx, article in enumerate(articles):
                     unique_id = re.sub(r'\W+', '', article['link'])[-16:]
@@ -1260,7 +1262,12 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             )
                             st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
 
-                        # ✅ 실제로 포함된 필터 키워드 추출 (공통+산업)
+                        # ★ 요약/본문을 article dict에 반드시 추가!
+                        article["full_text"] = full_text if full_text else ""
+                        article["요약"] = one_line if one_line else ""
+                        article["요약본"] = summary if summary else ""
+
+                        # ★ 실제로 포함된 필터 키워드 추출 (공통+산업)
                         filter_hits = matched_filter_keywords(
                             article,
                             ALL_COMMON_FILTER_KEYWORDS,
@@ -1276,17 +1283,18 @@ def render_articles_with_single_summary_and_telegram(results, show_limit, show_s
                             "감성": sentiment,
                             "링크": article['link'],
                             "날짜": article['date'],
-                            "출처": article['source']
+                            "출처": article['source'],
+                            "full_text": full_text
                         })
 
-                        # 아래 마크다운에서 "필터로 인식된 키워드" 출력
+                        # --- 최종 마크다운 출력: '필터로 인식된 키워드' ---
                         st.markdown(
                             f"#### <span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
                             f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>",
                             unsafe_allow_html=True
                         )
                         st.markdown(f"- **검색 키워드:** `{keyword}`")
-                        st.markdown(f"- **필터로 인식된 키워드:** `{', '.join(filter_hits) if filter_hits else '없음'}`")  # ⭐ 이 라인 추가!
+                        st.markdown(f"- **필터로 인식된 키워드:** `{', '.join(filter_hits) if filter_hits else '없음'}`")
                         st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
                         if enable_summary:
                             st.markdown(f"- **한 줄 요약:** {one_line}")
