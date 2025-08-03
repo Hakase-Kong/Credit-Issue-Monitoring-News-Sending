@@ -569,9 +569,12 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
             if source_domain.startswith("www."):
                 source_domain = source_domain[4:]
 
+            # ✅ originallink 우선 저장, 없으면 fallback으로 일반 link 사용
+            real_link = item.get("originallink") or item["link"]
+
             articles.append({
                 "title": re.sub("<.*?>", "", title),
-                "link": item["link"],
+                "link": real_link,
                 "date": pub_date.strftime("%Y-%m-%d"),
                 "source": source_domain
             })
@@ -971,12 +974,18 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 continue
     return result
 
-def extract_keyword_from_link(search_results, article_link):
-    for keyword, articles in search_results.items():
-        for article in articles:
-            if article["link"] == article_link:
-                return keyword
-    return "알수없음"
+def extract_article_text(url):
+    # 네이버, 다음 등 포털 뉴스 중계 URL은 본문 추출 실패 - 바로 오류 반환
+    PORTAL_DOMAINS = ["news.naver.com", "n.news.naver.com", "news.daum.net"]
+    if any(domain in url for domain in PORTAL_DOMAINS):
+        return "본문 추출 오류: 포털 뉴스 중계 URL입니다. 'originallink'를 사용하세요."
+    try:
+        article = newspaper.Article(url)
+        article.download()
+        article.parse()
+        return article.text
+    except Exception as e:
+        return f"본문 추출 오류: {e}"
 
 def render_important_article_review_and_download():
     with st.container(border=True):
