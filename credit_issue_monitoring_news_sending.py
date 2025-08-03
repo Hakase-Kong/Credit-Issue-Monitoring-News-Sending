@@ -401,77 +401,107 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
-def summarize_and_sentiment_prompt_template(text=None, do_summary=True):
+def summarize_and_sentiment_with_openai(text, do_summary=True):
     """
-    기사 본문 텍스트 없이, 감성분석/한줄요약 프롬프트 템플릿만 반환.
-    (프롬프트 생성만 필요할 때 사용. 실제 기사본문 text 삽입 X)
+    본문 요약/감성분석과 모든 예외 처리 포함.
+    - OpenAI 응답 포맷 불일치/비정규 출력/본문 오류/키 누락 모두 안전하게 처리
+    - 반환값: (한줄요약, 주요키워드, 감성, 전체본문)
     """
-    def detect_lang(sample):
-        # 한글 존재시 "ko", 아니면 "en"
-        if sample and any('\uac00' <= c <= '\ud7a3' for c in sample):
-            return "ko"
-        return "en"
+    # 1. 키 없을 때 반환
+    if not OPENAI_API_KEY:
+        return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", text
 
-    lang = detect_lang(text or "")
+    # 2. 본문 체크
+    if not text or len(text.strip()) < 50 or "본문 추출 오류" in text:
+        return "기사 본문이 너무 짧거나 추출 실패", "", "감성 추출 실패", text
 
-    system_prompt_ko = (
-        "너는 경제 및 비즈니스 뉴스 기사 요약/분석 전문 AI야. "
-        "아래 본문을 분석할 때 최대한 객관적으로 접근하고, 아래 지침을 반드시 따른다. "
-        "요약 시 핵심 인물, 기업(또는 조직명), 사건, 결과가 빠지지 않게 작성한다. "
-        "감성 분류는 반드시 '긍정/부정' 중에서만 답하고, 부정 사건(파산, 대규모 구조조정, 자금난, 손실, 소송 등)이 중심이면 반드시 '부정'으로 분류한다. "
-        "아래의 예시 및 형식에 따라 답하라."
-    )
-    ko_prompt = """
-아래 기사 본문을 분석해 다음 항목을 모두 채워 응답하라.
+    # 3. 프롬프트(최적화 version, 이전 답변 참고)
+    lang = detect_lang(text)
+    if lang == "ko":
+        role_prompt = (
+            "너는 경제 뉴스 요약/분석 전문가야. 한 문장 요약에는 반드시 주체, 핵심 사건, 결과를, "
+            "감성 분류는 파산·감원 등 부정 이슈면 '부정', 신규 투자·호재 땐 '긍정', 중립은 금지. 포맷은 지정된 키 그대로."
+        )
+        main_prompt = """
+아래 기사 본문을 분석해 다음 세가지를 정확히 응답하라.
 
-[한 줄 요약]: 내용 전체의 핵심 사건, 주요 인물/기업/단체, 결과까지 모두 포함한 한 문장
-[감성]: 긍정 or 부정 ( 둘 중 하나만! )
-[주요 키워드]: (뉴스 핵심에 포함된 인물, 기업, 단체명 콤마 분리, 없으면 '없음')
-
-※ 감성 판단 예시:
-- 파산, 구조조정, 대량 해고, 적자 등 '부정적 사건(예: {파산, 자금난, 적자, 소송, 감원, 리콜})'이 중심이면 반드시 [감성]: 부정 으로!
-- 신사업, 투자, 실적 증가 등 긍정적 시그널이 중심이면 [감성]: 긍정
-- 중립/불분명하게 보여도, 중심 메시지 기준 긍정/부정 중 하나로 골라!
-
-반드시 아래 양식/예시를 따라야 한다:
-[한 줄 요약]: ~
-[감성]: 긍정 or 부정
-[주요 키워드]: ~
+[한 줄 요약]: 주요 인물/기업, 사건, 결과 포함
+[감성]: 긍정 또는 부정 (둘 중 하나만)
+[주요 키워드]: 인물, 기업, 조직명만 콤마(,)로, 없으면 없음
 
 [기사 본문]
-"""
-    system_prompt_en = (
-        "You are an expert AI for summarizing and analyzing business/financial news. "
-        "Analyze the article objectively and strictly follow these instructions: "
-        "The one-line summary must contain key entities (companies, people), the main event, and outcome, without omitting essential details. "
-        "Sentiment must be either 'positive' or 'negative' only (never answer 'neutral'). "
-        "If the article is centered on negative events (bankruptcy, heavy layoffs, legal disputes, losses, etc.), classify as 'negative'. "
-        "Follow the response format and examples given."
-    )
-    en_prompt = """
-Analyze the following news article and respond **strictly in the following format**:
+""" + text
+    else:
+        role_prompt = (
+            "You are a financial news summarization expert. The summary must contain entity, main event, outcome. "
+            "Sentiment is only positive/negative strictly (never neutral). Use labels exactly as requested."
+        )
+        main_prompt = """
+Analyze the article and extract these three exactly:
 
-[One-line Summary]: One sentence covering the key event, main entity/person/organization, and the result or impact.
-[Sentiment]: positive or negative (no other answers allowed)
-[Key Entities]: (Comma-separated, extract all main companies, people, organizations mentioned. 'None' if nothing specific.)
-
-Sentiment guidelines:
-- If the main topic is a negative event (e.g., bankruptcy, losses, layoffs, legal issues, recall), always mark [Sentiment]: negative.
-- For clear positives (e.g., major investments, strong profits, product launch), mark as [Sentiment]: positive.
-- Even if ambiguous, choose based on the article's overall message—ONLY positive or negative.
-
-Follow the exact output format below:
-[One-line Summary]: ~
-[Sentiment]: positive or negative
-[Key Entities]: ~
+[One-line Summary]: One sentence, include entity, event, outcome
+[Sentiment]: positive or negative (only one)
+[Key Entities]: All mentioned companies/people/org, comma separated, or None
 
 [ARTICLE]
-"""
+""" + text
 
+    # 4. OpenAI 호출 & 오류 처리
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": role_prompt},
+                {"role": "user", "content": main_prompt}
+            ],
+            max_tokens=900,
+            temperature=0.3
+        )
+        answer = response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"요약 오류: {e}", "", "감성 추출 실패", text
+
+    # 5. 정규식 파싱 (실패시에도 기본값 반환, None 방지)
     if lang == "ko":
-        return system_prompt_ko, ko_prompt
+        m1 = re.search(r"\[한 줄 요약\]:\s*([^\n]+)", answer)
+        m2 = re.search(r"\[주요 키워드\]:\s*([^\n]+)", answer)
+        m3 = re.search(r"\[감성\]:\s*(긍정|부정)", answer)
+        # 추가: 만일 '감성'이 뒤에 나오면
+        if not m3:
+            m3 = re.search(r"\[감성\]:\s*([^\n]+)", answer)
     else:
-        return system_prompt_en, en_prompt
+        m1 = re.search(r"\[One-line Summary\]:\s*([^\n]+)", answer)
+        m2 = re.search(r"\[Key Entities\]:\s*([^\n]+)", answer)
+        m3 = re.search(r"\[Sentiment\]:\s*(positive|negative)", answer, re.I)
+        # fallback for Sentiment
+        if not m3:
+            m3 = re.search(r"\[Sentiment\]:\s*([^\n]+)", answer)
+
+    # 6. 값 추출 & 최종 보정
+    one_line = m1.group(1).strip() if (m1 and do_summary) else "요약 추출 실패"
+    keywords = m2.group(1).strip() if m2 else ""
+    sentiment = ''
+    if m3:
+        sentiment = m3.group(1).strip()
+        # 영문 응답을 한글로 통일
+        if sentiment.lower() == 'positive':
+            sentiment = '긍정'
+        elif sentiment.lower() == 'negative':
+            sentiment = '부정'
+        elif sentiment not in ['긍정', '부정']:
+            sentiment = '감성 추출 실패'
+    else:
+        sentiment = '감성 추출 실패'
+
+    # 7. 누락, 빈값 보정 (오류 메시지 반환 절대 방지)
+    if not one_line or one_line.lower() in ["none", ""]:
+        one_line = "요약 추출 실패"
+    if not sentiment or sentiment.lower() in ["none", "중립", "neutral", ""]:
+        sentiment = "감성 추출 실패"
+    if not keywords or keywords.lower() in ["none", "없음"]:
+        keywords = ""
+
+    return one_line, keywords, sentiment, text
 
 def infer_source_from_url(url):
     domain = urlparse(url).netloc
