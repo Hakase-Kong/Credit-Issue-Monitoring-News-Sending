@@ -997,7 +997,6 @@ def render_important_article_review_and_download():
         # 중요기사 자동 선정 버튼
         if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
-                # 필터링 및 중복제거 적용된 결과 생성
                 filtered_results_for_important = {}
                 for keyword, articles in st.session_state.search_results.items():
                     filtered_articles = [a for a in articles if article_passes_all_filters(a)]
@@ -1036,6 +1035,7 @@ def render_important_article_review_and_download():
         # --- 추가/삭제/교체 버튼 한 줄에 배치 ---
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
+        # 선택기사 추가
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1066,13 +1066,12 @@ def render_important_article_review_and_download():
                         st.warning("선택한 기사 정보를 찾을 수 없습니다.")
                         st.session_state.article_checked_left[from_key] = False
                         st.rerun()
-                    # 중복 추가 방지
+
                     if any(a["링크"] == article_link for a in important_articles):
                         st.info("이미 중요 기사 목록에 존재하는 기사입니다.")
                         st.session_state.article_checked_left[from_key] = False
                         st.rerun()
 
-                    # 회사명, 감성 추출
                     keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                     cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                     sentiment = None
@@ -1085,6 +1084,7 @@ def render_important_article_review_and_download():
                             break
                     if not sentiment:
                         _, _, sentiment, _ = summarize_article_from_url(selected_article["link"], selected_article["title"])
+
                     new_article = {
                         "회사명": keyword,
                         "감성": sentiment or "",
@@ -1098,6 +1098,7 @@ def render_important_article_review_and_download():
                     st.session_state.article_checked_left[from_key] = False
                     st.rerun()
 
+        # 선택기사 삭제
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 for idx in sorted(st.session_state.important_selected_index, reverse=True):
@@ -1106,6 +1107,7 @@ def render_important_article_review_and_download():
                 st.session_state.important_selected_index = []
                 st.rerun()
 
+        # 선택기사 교체
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
