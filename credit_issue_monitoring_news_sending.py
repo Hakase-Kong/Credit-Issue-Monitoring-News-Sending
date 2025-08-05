@@ -301,15 +301,8 @@ with col_title:
 with col_option1:
     show_sentiment_badge = st.checkbox("감성분석 배지표시", value=False, key="show_sentiment_badge")
 with col_option2:
-    col_sum, col_and = st.columns([0.55, 0.45])
-    with col_sum:
-        enable_summary = st.checkbox("요약 기능", value=True, key="enable_summary")
-    with col_and:
-        condition_and = st.checkbox(
-            "필터 AND조건",
-            value=False,
-            key="condition_and"
-        )
+    # '필터 AND조건' 체크박스 제거, 요약 기능 체크박스만 남김
+    enable_summary = st.checkbox("요약 기능", value=True, key="enable_summary")
         
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
 with col_kw_input:
@@ -671,10 +664,12 @@ def article_passes_all_filters(article):
         if source not in ALLOWED_SOURCES:
             return False
 
-    # 공통 필터 조건 (OR 조건)
+    # 공통 필터 조건 (AND 조건, 즉 반드시 통과해야 함)
     common_passed = or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS)
+    if not common_passed:
+        return False
 
-    # 산업별 필터 조건
+    # 산업별 필터 조건 (OR 조건)
     industry_passed = True
     if st.session_state.get("use_industry_filter", False):
         keyword = article.get("키워드")  # 회사명 또는 키워드 항목명
@@ -690,13 +685,10 @@ def article_passes_all_filters(article):
             if sub_keyword_filter:
                 industry_passed = or_keyword_filter(article, sub_keyword_filter)
 
-    # AND/OR 조건 체크박스에 따라 필터링 로직 분기
-    if st.session_state.get("condition_and", True):  # 체크박스 ON이면 AND 조건
-        if not (common_passed and industry_passed and keyword_passed):
-            return False
-    else:  # 체크박스 OFF이면 OR 조건
-        if not (common_passed or industry_passed or keyword_passed):
-            return False
+    # 최종 필터링: 공통 필터는 반드시 통과하고,
+    # 산업별 필터나 키워드 필터 중 하나라도 통과하면 통과
+    if not (industry_passed or keyword_passed):
+        return False
 
     return True
 
