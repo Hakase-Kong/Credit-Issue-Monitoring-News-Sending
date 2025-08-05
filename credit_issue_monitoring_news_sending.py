@@ -376,7 +376,7 @@ with st.expander("🔍 키워드 필터 옵션"):
     remove_duplicate_articles = st.checkbox("중복 기사 제거", value=True, key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
     filter_allowed_sources_only = st.checkbox(
     "특정 언론사만 검색", 
-    value=True, 
+    value=False, 
     key="filter_allowed_sources_only", 
     help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
 )
