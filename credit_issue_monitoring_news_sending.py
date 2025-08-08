@@ -857,12 +857,30 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     output.seek(0)
     return output
 
-def build_important_excel_same_format(important_articles, favorite_categories, excel_company_categories):
+def build_important_excel_same_format(
+    important_articles,
+    favorite_categories,
+    excel_company_categories,
+    search_results
+):
+    """
+    중요기사 자동 추출 결과를 기존 '맞춤 엑셀 양식'과 동일한 포맷으로 저장
+    단, C열에 각 키워드별 뉴스 검색 결과 건수를 넣고,
+    기존 C/D열(긍정 뉴스/부정 뉴스)을 각각 한 열씩 오른쪽으로 밀림.
+    
+    Parameters:
+    - important_articles: 중요 기사 리스트(딕셔너리, 회사명, 감성, 제목, 링크, 날짜 등 포함)
+    - favorite_categories: 카테고리별 기업 리스트 딕셔너리
+    - excel_company_categories: 카테고리별 엑셀 표기명 리스트 딕셔너리
+    - search_results: 각 키워드별(회사명) 전체 뉴스 검색 결과 리스트 딕셔너리
+    """
     company_order = []
     excel_company_order = []
     for cat in [
-        "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
-        "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"
+        "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행",
+        "카드사", "캐피탈", "지주사", "에너지", "발전",
+        "자동차", "전기/전자", "소비재", "비철/철강", "석유화학",
+        "건설", "특수채"
     ]:
         company_order.extend(favorite_categories.get(cat, []))
         excel_company_order.extend(excel_company_categories.get(cat, []))
@@ -870,32 +888,38 @@ def build_important_excel_same_format(important_articles, favorite_categories, e
     rows = []
     for i, comp in enumerate(company_order):
         display_name = excel_company_order[i] if i < len(excel_company_order) else ""
+
+        # 전체 검색된 뉴스 기사 수 (원본)
+        total_count = len(search_results.get(comp, []))
+
         pos_article = ""
         neg_article = ""
-        # 이 기업에 해당하는 기사들 필터링
-        articles = [a for a in important_articles if a["회사명"] == comp]
-        # 건수 계산
-        count = len(articles)
+
+        # 중요기사에서 해당 기업 기사 필터링
+        articles = [a for a in important_articles if a.get("회사명") == comp]
+
         for article in articles:
-            link = article["링크"]
-            title = article["제목"]
-            date = article["날짜"]
+            link = article.get("링크", "")
+            title = article.get("제목", "")
+            date = article.get("날짜", "")
             display_text = f"({date}) {title}"
-            hyperlink = f'=HYPERLINK("{link}", "{display_text}")'
-            if article["감성"] == "긍정":
+            hyperlink = f'=HYPERLINK("{link}", "{display_text}")' if link else ""
+
+            if article.get("감성") == "긍정":
                 pos_article = hyperlink
-            elif article["감성"] == "부정":
+            elif article.get("감성") == "부정":
                 neg_article = hyperlink
 
         rows.append({
             "기업명": comp,
             "표기명": display_name,
-            "건수": count,              # ⭐️ 추가됨
-            "긍정 뉴스": pos_article,   # D열
-            "부정 뉴스": neg_article    # E열
+            "건수": total_count,
+            "긍정 뉴스": pos_article,
+            "부정 뉴스": neg_article
         })
 
     df = pd.DataFrame(rows, columns=["기업명", "표기명", "건수", "긍정 뉴스", "부정 뉴스"])
+
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="중요뉴스_양식")
