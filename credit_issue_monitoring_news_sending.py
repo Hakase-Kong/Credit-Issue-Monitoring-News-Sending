@@ -407,8 +407,8 @@ def summarize_and_sentiment_with_openai(text, do_summary=True):
         return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", text
 
     # 2. 본문 체크
-    if not text or len(text.strip()) < 50 or "본문 추출 오류" in text:
-        return "기사 본문이 너무 짧거나 추출 실패", "", "감성 추출 실패", text
+    if not text or "본문 추출 오류" in text:
+        return "기사 본문이 추출 실패", "", "감성 추출 실패", text
 
     # 3. 프롬프트(최적화 version, 이전 답변 참고)
     lang = detect_lang(text)
