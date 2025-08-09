@@ -894,7 +894,8 @@ def build_important_excel_same_format(
             a for a in search_results.get(comp, [])
             if article_passes_all_filters(a)
         ]
-        total_count = len(filtered_articles)
+        filtered_articles_no_dup = remove_duplicate_articles(filtered_articles)
+        total_count = len(filtered_articles_no_dup)
         pos_article = ""
         neg_article = ""
 
