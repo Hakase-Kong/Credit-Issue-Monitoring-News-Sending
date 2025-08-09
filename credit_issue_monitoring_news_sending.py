@@ -1376,16 +1376,12 @@ def render_articles_with_single_summary_and_telegram(
                         # 체크박스 해제
                         for k in list(st.session_state.article_checked.keys()):
                             uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
-                            if k.endswith(uid_tail):
-                                st.session_state.article_checked[k] = False
-                                st.session_state.article_checked_left[k] = False
-                                break
-                        # 선택 기사 리스트에서 제거 (다음 렌더시 자동 반영)
-                        st.session_state.selected_articles = [
-                            a for a in st.session_state.selected_articles
-                            if a['링크'] != art['링크']
-                        ]
-                        st.rerun()
+                            for k in list(st.session_state.article_checked.keys()):
+                                if k.endswith(uid_tail):
+                                    st.session_state.article_checked[k] = False
+                                    st.session_state.article_checked_left[k] = False
+                                    break
+                            st.rerun()
 
                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
