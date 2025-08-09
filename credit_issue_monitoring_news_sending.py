@@ -1260,7 +1260,7 @@ def render_articles_with_single_summary_and_telegram(
                     all_article_keys.append(key)
 
                 select_all = st.checkbox(
-                    f"🔘 전체 기사 선택/해제 ({keyword})",
+                    f"전체 기사 선택/해제 ({keyword})",
                     value=all([st.session_state.article_checked.get(k, False) for k in all_article_keys]),
                     key=f"{keyword}_select_all"
                 )
