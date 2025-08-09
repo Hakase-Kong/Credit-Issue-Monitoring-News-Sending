@@ -1252,6 +1252,29 @@ def render_articles_with_single_summary_and_telegram(
             with st.container(border=True):
                 st.markdown(f"**[{keyword}] ({len(articles)}건)**")
 
+                # --- 전체 선택/해제 체크박스 코드 시작 ---
+                all_article_keys = []
+                for idx, article in enumerate(articles):
+                    unique_id = re.sub(r'\W+', '', article['link'])[-16:]
+                    key = f"{keyword}_{idx}_{unique_id}"
+                    all_article_keys.append(key)
+
+                select_all = st.checkbox(
+                    f"🔘 전체 기사 선택/해제 ({keyword})",
+                    value=all([st.session_state.article_checked.get(k, False) for k in all_article_keys]),
+                    key=f"{keyword}_select_all"
+                )
+                if select_all:
+                    for k in all_article_keys:
+                        st.session_state.article_checked[k] = True
+                        st.session_state.article_checked_left[k] = True
+                else:
+                    for k in all_article_keys:
+                        st.session_state.article_checked[k] = False
+                        st.session_state.article_checked_left[k] = False
+                # --- 전체 선택 체크박스 코드 끝 ---
+
+                # --- 각 기사별 체크박스 표시 ---
                 for idx, article in enumerate(articles):
                     unique_id = re.sub(r'\W+', '', article['link'])[-16:]
                     key = f"{keyword}_{idx}_{unique_id}"
@@ -1259,7 +1282,11 @@ def render_articles_with_single_summary_and_telegram(
 
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
-                        checked = st.checkbox("", value=st.session_state.article_checked.get(key, False), key=f"news_{key}")
+                        checked = st.checkbox(
+                            "",
+                            value=st.session_state.article_checked.get(key, False),
+                            key=f"news_{key}"
+                        )
                     with cols[1]:
                         sentiment = ""
                         if show_sentiment_badge and cache_key in st.session_state:
@@ -1273,7 +1300,7 @@ def render_articles_with_single_summary_and_telegram(
                     if checked:
                         st.session_state.article_checked[key] = True
 
-    # 선택 기사 요약 및 다운로드
+    # ▶ 선택 기사 요약 및 다운로드
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
@@ -1355,12 +1382,10 @@ def render_articles_with_single_summary_and_telegram(
 
             with col_dl2:
                 if st.button("🗑 선택 해제 (전체)"):
-                    # 아주 짧게 delay를 주거나 바로 체크 해제 (폼 아님)
                     time.sleep(0.15)
                     for key in list(st.session_state.article_checked.keys()):
                         st.session_state.article_checked[key] = False
                     st.rerun()
-
         # 중요 기사 리뷰 UI
         render_important_article_review_and_download()
 
