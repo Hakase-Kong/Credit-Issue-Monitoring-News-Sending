@@ -1373,17 +1373,13 @@ def render_articles_with_single_summary_and_telegram(
                     link_uid = re.sub(r"\W+", "", art['링크'])[-8:]
                     remove_btn_key = f"remove_summary_{idx}_{link_uid}"
                     if st.button("❌", key=remove_btn_key):
-                        # 해당 기사 key 구하기
                         uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
-                        target_key = None
-                        for k in st.session_state.article_checked.keys():
+                        # 하나의 반복문으로 해당 기사 체크 해제
+                        for k in list(st.session_state.article_checked.keys()):
                             if k.endswith(uid_tail):
-                                target_key = k
+                                st.session_state.article_checked[k] = False
+                                st.session_state.article_checked_left[k] = False
                                 break
-                        if target_key:
-                            st.session_state.article_checked[target_key] = False
-                            st.session_state.article_checked_left[target_key] = False
-                        # ❌ 여기서 다른 키는 건드리지 않음!
                         st.rerun()
 
                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
