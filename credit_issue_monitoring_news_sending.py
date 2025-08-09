@@ -794,7 +794,7 @@ def safe_title(val):
         return "제목없음"
     return str(val)
 
-def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories):
+def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories, search_results):
     company_order = []
     for cat in [
         "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
@@ -810,17 +810,26 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
 
     df_articles = pd.DataFrame(summary_data)
 
-    # ✅ 보호 로직: '키워드' 컬럼이 없으면 빈 엑셀 반환
     if "키워드" not in df_articles.columns:
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            pd.DataFrame(columns=["기업명", "표기명", "긍정 뉴스", "부정 뉴스"]).to_excel(writer, index=False)
+            pd.DataFrame(columns=["기업명", "표기명", "건수", "긍정 뉴스", "부정 뉴스"]).to_excel(writer, index=False)
         output.seek(0)
         return output
 
     result_rows = []
     for idx, company in enumerate(company_order):
         excel_company_name = excel_company_order[idx] if idx < len(excel_company_order) else ""
+
+        # ✅ 여기서 필터 적용 + 중복 제거 후 건수 계산
+        filtered_articles = [
+            a for a in search_results.get(company, [])
+            if article_passes_all_filters(a)
+        ]
+        if st.session_state.get("remove_duplicate_articles", False):
+            filtered_articles = remove_duplicates(filtered_articles)
+        total_count = len(filtered_articles)
+
         comp_articles = df_articles[df_articles["키워드"] == company]
         pos_news = comp_articles[comp_articles["감성"] == "긍정"].sort_values(by="날짜", ascending=False)
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
@@ -846,6 +855,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         result_rows.append({
             "기업명": company,
             "표기명": excel_company_name,
+            "건수": total_count,  # ✅ 새로 추가
             "긍정 뉴스": pos_hyperlink,
             "부정 뉴스": neg_hyperlink
         })
@@ -1336,7 +1346,8 @@ def render_articles_with_single_summary_and_telegram(
                     data=get_excel_download_with_favorite_and_excel_company_col(
                         st.session_state.selected_articles,
                         favorite_categories,
-                        excel_company_categories
+                        excel_company_categories,
+                        st.session_state.search_results  # ✅ 추가
                     ).getvalue(),
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
