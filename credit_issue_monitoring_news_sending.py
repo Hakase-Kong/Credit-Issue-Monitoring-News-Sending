@@ -835,20 +835,22 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
 
         if not pos_news.empty:
-            pos_date = pos_news.iloc[0]["날짜"]
-            pos_title = pos_news.iloc[0]["기사제목"]
-            pos_link = pos_news.iloc[0]["링크"]
-            pos_display = f'({pos_date}) {pos_title}'
-            pos_hyperlink = f'=HYPERLINK("{pos_link}", "{pos_display}")'
+            pos_links = []
+            for _, row in pos_news.iterrows():
+                pos_display = f'({row["날짜"]}) {row["기사제목"]}'
+                # 하이퍼링크 형태로 변환
+                pos_links.append(f'=HYPERLINK("{row["링크"]}", "{pos_display}")')
+            # 줄바꿈 처리
+            pos_hyperlink = "\n".join(pos_links)
         else:
             pos_hyperlink = ""
-
+        
         if not neg_news.empty:
-            neg_date = neg_news.iloc[0]["날짜"]
-            neg_title = neg_news.iloc[0]["기사제목"]
-            neg_link = neg_news.iloc[0]["링크"]
-            neg_display = f'({neg_date}) {neg_title}'
-            neg_hyperlink = f'=HYPERLINK("{neg_link}", "{neg_display}")'
+            neg_links = []
+            for _, row in neg_news.iterrows():
+                neg_display = f'({row["날짜"]}) {row["기사제목"]}'
+                neg_links.append(f'=HYPERLINK("{row["링크"]}", "{neg_display}")')
+            neg_hyperlink = "\n".join(neg_links)
         else:
             neg_hyperlink = ""
 
@@ -864,6 +866,10 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_result.to_excel(writer, index=False, sheet_name='뉴스요약')
+        workbook = writer.book
+        worksheet = writer.sheets['뉴스요약']
+        wrap_format = workbook.add_format({'text_wrap': True})
+        worksheet.set_column('D:E', 50, wrap_format)  # 긍정뉴스/부정뉴스 칼럼 넓이 50, 줄바꿈 적용
     output.seek(0)
     return output
 
@@ -873,17 +879,6 @@ def build_important_excel_same_format(
     excel_company_categories,
     search_results
 ):
-    """
-    중요기사 자동 추출 결과를 기존 '맞춤 엑셀 양식'과 동일한 포맷으로 저장
-    단, C열에 각 키워드별 뉴스 검색 결과 건수를 넣고,
-    기존 C/D열(긍정 뉴스/부정 뉴스)을 각각 한 열씩 오른쪽으로 밀림.
-    
-    Parameters:
-    - important_articles: 중요 기사 리스트(딕셔너리, 회사명, 감성, 제목, 링크, 날짜 등 포함)
-    - favorite_categories: 카테고리별 기업 리스트 딕셔너리
-    - excel_company_categories: 카테고리별 엑셀 표기명 리스트 딕셔너리
-    - search_results: 각 키워드별(회사명) 전체 뉴스 검색 결과 리스트 딕셔너리
-    """
     company_order = []
     excel_company_order = []
     for cat in [
@@ -899,17 +894,19 @@ def build_important_excel_same_format(
     for i, comp in enumerate(company_order):
         display_name = excel_company_order[i] if i < len(excel_company_order) else ""
 
-        # 전체 검색된 뉴스 기사 수 (원본)
+        # 전체 뉴스 건수 계산
         filtered_articles = [
             a for a in search_results.get(comp, [])
             if article_passes_all_filters(a)
         ]
         filtered_articles_no_dup = remove_duplicates(filtered_articles)
         total_count = len(filtered_articles_no_dup)
-        pos_article = ""
-        neg_article = ""
 
-        # 중요기사에서 해당 기업 기사 필터링
+        # 여러 건 저장을 위해 리스트 사용
+        pos_articles = []
+        neg_articles = []
+
+        # 해당 기업의 중요기사
         articles = [a for a in important_articles if a.get("회사명") == comp]
 
         for article in articles:
@@ -917,19 +914,23 @@ def build_important_excel_same_format(
             title = article.get("제목", "")
             date = article.get("날짜", "")
             display_text = f"({date}) {title}"
-            hyperlink = f'=HYPERLINK("{link}", "{display_text}")' if link else ""
+            hyperlink = f'=HYPERLINK("{link}", "{display_text}")' if link else display_text
 
             if article.get("감성") == "긍정":
-                pos_article = hyperlink
+                pos_articles.append(hyperlink)
             elif article.get("감성") == "부정":
-                neg_article = hyperlink
+                neg_articles.append(hyperlink)
+
+        # 줄바꿈으로 합치기 (Excel에서는 CHAR(10) 효과)
+        pos_cell = "\n".join(pos_articles) if pos_articles else ""
+        neg_cell = "\n".join(neg_articles) if neg_articles else ""
 
         rows.append({
             "기업명": comp,
             "표기명": display_name,
             "건수": total_count,
-            "긍정 뉴스": pos_article,
-            "부정 뉴스": neg_article
+            "긍정 뉴스": pos_cell,
+            "부정 뉴스": neg_cell
         })
 
     df = pd.DataFrame(rows, columns=["기업명", "표기명", "건수", "긍정 뉴스", "부정 뉴스"])
@@ -937,6 +938,12 @@ def build_important_excel_same_format(
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="중요뉴스_양식")
+        workbook = writer.book
+        worksheet = writer.sheets["중요뉴스_양식"]
+        wrap_format = workbook.add_format({"text_wrap": True})
+        # 긍정·부정 컬럼 줄바꿈 적용
+        worksheet.set_column("D:E", 60, wrap_format)
+
     output.seek(0)
     return output
 
