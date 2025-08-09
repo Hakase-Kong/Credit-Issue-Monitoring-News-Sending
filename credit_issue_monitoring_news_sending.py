@@ -1370,7 +1370,8 @@ def render_articles_with_single_summary_and_telegram(
                         unsafe_allow_html=True,
                     )
                 with cols_title[1]:
-                    remove_btn_key = f"remove_summary_{idx}_{re.sub(r'\\W+', '', art['링크'])[-8:]}"
+                    link_uid = re.sub(r"\W+", "", art['링크'])[-8:]  # 백슬래시 처리 먼저 끝냄
+                    remove_btn_key = f"remove_summary_{idx}_{link_uid}"
                     if st.button("❌", key=remove_btn_key):
                         # 체크박스 해제
                         for k in list(st.session_state.article_checked.keys()):
