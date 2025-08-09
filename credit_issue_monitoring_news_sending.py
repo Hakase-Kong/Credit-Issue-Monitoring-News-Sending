@@ -941,6 +941,10 @@ def build_important_excel_same_format(
     return output
 
 def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
+    import os
+    from openai import OpenAI
+    import re
+
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     client = OpenAI(api_key=OPENAI_API_KEY)
     result = []
@@ -955,15 +959,17 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 continue
 
             prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
+
+            # ◾️ 여기에 강화된 프롬프트 적용
             prompt = (
-                f"[필터 키워드]\n{', '.join(filtered_keywords)}\n\n"
                 f"[기사 목록]\n{prompt_list}\n\n"
-                "각 기사에 대해 감성(긍정/부정)을 판단하고,\n"
-                "제목에 필터 키워드가 포함된 뉴스만 기준으로,\n"
-                "- 긍정에서 가장 중요한 뉴스 1건\n"
-                "- 부정에서 가장 중요한 뉴스 1건\n"
-                "을 골라주세요. 없으면 빈칸으로:\n\n"
-                "[긍정]: (뉴스 제목)\n[부정]: (뉴스 제목)"
+                "1. 각 기사 내용을 읽고, 기사의 전반적인 감성 톤(긍정/부정)을 판단해 주세요.\n"
+                "   - 만약 긍정과 부정이 혼재된 경우, 기사의 전체적인 분위기에서 우세한 감성 톤을 기준으로 판단합니다.\n\n"
+                "2. 기사에 언급된 기업의 채권 투자자 입장에서 판단해,\n"
+                "   2.1 재무 안정성, 현금창출력, 실적 개선, 리스크 완화 여부, 긍정적 전망에 긍정적으로 기여하는 핵심 긍정 기사 1건\n"
+                "   2.2 수익성 저하, 리스크 확대, 부정적 전망에 해당하는 핵심 부정 기사 1건을 각각 선정해주세요.\n"
+                "3. 감성 분류(긍정/부정)에 해당하는 기사가 없으면 공란으로 남겨주세요.\n\n"
+                "[긍정]: (긍정적 선정 기사 제목)\n[부정]: (부정적 선정 기사 제목)"
             )
 
             try:
@@ -974,7 +980,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                     temperature=0.3
                 )
                 answer = response.choices[0].message.content.strip()
-                import re
                 pos_title = re.search(r"\[긍정\]:\s*(.+)", answer)
                 neg_title = re.search(r"\[부정\]:\s*(.+)", answer)
                 pos_title = pos_title.group(1).strip() if pos_title else ""
