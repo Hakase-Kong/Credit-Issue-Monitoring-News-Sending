@@ -1370,18 +1370,17 @@ def render_articles_with_single_summary_and_telegram(
                         unsafe_allow_html=True,
                     )
                 with cols_title[1]:
-                    link_uid = re.sub(r"\W+", "", art['링크'])[-8:]  # 백슬래시 처리 먼저 끝냄
+                    link_uid = re.sub(r"\W+", "", art['링크'])[-8:]  # 미리 처리
                     remove_btn_key = f"remove_summary_{idx}_{link_uid}"
                     if st.button("❌", key=remove_btn_key):
-                        # 체크박스 해제
+                        uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
+                        # 하나의 반복문만!
                         for k in list(st.session_state.article_checked.keys()):
-                            uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
-                            for k in list(st.session_state.article_checked.keys()):
-                                if k.endswith(uid_tail):
-                                    st.session_state.article_checked[k] = False
-                                    st.session_state.article_checked_left[k] = False
-                                    break
-                            st.rerun()
+                            if k.endswith(uid_tail):
+                                st.session_state.article_checked[k] = False
+                                st.session_state.article_checked_left[k] = False
+                                break
+                        st.rerun()
 
                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
