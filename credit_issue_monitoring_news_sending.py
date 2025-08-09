@@ -1359,13 +1359,33 @@ def render_articles_with_single_summary_and_telegram(
             with ThreadPoolExecutor(max_workers=10) as executor:
                 selected_articles = list(executor.map(process_article, selected_to_process))
 
-            # 3) 전체 결과를 한 번에 렌더링
-            for art in selected_articles:
-                st.markdown(
-                    f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
-                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
-                    unsafe_allow_html=True,
-                )
+            # 3) 전체 결과를 한 번에 렌더링 + ❌버튼
+            for idx, art in enumerate(selected_articles):
+                cols_title = st.columns([0.9, 0.1])  # 기사 영역 + X버튼 영역
+
+                with cols_title[0]:
+                    st.markdown(
+                        f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
+                        f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with cols_title[1]:
+                    remove_btn_key = f"remove_summary_{idx}_{re.sub(r'\\W+', '', art['링크'])[-8:]}"
+                    if st.button("❌", key=remove_btn_key):
+                        # 체크박스 해제
+                        for k in list(st.session_state.article_checked.keys()):
+                            uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
+                            if k.endswith(uid_tail):
+                                st.session_state.article_checked[k] = False
+                                st.session_state.article_checked_left[k] = False
+                                break
+                        # 선택 기사 리스트에서 제거 (다음 렌더시 자동 반영)
+                        st.session_state.selected_articles = [
+                            a for a in st.session_state.selected_articles
+                            if a['링크'] != art['링크']
+                        ]
+                        st.rerun()
+
                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
