@@ -1262,7 +1262,17 @@ def render_articles_with_single_summary_and_telegram(
                 for idx, article in enumerate(articles):
                     uid = re.sub(r"\W+", "", article["link"])[-16:]
                     key = f"{keyword}_{idx}_{uid}"
-                    all_article_keys.append(key)
+                    checked = st.checkbox(
+                        "",
+                        value=st.session_state.article_checked.get(key, False),
+                        key=f"news_{key}",
+                    )
+                    st.session_state.article_checked_left[key] = checked
+                    # >>> 이 부분에서 선택시 True로 기록
+                    if checked:
+                        st.session_state.article_checked[key] = True
+                    else:
+                        st.session_state.article_checked[key] = False
 
                 select_all = st.checkbox(
                     f"전체 기사 선택/해제 ({keyword})",
@@ -1374,13 +1384,12 @@ def render_articles_with_single_summary_and_telegram(
                     remove_btn_key = f"remove_summary_{idx}_{link_uid}"
                     if st.button("❌", key=remove_btn_key):
                         uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
-                        # 하나의 반복문으로 해당 기사 체크 해제
                         for k in list(st.session_state.article_checked.keys()):
                             if k.endswith(uid_tail):
                                 st.session_state.article_checked[k] = False
                                 st.session_state.article_checked_left[k] = False
                                 break
-                        st.rerun()
+                        st.rerun()  # 화면 새로고침 - 해당 기사만 사라짐
 
                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
