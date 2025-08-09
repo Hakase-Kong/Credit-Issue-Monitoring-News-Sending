@@ -1370,11 +1370,10 @@ def render_articles_with_single_summary_and_telegram(
                         unsafe_allow_html=True,
                     )
                 with cols_title[1]:
-                    link_uid = re.sub(r"\W+", "", art['링크'])[-8:]  # 미리 처리
+                    link_uid = re.sub(r"\W+", "", art['링크'])[-8:]
                     remove_btn_key = f"remove_summary_{idx}_{link_uid}"
                     if st.button("❌", key=remove_btn_key):
                         uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
-                        # 하나의 반복문만!
                         for k in list(st.session_state.article_checked.keys()):
                             if k.endswith(uid_tail):
                                 st.session_state.article_checked[k] = False
