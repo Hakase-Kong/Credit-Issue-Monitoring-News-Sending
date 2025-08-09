@@ -890,8 +890,11 @@ def build_important_excel_same_format(
         display_name = excel_company_order[i] if i < len(excel_company_order) else ""
 
         # 전체 검색된 뉴스 기사 수 (원본)
-        total_count = len(search_results.get(comp, []))
-
+        filtered_articles = [
+            a for a in search_results.get(comp, [])
+            if article_passes_all_filters(a)
+        ]
+        total_count = len(filtered_articles)
         pos_article = ""
         neg_article = ""
 
