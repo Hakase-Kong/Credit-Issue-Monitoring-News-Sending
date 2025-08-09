@@ -1439,7 +1439,7 @@ def render_articles_with_single_summary_and_telegram(
                         )
 
                     if selected_to_summarize:
-                        with ThreadPoolExecutor(max_workers=5) as executor:
+                        with ThreadPoolExecutor(max_workers=10) as executor:
                             list(executor.map(process_article, selected_to_summarize))
 
                     # 해제 처리
