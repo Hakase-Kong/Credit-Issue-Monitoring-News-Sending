@@ -1266,12 +1266,7 @@ def render_articles_with_single_summary_and_telegram(
 
                 select_all = st.checkbox(
                     f"전체 기사 선택/해제 ({keyword})",
-                    value=all(
-                        [
-                            st.session_state.article_checked.get(k, False)
-                            for k in all_article_keys
-                        ]
-                    ),
+                    value=all(st.session_state.article_checked.get(k, False) for k in all_article_keys),
                     key=f"{keyword}_select_all",
                 )
                 if select_all:
@@ -1302,8 +1297,7 @@ def render_articles_with_single_summary_and_telegram(
                             _, _, sentiment, _ = st.session_state[cache_key]
                         badge_html = (
                             f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>"
-                            if sentiment
-                            else ""
+                            if sentiment else ""
                         )
                         st.markdown(
                             f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
@@ -1332,23 +1326,13 @@ def render_articles_with_single_summary_and_telegram(
                     cache_key = f"summary_{key}"
 
                     if st.session_state.article_checked.get(key, False):
-                        # 캐시 없으면 즉시 분석
                         if cache_key in st.session_state:
-                            one_line, summary, sentiment, full_text = st.session_state[
-                                cache_key
-                            ]
+                            one_line, summary, sentiment, full_text = st.session_state[cache_key]
                         else:
                             one_line, summary, sentiment, full_text = summarize_article_from_url(
-                                article["link"],
-                                article["title"],
-                                do_summary=enable_summary,
+                                article["link"], article["title"], do_summary=enable_summary
                             )
-                            st.session_state[cache_key] = (
-                                one_line,
-                                summary,
-                                sentiment,
-                                full_text,
-                            )
+                            st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
 
                         article["full_text"] = full_text or ""
                         article["요약"] = one_line or ""
@@ -1358,20 +1342,18 @@ def render_articles_with_single_summary_and_telegram(
                             article, ALL_COMMON_FILTER_KEYWORDS, industry_keywords_all
                         )
 
-                        selected_articles.append(
-                            {
-                                "키워드": keyword,
-                                "필터히트": ", ".join(filter_hits),
-                                "기사제목": safe_title(article["title"]),
-                                "요약": one_line,
-                                "요약본": summary,
-                                "감성": sentiment,
-                                "링크": article["link"],
-                                "날짜": article["date"],
-                                "출처": article["source"],
-                                "full_text": full_text,
-                            }
-                        )
+                        selected_articles.append({
+                            "키워드": keyword,
+                            "필터히트": ", ".join(filter_hits),
+                            "기사제목": safe_title(article["title"]),
+                            "요약": one_line,
+                            "요약본": summary,
+                            "감성": sentiment,
+                            "링크": article["link"],
+                            "날짜": article["date"],
+                            "출처": article["source"],
+                            "full_text": full_text,
+                        })
 
                         st.markdown(
                             f"#### <span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
@@ -1379,9 +1361,7 @@ def render_articles_with_single_summary_and_telegram(
                             unsafe_allow_html=True,
                         )
                         st.markdown(f"- **검색 키워드:** `{keyword}`")
-                        st.markdown(
-                            f"- **필터로 인식된 키워드:** `{', '.join(filter_hits) if filter_hits else '없음'}`"
-                        )
+                        st.markdown(f"- **필터로 인식된 키워드:** `{', '.join(filter_hits) if filter_hits else '없음'}`")
                         st.markdown(f"- **날짜/출처:** {article['date']} | {article['source']}")
                         if enable_summary:
                             st.markdown(f"- **한 줄 요약:** {one_line}")
@@ -1406,10 +1386,9 @@ def render_articles_with_single_summary_and_telegram(
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
-            # 🗑 전체 해제 + 해제 전 병렬 요약/감성 분석
+            # 🗑 전체 해제 + 해제 전 병렬 newspaper3k + 요약/감성분석
             with col_dl2:
                 if st.button("🗑 선택 해제 (전체)"):
-                    # 현재 선택된 기사 목록
                     selected_to_summarize = []
                     for key, is_checked in st.session_state.article_checked.items():
                         if is_checked:
@@ -1424,25 +1403,19 @@ def render_articles_with_single_summary_and_telegram(
                                     selected_to_summarize.append((keyword, idx, art))
                                     break
 
-                    # 병렬 처리
                     def process_article(item):
                         keyword, idx, art = item
+                        # newspaper3k 본문 추출 + 요약/감성 분석
                         one_line, summary, sentiment, full_text = summarize_article_from_url(
                             art["link"], art["title"], do_summary=enable_summary
                         )
                         cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
-                        st.session_state[cache_key] = (
-                            one_line,
-                            summary,
-                            sentiment,
-                            full_text,
-                        )
+                        st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
 
                     if selected_to_summarize:
                         with ThreadPoolExecutor(max_workers=10) as executor:
                             list(executor.map(process_article, selected_to_summarize))
 
-                    # 해제 처리
                     for key in list(st.session_state.article_checked.keys()):
                         st.session_state.article_checked[key] = False
                     for key in list(st.session_state.article_checked_left.keys()):
@@ -1450,7 +1423,6 @@ def render_articles_with_single_summary_and_telegram(
 
                     st.rerun()
 
-        # 중요 기사 리뷰
         render_important_article_review_and_download()
 
 if st.session_state.search_results:
