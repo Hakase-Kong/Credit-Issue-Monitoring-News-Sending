@@ -1023,8 +1023,8 @@ def render_important_article_review_and_download():
 
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
-        
-        # 🚀 중요기사 자동 선정 버튼
+
+        # 중요기사 자동선정 버튼
         auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
         if auto_btn:
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
@@ -1042,11 +1042,10 @@ def render_important_article_review_and_download():
                     industry_keywords=st.session_state.get("industry_sub", []),
                     favorites=favorite_categories
                 )
-
-                # 중요기사 데이터 컬럼 키 통일
+                # 반드시 dict key 통일
                 for i, art in enumerate(important_articles):
                     important_articles[i] = {
-                        "키워드": art.get("키워드") or art.get("회사명") or "",   # 혹시 회사명 기반 생성시 호환
+                        "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
                         "기사제목": art.get("기사제목") or art.get("제목") or art.get("title") or "",
                         "감성": art.get("감성", ""),
                         "링크": art.get("링크") or art.get("link") or "",
@@ -1062,14 +1061,12 @@ def render_important_article_review_and_download():
 
         if not articles:
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
-
             empty_excel = get_excel_download_with_favorite_and_excel_company_col(
                 [],
                 favorite_categories,
                 excel_company_categories,
                 st.session_state.search_results
             )
-
             st.download_button(
                 label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
                 data=empty_excel.getvalue(),
@@ -1079,7 +1076,6 @@ def render_important_article_review_and_download():
             return
 
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
-
         new_selection = []
         for idx, article in enumerate(articles):
             checked = st.checkbox(
@@ -1094,7 +1090,7 @@ def render_important_article_review_and_download():
         st.markdown("---")
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
-        # ➕ 선택 기사 추가 (컬럼명 통일)
+        # ➕ 선택 기사 추가
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1133,6 +1129,7 @@ def render_important_article_review_and_download():
                                 selected_article["link"], selected_article["title"]
                             )
 
+                        # 반드시 key 통일
                         new_article = {
                             "키워드": keyword,
                             "기사제목": selected_article["title"],
@@ -1154,7 +1151,7 @@ def render_important_article_review_and_download():
                         st.info("추가된 새로운 기사가 없습니다.")
                     st.rerun()
 
-        # 🗑 삭제
+        # 🗑 선택 기사 삭제
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 important = st.session_state.get("important_articles_preview", [])
@@ -1165,7 +1162,7 @@ def render_important_article_review_and_download():
                 st.session_state["important_selected_index"] = []
                 st.rerun()
 
-        # 🔁 교체
+        # 🔁 선택 기사 교체
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1206,6 +1203,7 @@ def render_important_article_review_and_download():
                         selected_article["link"], selected_article["title"]
                     )
 
+                # 반드시 key 통일
                 new_article = {
                     "키워드": keyword,
                     "기사제목": selected_article["title"],
@@ -1225,8 +1223,8 @@ def render_important_article_review_and_download():
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
 
-        # 선택된 중요기사만 summary_data로 넘김
         final_important_articles = [articles[i] for i in st.session_state.get("important_selected_index", [])]
+        st.write(final_important_articles)  # 실제 데이터 확인(디버깅용, 배포시 제거해도 됨)
 
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
             final_important_articles,
