@@ -132,11 +132,10 @@ with col_title:
         unsafe_allow_html=True
     )
 with col_option1:
-    show_sentiment_badge = st.checkbox("감성분석 배지표시", value=False, key="show_sentiment_badge")
+    show_sentiment_badge = st.checkbox("감성분석 배지표시", key="show_sentiment_badge")
 with col_option2:
-    # '필터 AND조건' 체크박스 제거, 요약 기능 체크박스만 남김
-    enable_summary = st.checkbox("요약 기능", value=True, key="enable_summary")
-        
+    enable_summary = st.checkbox("요약 기능", key="enable_summary")
+    
 col_kw_input, col_kw_btn = st.columns([0.8, 0.2])
 with col_kw_input:
     keywords_input = st.text_input(label="", value="", key="keyword_input", label_visibility="collapsed")
@@ -174,7 +173,7 @@ with st.expander("🧩 공통 필터 옵션 (항상 적용됨)"):
         st.markdown(f"**{major}**: {', '.join(subs)}")
 
 with st.expander("🏭 산업별 필터 옵션 (대분류별 소분류 필터링)"):
-    use_industry_filter = st.checkbox("이 필터 적용", value=True, key="use_industry_filter")
+    use_industry_filter = st.checkbox("이 필터 적용", key="use_industry_filter")
 
     # UI: 선택된 산업군에서 자동 매핑된 대분류 추출
     selected_major_map = get_industry_majors_from_favorites(selected_categories)
@@ -195,15 +194,13 @@ with st.expander("🏭 산업별 필터 옵션 (대분류별 소분류 필터링
     
 # --- 중복 기사 제거 기능 체크박스 포함된 키워드 필터 옵션 ---
 with st.expander("🔍 키워드 필터 옵션"):
-    require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", value=True, key="require_exact_keyword_in_title_or_content")
-    # 중복 기사 제거 체크박스 추가 (기본 해제)
-    remove_duplicate_articles = st.checkbox("중복 기사 제거", value=True, key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
+    require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", key="require_exact_keyword_in_title_or_content")
+    remove_duplicate_articles = st.checkbox("중복 기사 제거", key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
     filter_allowed_sources_only = st.checkbox(
-    "특정 언론사만 검색", 
-    value=False, 
-    key="filter_allowed_sources_only", 
-    help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
-)
+        "특정 언론사만 검색", 
+        key="filter_allowed_sources_only", 
+        help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
+    )
 
 def extract_article_text(url):
     try:
