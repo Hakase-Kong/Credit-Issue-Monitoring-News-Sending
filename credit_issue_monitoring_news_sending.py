@@ -872,7 +872,7 @@ def render_articles_with_single_summary_and_telegram(
         st.markdown("### 🔍 뉴스 검색 결과")
         for keyword, articles in results.items():
             # ✅ 접었다/펼칠 수 있는 expander로 변경
-            with st.expander(f"[{keyword}] ({len(articles)}건)", expanded=False):
+            with st.expander(f"[{keyword}] ({len(articles)}건)", expanded=True):
                 # 전체 선택/해제 체크박스
                 all_article_keys = []
                 for idx, article in enumerate(articles):
@@ -1061,13 +1061,41 @@ def render_important_article_review_and_download():
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
         new_selection = []
         for idx, article in enumerate(articles):
+            # 체크박스 1행: 키워드 | 감성 | 제목
             checked = st.checkbox(
                 f"{article.get('키워드', '')} | {article.get('감성', '')} | {article.get('기사제목', '')}",
                 key=f"important_chk_{idx}",
                 value=(idx in selected_indexes)
             )
+
+            # ---- ✅ '한 줄 요약' 행 추가 ----
+            link = article.get("링크", "")
+            cleaned_id = re.sub(r"\W+", "", link)[-16:] if link else ""
+            one_line_summary = None
+        
+            # 1) 캐시에서 찾기
+            for k, v in st.session_state.items():
+                if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
+                    one_line_summary = v[0]  # tuple: (한줄요약, 전체요약, 감성, full_text)
+                    break
+        
+            # 2) 없으면 생성
+            if not one_line_summary and link:
+                one_line_summary, _, _, _ = summarize_article_from_url(
+                    link, article.get("기사제목", ""), do_summary=True
+                )
+        
+            # 3) 표시
+            if one_line_summary:
+                st.markdown(
+                    f"<span style='color:gray;font-style:italic;'>{one_line_summary}</span>",
+                    unsafe_allow_html=True
+                )
+            # --------------------------------
+        
             if checked:
                 new_selection.append(idx)
+        
         st.session_state["important_selected_index"] = new_selection
 
         st.markdown("---")
