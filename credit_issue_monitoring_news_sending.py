@@ -96,23 +96,7 @@ if "article_checked_left" not in st.session_state:
 
 # --- 카테고리-산업 대분류 매핑 함수 ---
 def get_industry_majors_from_favorites(selected_categories):
-    favorite_to_industry_major = {
-        "5대금융지주": ["은행 및 금융지주"],
-        "5대시중은행": ["은행 및 금융지주"],
-        "보험사": ["보험사"],
-        "카드사": ["카드사"],
-        "캐피탈": ["캐피탈"],
-        "지주사": ["지주사"],
-        "에너지": ["에너지"],
-        "발전": ["발전"],
-        "자동차": ["자동차"],
-        "석유화학": ["석유화학"],
-        "전기/전자": ["전기전자"],
-        "비철/철강": ["철강", "비철"],
-        "소비재": ["소매"],
-        "건설": ["건설"],
-        "특수채": ["특수채"],
-    }
+    favorite_to_industry_major = config["favorite_to_industry_major"]
     majors = set()
     for cat in selected_categories:
         for major in favorite_to_industry_major.get(cat, []):
