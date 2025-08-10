@@ -12,6 +12,7 @@ import difflib
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import html
 
 def process_keywords_parallel(keyword_list, start_date, end_date, require_keyword_in_title=False):
     def fetch_and_store(k):
