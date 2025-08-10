@@ -1321,7 +1321,6 @@ def render_articles_with_single_summary_and_telegram(
                     if st.session_state.article_checked.get(key, False):
                         selected_to_process.append((keyword, idx, article))
 
-            # 병렬 요약/감성
             def process_article(item):
                 keyword, idx, art = item
                 cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
@@ -1369,6 +1368,7 @@ def render_articles_with_single_summary_and_telegram(
                     remove_btn_key = f"remove_summary_{idx}_{link_uid}"
                     if st.button("❌", key=remove_btn_key):
                         uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
+                        # 해당 기사만 체크 해제
                         for k in list(st.session_state.article_checked.keys()):
                             if k.endswith(uid_tail):
                                 st.session_state.article_checked[k] = False
