@@ -202,15 +202,6 @@ with st.expander("🔍 키워드 필터 옵션"):
         help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
     )
 
-def extract_article_text(url):
-    try:
-        article = newspaper.Article(url)
-        article.download()
-        article.parse()
-        return article.text
-    except Exception as e:
-        return f"본문 추출 오류: {e}"
-
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -553,59 +544,6 @@ if category_search_clicked and selected_categories:
             st.session_state["end_date"],
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
-
-def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_keyword_in_title=False):
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-    }
-    articles = []
-    for start in range(1, 1001, 100):
-        if len(articles) >= limit:
-            break
-        params = {
-            "query": query,
-            "display": 100,
-            "start": start,
-            "sort": "date"
-        }
-        response = requests.get("https://openapi.naver.com/v1/search/news.json", headers=headers, params=params)
-        if response.status_code != 200:
-            break
-
-        items = response.json().get("items", [])
-        for item in items:
-            title, desc = item["title"], item["description"]
-            pub_date = datetime.strptime(item["pubDate"], "%a, %d %b %Y %H:%M:%S %z").date()
-
-            if start_date and pub_date < start_date:
-                continue
-            if end_date and pub_date > end_date:
-                continue
-            if not filter_by_issues(title, desc, [query], require_keyword_in_title):
-                continue
-            if exclude_by_title_keywords(re.sub("<.*?>", "", title), EXCLUDE_TITLE_KEYWORDS):
-                continue
-
-            source = item.get("source")
-            if not source or source.strip() == "":
-                source = infer_source_from_url(item.get("originallink", ""))
-                if not source:
-                    source = "Naver"
-            source_domain = source.lower()
-            if source_domain.startswith("www."):
-                source_domain = source_domain[4:]
-
-            articles.append({
-                "title": re.sub("<.*?>", "", title),
-                "link": item["link"],
-                "date": pub_date.strftime("%Y-%m-%d"),
-                "source": source_domain
-            })
-
-        if len(items) < 100:
-            break
-    return articles[:limit]
 
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
