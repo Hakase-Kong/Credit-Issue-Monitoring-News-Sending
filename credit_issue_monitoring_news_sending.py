@@ -786,12 +786,12 @@ def extract_keyword_from_link(search_results, article_link):
     return ""
 
 def render_important_article_review_and_download():
-    st.write("중요기사프리뷰 갯수:", len(st.session_state.get("important_articles_preview", [])))
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
         
-        # 중요기사 자동 선정 버튼
-        if st.button("🚀 OpenAI 기반 중요 기사 자동 선정"):
+        # 🚀 중요기사 자동 선정 버튼
+        auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
+        if auto_btn:
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
                 filtered_results_for_important = {}
                 for keyword, articles in st.session_state.search_results.items():
@@ -807,33 +807,37 @@ def render_important_article_review_and_download():
                     industry_keywords=st.session_state.get("industry_sub", []),
                     favorites=favorite_categories
                 )
-                st.session_state.important_articles_preview = important_articles
-                st.session_state.important_selected_index = []
-        
-        # 중요기사 후보 없으면 안내 메시지
+                st.session_state["important_articles_preview"] = important_articles
+                st.session_state["important_selected_index"] = []
+
+        # 🔍 디버깅: 중요기사 프리뷰 리스트 갯수 출력 (필요시/개발중)
+        st.write(f"중요기사 갯수: {len(st.session_state.get('important_articles_preview', []))}")
+
+        # 🔒 조건부: 후보 없으면 안내 메시지 + 엑셀버튼 미출력
         if not st.session_state.get("important_articles_preview"):
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
             return
-        
+
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
 
-        # 중요기사 체크박스 리스트 (인덱스 기반)
+        # --- 중요기사 체크박스 리스트 (인덱스 기반) ---
         new_selection = []
-        for idx, article in enumerate(st.session_state["important_articles_preview"]):
+        important_articles_list = st.session_state["important_articles_preview"]
+        for idx, article in enumerate(important_articles_list):
             checked = st.checkbox(
                 f"{article['회사명']} | {article['감성']} | {article['제목']}",
                 key=f"important_chk_{idx}",
-                value=(idx in st.session_state.important_selected_index), on_change=None
+                value=(idx in st.session_state.get("important_selected_index", []))
             )
             if checked:
                 new_selection.append(idx)
-        st.session_state.important_selected_index = new_selection
+        st.session_state["important_selected_index"] = new_selection
 
         st.markdown("---")
-        # --- 3개 버튼 한 줄로
+        # --- 3개 버튼 한 줄로 ---
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
-        
-        # ⭐ 추가 버튼: 왼쪽 뉴스결과에서 체크한 기사들을 (1개 이상 복수 선택) 전부 추가 (중복X)
+
+        # ➕ 선택 기사 추가
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -894,20 +898,23 @@ def render_important_article_review_and_download():
                         st.info("추가된 새로운 기사가 없습니다.")
                     st.rerun()
 
-        # 🗑️ 삭제 버튼: 오른쪽 체크된 중요기사 전부 삭제
+        # 🗑 선택 기사 삭제
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
-                for idx in sorted(st.session_state.important_selected_index, reverse=True):
-                    if 0 <= idx < len(st.session_state["important_articles_preview"]):
-                        st.session_state["important_articles_preview"].pop(idx)
-                st.session_state.important_selected_index = []
+                important = st.session_state.get("important_articles_preview", [])
+                # 인덱스 역순으로 삭제(중간 삭제 충돌 방지)
+                for idx in sorted(st.session_state["important_selected_index"], reverse=True):
+                    if 0 <= idx < len(important):
+                        important.pop(idx)
+                st.session_state["important_articles_preview"] = important
+                st.session_state["important_selected_index"] = []
                 st.rerun()
 
-        # 🔁 교체 버튼: 왼쪽 뉴스 한 개와 오른쪽 중요기사 한 개 정확 1:1 교체
+        # 🔁 선택 기사 교체
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
-                right_selected_indexes = st.session_state.important_selected_index
+                right_selected_indexes = st.session_state["important_selected_index"]
                 if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
                     st.warning("왼쪽에서 기사 1개, 오른쪽에서 기사 1개만 선택해주세요.")
                     return
@@ -955,7 +962,7 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"][target_idx] = new_article
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
-                st.session_state.important_selected_index = []
+                st.session_state["important_selected_index"] = []
                 st.success("중요 기사 교체 완료: " + new_article["제목"])
                 st.rerun()
 
@@ -974,7 +981,6 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        st.write("엑셀 다운로드 부분 실행됨")
         
 def matched_filter_keywords(article, common_keywords, industry_keywords):
     """
