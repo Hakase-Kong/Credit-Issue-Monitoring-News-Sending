@@ -43,18 +43,6 @@ def process_keywords_parallel(keyword_list, start_date, end_date, require_keywor
             if k not in st.session_state.show_limit:
                 st.session_state.show_limit[k] = 5
 
-def load_data(keyword_list, start_date, end_date):
-    """검색 실행 후 데이터 로드"""
-    process_keywords_parallel(
-        sorted(keyword_list),
-        start_date,
-        end_date,
-        require_keyword_in_title=st.session_state.filters["require_exact_keyword_in_title_or_content"]
-    )
-
-    apply_filters()  # 필터 즉시 적용
-    st.session_state.selected_articles = set()  # 선택 초기화
-
 # --- CSS 스타일 ---
 st.markdown("""
 <style>
@@ -87,16 +75,14 @@ def exclude_by_title_keywords(title, exclude_keywords):
             return True
     return False
 
-# --- 세션 초기화 함수 ---
 def init_session_state():
     """Streamlit 세션 변수들을 일괄 초기화"""
     defaults = {
         "favorite_keywords": set(),
         "search_results": {},
-        "filtered_results": {},  # 추가: 필터 적용 후 결과 저장
         "show_limit": {},
         "search_triggered": False,
-        "selected_articles": set(),  # 변경: list → set
+        "selected_articles": [],
         "cat_multi": [],
         "cat_major_autoset": [],
         "important_articles_preview": [],
@@ -106,13 +92,10 @@ def init_session_state():
         "industry_major_sub_map": {},
         "end_date": datetime.today().date(),
         "start_date": datetime.today().date() - timedelta(days=7),
-        # 기존 개별 옵션 → filters dict로 통합
-        "filters": {
-            "remove_duplicates": True,
-            "allowed_sources_only": False,
-            "industry_filter": True
-        },
+        "remove_duplicate_articles": True,
         "require_exact_keyword_in_title_or_content": True,
+        "filter_allowed_sources_only": False,
+        "use_industry_filter": True,
         "show_sentiment_badge": False,
         "enable_summary": True,
         "keyword_input": ""
@@ -120,43 +103,6 @@ def init_session_state():
     for key, default_val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default_val
-
-def apply_filters():
-    """search_results → filters 반영 → filtered_results 저장"""
-    results = st.session_state["search_results"]
-    filtered = {}
-
-    for kw, articles in results.items():
-        temp = articles.copy()
-
-        # 1. 중복 기사 제거
-        if st.session_state.filters["remove_duplicates"]:
-            seen = set()
-            temp = [a for a in temp if not (a["title"] in seen or seen.add(a["title"]))]
-
-        # 2. 허용 출처만 표시
-        if st.session_state.filters["allowed_sources_only"]:
-            temp = [a for a in temp if a.get("source") in ALLOWED_SOURCES]
-
-        # 3. 산업 필터 (원하면 기존 use_industry_filter 로직 적용)
-        if st.session_state.filters["industry_filter"]:
-            # 필요 시 기존 산업 필터 코드 삽입
-            pass
-
-        filtered[kw] = temp
-
-    st.session_state.filtered_results = filtered
-
-def filter_changed():
-    """필터 변경 시 호출되는 콜백"""
-    apply_filters()
-
-def toggle_article_selection(article_id):
-    """기사 선택/해제 토글"""
-    if article_id in st.session_state.selected_articles:
-        st.session_state.selected_articles.remove(article_id)
-    else:
-        st.session_state.selected_articles.add(article_id)
 
 # --- UI 시작 ---
 st.set_page_config(layout="wide")
@@ -249,6 +195,12 @@ with st.expander("🏭 산업별 필터 옵션 (대분류별 소분류 필터링
 # --- 중복 기사 제거 기능 체크박스 포함된 키워드 필터 옵션 ---
 with st.expander("🔍 키워드 필터 옵션"):
     require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", key="require_exact_keyword_in_title_or_content")
+    remove_duplicate_articles = st.checkbox("중복 기사 제거", key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
+    filter_allowed_sources_only = st.checkbox(
+        "특정 언론사만 검색", 
+        key="filter_allowed_sources_only", 
+        help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
+    )
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -514,7 +466,7 @@ def article_passes_all_filters(article):
     keyword_passed = article_contains_exact_keyword(article, all_keywords)
 
     # 언론사 도메인 필터링 (특정 언론사만 필터링)
-    if st.session_state.filters["allowed_sources_only"]:
+    if st.session_state.get("filter_allowed_sources_only", True):
         source = article.get('source', '').lower()
         if source.startswith("www."):
             source = source[4:]
@@ -528,7 +480,7 @@ def article_passes_all_filters(article):
 
     # 산업별 필터 조건 (OR 조건)
     industry_passed = True
-    if st.session_state.filters["industry_filter"]:
+    if st.session_state.get("use_industry_filter", False):
         keyword = article.get("키워드")  # 회사명 또는 키워드 항목명
         matched_major = None
         for cat, companies in favorite_categories.items():
@@ -639,7 +591,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
             a for a in search_results.get(company, [])
             if article_passes_all_filters(a)
         ]
-        if st.session_state.filters["remove_duplicates"]:
+        if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
         total_count = len(filtered_articles)
 
@@ -846,24 +798,6 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
     matched_industry = [kw for kw in industry_keywords if kw in text_long]
     return list(set(matched_common + matched_industry))
 
-def render_articles():
-    """filtered_results에 있는 기사 렌더링 + 선택 체크박스(on_change 콜백으로)"""
-    for kw, articles in st.session_state.filtered_results.items():
-        st.markdown(f"#### {kw} ({len(articles)}건)")
-        limit = st.session_state.show_limit.get(kw, 5)
-
-        for art in articles[:limit]:
-            colA, colB = st.columns([0.05, 0.95])
-            with colA:
-                st.checkbox(
-                    "",
-                    value=art.get("id") in st.session_state.selected_articles,
-                    key=f"sel_{kw}_{art.get('id', art.get('link'))}",
-                    on_change=toggle_article_selection,
-                    args=(art.get("id", art.get("link")),)
-                )
-            with colB:
-                st.write(f"[{art['title']}]({art['link']}) – {art['source']} – {art['date']}")
 
 def render_articles_with_single_summary_and_telegram(
     results, show_limit, show_sentiment_badge=True, enable_summary=True
@@ -935,7 +869,7 @@ def render_articles_with_single_summary_and_telegram(
             # 1) 현재 선택된 기사 목록 수집
             selected_to_process = []
             industry_keywords_all = []
-            if st.session_state.filters["industry_filter"]:
+            if st.session_state.get("use_industry_filter", False):
                 for sublist in st.session_state.industry_major_sub_map.values():
                     industry_keywords_all.extend(sublist)
 
@@ -1032,7 +966,7 @@ def render_important_article_review_and_download():
                 filtered_results_for_important = {}
                 for keyword, articles in st.session_state.search_results.items():
                     filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-                    if st.session_state.filters["remove_duplicates"]:
+                    if st.session_state.get("remove_duplicate_articles", False):
                         filtered_articles = remove_duplicates(filtered_articles)
                     if filtered_articles:
                         filtered_results_for_important[keyword] = filtered_articles
@@ -1246,7 +1180,7 @@ def render_important_article_review_and_download():
 
         # 산업 키워드 전체 수집 (필터용)
         industry_keywords_all = []
-        if st.session_state.filters["industry_filter"]:
+        if st.session_state.get("use_industry_filter", False):
             for sublist in st.session_state.industry_major_sub_map.values():
                 industry_keywords_all.extend(sublist)
         
@@ -1303,5 +1237,22 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+if st.session_state.search_results:
+    filtered_results = {}
+    for keyword, articles in st.session_state.search_results.items():
+        filtered_articles = [a for a in articles if article_passes_all_filters(a)]
         
-render_articles()  
+        # --- 중복 기사 제거 처리 ---
+        if st.session_state.get("remove_duplicate_articles", False):
+            filtered_articles = remove_duplicates(filtered_articles)
+        
+        if filtered_articles:
+            filtered_results[keyword] = filtered_articles
+
+    render_articles_with_single_summary_and_telegram(
+        filtered_results,
+        st.session_state.show_limit,
+        show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
+        enable_summary=st.session_state.get("enable_summary", True)
+    )
