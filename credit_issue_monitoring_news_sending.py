@@ -1210,25 +1210,25 @@ def render_important_article_review_and_download():
         # --- 엑셀 다운로드 (선택기사 방식과 동일) ---
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
-            articles = st.session_state.get("important_articles_preview", [])
-            selected_indexes = st.session_state.get("important_selected_index", [])
+        articles = st.session_state.get("important_articles_preview", [])
+        selected_indexes = st.session_state.get("important_selected_index", [])
         
-            # 엑셀에 포함될 중요기사로 체크된 기사들만 준비
-            final_important_articles = [articles[i] for i in selected_indexes]
+        # 엑셀에 포함될 중요기사로 체크된 기사들만 준비
+        final_important_articles = [articles[i] for i in selected_indexes]
         
-            excel_data = get_excel_download_with_favorite_and_excel_company_col(
-                final_important_articles,         # 체크된 중요기사만 summary_data로
-                favorite_categories,              # config.json 기반
-                excel_company_categories,         # config.json 기반
-                st.session_state.search_results   # 전체기사 pool
-            )
+        excel_data = get_excel_download_with_favorite_and_excel_company_col(
+            final_important_articles,         # 체크된 중요기사만 summary_data로
+            favorite_categories,              # config.json 기반
+            excel_company_categories,         # config.json 기반
+            st.session_state.search_results   # 전체기사 pool
+        )
         
-            st.download_button(
-                label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
-                data=excel_data.getvalue(),
-                file_name="중요뉴스_최종선정_양식.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        st.download_button(
+            label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
+            data=excel_data.getvalue(),
+            file_name="중요뉴스_최종선정_양식.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 if st.session_state.search_results:
     filtered_results = {}
