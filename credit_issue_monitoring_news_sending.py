@@ -792,6 +792,16 @@ def safe_title(val):
         return "제목없음"
     return str(val)
 
+def clean_excel_formula_text(text):
+    """엑셀 수식(HYPERLINK)에서 깨짐 방지용 전처리"""
+    if not isinstance(text, str):  # None이나 숫자이면 문자 변환
+        text = str(text)
+    text = text.replace('"', "'")   # 큰따옴표 → 홑따옴표
+    text = text.replace('\n', ' ')  # 줄바꿈 → 공백
+    text = text.replace('\r', '')
+    text = text.replace('=', '')    # 혹시 셀 첫문자가 =이면 제거
+    return text[:250]  # 안전하게 255자 미만으로 제한
+
 def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories, search_results):
     company_order = []
     for cat in [
@@ -819,7 +829,6 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     for idx, company in enumerate(company_order):
         excel_company_name = excel_company_order[idx] if idx < len(excel_company_order) else ""
 
-        # ✅ 여기서 필터 적용 + 중복 제거 후 건수 계산
         filtered_articles = [
             a for a in search_results.get(company, [])
             if article_passes_all_filters(a)
@@ -833,18 +842,18 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         neg_news = comp_articles[comp_articles["감성"] == "부정"].sort_values(by="날짜", ascending=False)
 
         if not pos_news.empty:
-            pos_date = pos_news.iloc[0]["날짜"]
-            pos_title = pos_news.iloc[0]["기사제목"]
-            pos_link = pos_news.iloc[0]["링크"]
+            pos_date = clean_excel_formula_text(pos_news.iloc[0]["날짜"])
+            pos_title = clean_excel_formula_text(pos_news.iloc[0]["기사제목"])
+            pos_link = clean_excel_formula_text(pos_news.iloc[0]["링크"])
             pos_display = f'({pos_date}) {pos_title}'
             pos_hyperlink = f'=HYPERLINK("{pos_link}", "{pos_display}")'
         else:
             pos_hyperlink = ""
 
         if not neg_news.empty:
-            neg_date = neg_news.iloc[0]["날짜"]
-            neg_title = neg_news.iloc[0]["기사제목"]
-            neg_link = neg_news.iloc[0]["링크"]
+            neg_date = clean_excel_formula_text(neg_news.iloc[0]["날짜"])
+            neg_title = clean_excel_formula_text(neg_news.iloc[0]["기사제목"])
+            neg_link = clean_excel_formula_text(neg_news.iloc[0]["링크"])
             neg_display = f'({neg_date}) {neg_title}'
             neg_hyperlink = f'=HYPERLINK("{neg_link}", "{neg_display}")'
         else:
@@ -853,7 +862,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         result_rows.append({
             "기업명": company,
             "표기명": excel_company_name,
-            "건수": total_count,  # ✅ 새로 추가
+            "건수": total_count,
             "긍정 뉴스": pos_hyperlink,
             "부정 뉴스": neg_hyperlink
         })
@@ -862,79 +871,6 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_result.to_excel(writer, index=False, sheet_name='뉴스요약')
-    output.seek(0)
-    return output
-
-def build_important_excel_same_format(
-    important_articles,
-    favorite_categories,
-    excel_company_categories,
-    search_results
-):
-    """
-    중요기사 자동 추출 결과를 기존 '맞춤 엑셀 양식'과 동일한 포맷으로 저장
-    단, C열에 각 키워드별 뉴스 검색 결과 건수를 넣고,
-    기존 C/D열(긍정 뉴스/부정 뉴스)을 각각 한 열씩 오른쪽으로 밀림.
-    
-    Parameters:
-    - important_articles: 중요 기사 리스트(딕셔너리, 회사명, 감성, 제목, 링크, 날짜 등 포함)
-    - favorite_categories: 카테고리별 기업 리스트 딕셔너리
-    - excel_company_categories: 카테고리별 엑셀 표기명 리스트 딕셔너리
-    - search_results: 각 키워드별(회사명) 전체 뉴스 검색 결과 리스트 딕셔너리
-    """
-    company_order = []
-    excel_company_order = []
-    for cat in [
-        "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행",
-        "카드사", "캐피탈", "지주사", "에너지", "발전",
-        "자동차", "전기/전자", "소비재", "비철/철강", "석유화학",
-        "건설", "특수채"
-    ]:
-        company_order.extend(favorite_categories.get(cat, []))
-        excel_company_order.extend(excel_company_categories.get(cat, []))
-
-    rows = []
-    for i, comp in enumerate(company_order):
-        display_name = excel_company_order[i] if i < len(excel_company_order) else ""
-
-        # 전체 검색된 뉴스 기사 수 (원본)
-        filtered_articles = [
-            a for a in search_results.get(comp, [])
-            if article_passes_all_filters(a)
-        ]
-        filtered_articles_no_dup = remove_duplicates(filtered_articles)
-        total_count = len(filtered_articles_no_dup)
-        pos_article = ""
-        neg_article = ""
-
-        # 중요기사에서 해당 기업 기사 필터링
-        articles = [a for a in important_articles if a.get("회사명") == comp]
-
-        for article in articles:
-            link = article.get("링크", "")
-            title = article.get("제목", "")
-            date = article.get("날짜", "")
-            display_text = f"({date}) {title}"
-            hyperlink = f'=HYPERLINK("{link}", "{display_text}")' if link else ""
-
-            if article.get("감성") == "긍정":
-                pos_article = hyperlink
-            elif article.get("감성") == "부정":
-                neg_article = hyperlink
-
-        rows.append({
-            "기업명": comp,
-            "표기명": display_name,
-            "건수": total_count,
-            "긍정 뉴스": pos_article,
-            "부정 뉴스": neg_article
-        })
-
-    df = pd.DataFrame(rows, columns=["기업명", "표기명", "건수", "긍정 뉴스", "부정 뉴스"])
-
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="중요뉴스_양식")
     output.seek(0)
     return output
 
