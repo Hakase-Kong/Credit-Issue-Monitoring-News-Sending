@@ -1224,15 +1224,15 @@ def render_important_article_review_and_download():
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
 
         final_important_articles = [articles[i] for i in st.session_state.get("important_selected_index", [])]
-        st.write(final_important_articles)  # 실제 데이터 확인(디버깅용, 배포시 제거해도 됨)
-
+        st.write(final_important_articles)  # <--- 데이터 확인
+        
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
             final_important_articles,
             favorite_categories,
             excel_company_categories,
             st.session_state.search_results
         )
-
+        
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=excel_data.getvalue(),
