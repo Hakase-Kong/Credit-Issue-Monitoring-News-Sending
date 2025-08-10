@@ -810,14 +810,14 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
-        # 반드시 articles에 값이 있어야 버튼이 보임, 조건 개선!
+        # --- 세션 값 안전하게 받아오기 ---
         articles = st.session_state.get("important_articles_preview", [])
-        st.write(f"중요기사 갯수(세션): {len(articles)}")
+        st.write("중요기사 세션 타입/개수:", type(articles), len(articles))
         for i, a in enumerate(articles):
-            st.write(i, a.get("회사명"), a.get("감성"), a.get("제목"))
-        
-        # 안내 메시지 및 버튼 미출력 조건 명확화
-        if articles is None or len(articles) == 0:
+            st.write("기사", i, a.get("회사명"), a.get("감성"), a.get("제목"))
+
+        # --- 반드시 리스트 타입이고 1개 이상일 때만 안내 없이 진행 ---
+        if not isinstance(articles, list) or len(articles) == 0:
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
             output_excel = build_important_excel_same_format(
                 [],
@@ -826,16 +826,15 @@ def render_important_article_review_and_download():
                 st.session_state.search_results
             )
             st.download_button(
-                label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
+                label="📥 중요 기사 최종 엑셀 다운로드 (빈 양식)",
                 data=output_excel.getvalue(),
                 file_name="중요뉴스_최종선정_양식.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             return
-        
-        st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
 
-        # --- 중요기사 체크박스 리스트 (인덱스 기반) ---
+        # --- 여기부터는 반드시 1개 이상 있을 때만 버튼 및 체크박스 렌더 ---
+        st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
         new_selection = []
         for idx, article in enumerate(articles):
             checked = st.checkbox(
@@ -848,7 +847,6 @@ def render_important_article_review_and_download():
         st.session_state["important_selected_index"] = new_selection
 
         st.markdown("---")
-        # --- 3개 버튼 한 줄로 ---
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
         # ➕ 선택 기사 추가
@@ -916,7 +914,6 @@ def render_important_article_review_and_download():
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 important = st.session_state.get("important_articles_preview", [])
-                # 인덱스 역순으로 삭제(중간 삭제 충돌 방지)
                 for idx in sorted(st.session_state["important_selected_index"], reverse=True):
                     if 0 <= idx < len(important):
                         important.pop(idx)
@@ -980,7 +977,7 @@ def render_important_article_review_and_download():
                 st.success("중요 기사 교체 완료: " + new_article["제목"])
                 st.rerun()
 
-        # --- 엑셀 다운로드 ---
+        # --- 엑셀 다운로드 --- 반드시 리스트 1개 이상이면 버튼 항상 노출
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
         output_excel = build_important_excel_same_format(
