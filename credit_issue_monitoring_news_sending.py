@@ -970,11 +970,11 @@ def render_important_article_review_and_download():
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
         output_excel = build_important_excel_same_format(
-            st.session_state["important_articles_preview"],
+            st.session_state.get("important_articles_preview", []),
             favorite_categories,
             excel_company_categories,
             st.session_state.search_results
-        )
+        )       
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=output_excel.getvalue(),
