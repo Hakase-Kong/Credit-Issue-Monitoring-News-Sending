@@ -1019,6 +1019,8 @@ def render_articles_with_single_summary_and_telegram(
         render_important_article_review_and_download()
 
 def render_important_article_review_and_download():
+    import streamlit as st
+
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
         
@@ -1040,19 +1042,34 @@ def render_important_article_review_and_download():
                     industry_keywords=st.session_state.get("industry_sub", []),
                     favorites=favorite_categories
                 )
+
+                # 중요기사 데이터 컬럼 키 통일
+                for i, art in enumerate(important_articles):
+                    important_articles[i] = {
+                        "키워드": art.get("키워드") or art.get("회사명") or "",   # 혹시 회사명 기반 생성시 호환
+                        "기사제목": art.get("기사제목") or art.get("제목") or art.get("title") or "",
+                        "감성": art.get("감성", ""),
+                        "링크": art.get("링크") or art.get("link") or "",
+                        "날짜": art.get("날짜") or art.get("date") or "",
+                        "출처": art.get("출처") or art.get("source") or ""
+                    }
+
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
         articles = st.session_state.get("important_articles_preview", [])
-        
-        # 후보가 없을 때
+        selected_indexes = st.session_state.get("important_selected_index", [])
+
         if not articles:
             st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
 
-            # 빈 데이터로 다운로드 파일 생성 (맞춤 양식)
             empty_excel = get_excel_download_with_favorite_and_excel_company_col(
-                [], favorite_categories, excel_company_categories, st.session_state.search_results
+                [],
+                favorite_categories,
+                excel_company_categories,
+                st.session_state.search_results
             )
+
             st.download_button(
                 label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
                 data=empty_excel.getvalue(),
@@ -1060,14 +1077,13 @@ def render_important_article_review_and_download():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             return
-        
+
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
 
-        # --- 중요기사 체크박스 ---
         new_selection = []
         for idx, article in enumerate(articles):
             checked = st.checkbox(
-                f"{article['회사명']} | {article['감성']} | {article['제목']}",
+                f"{article.get('키워드', '')} | {article.get('감성', '')} | {article.get('기사제목', '')}",
                 key=f"important_chk_{idx}",
                 value=(idx in st.session_state.get("important_selected_index", []))
             )
@@ -1078,7 +1094,7 @@ def render_important_article_review_and_download():
         st.markdown("---")
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
-        # ➕ 선택 기사 추가
+        # ➕ 선택 기사 추가 (컬럼명 통일)
         with col_add:
             if st.button("➕ 선택 기사 추가"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1118,9 +1134,9 @@ def render_important_article_review_and_download():
                             )
 
                         new_article = {
-                            "회사명": keyword,
+                            "키워드": keyword,
+                            "기사제목": selected_article["title"],
                             "감성": sentiment or "",
-                            "제목": selected_article["title"],
                             "링크": selected_article["link"],
                             "날짜": selected_article["date"],
                             "출처": selected_article["source"]
@@ -1128,7 +1144,6 @@ def render_important_article_review_and_download():
                         if not any(a["링크"] == new_article["링크"] for a in important):
                             important.append(new_article)
                             added_count += 1
-                        # 선택 해제
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
 
@@ -1175,7 +1190,6 @@ def render_important_article_review_and_download():
                             break
                     if selected_article:
                         break
-
                 if not selected_article:
                     st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
                     return
@@ -1193,9 +1207,9 @@ def render_important_article_review_and_download():
                     )
 
                 new_article = {
-                    "회사명": keyword,
+                    "키워드": keyword,
+                    "기사제목": selected_article["title"],
                     "감성": sentiment or "",
-                    "제목": selected_article["title"],
                     "링크": selected_article["link"],
                     "날짜": selected_article["date"],
                     "출처": selected_article["source"]
@@ -1207,22 +1221,20 @@ def render_important_article_review_and_download():
                 st.success("중요 기사 교체 완료")
                 st.rerun()
 
-        # --- 엑셀 다운로드 (선택기사 방식과 동일) ---
+        # --- 엑셀 다운로드 ---
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
-        articles = st.session_state.get("important_articles_preview", [])
-        selected_indexes = st.session_state.get("important_selected_index", [])
-        
-        # 엑셀에 포함될 중요기사로 체크된 기사들만 준비
-        final_important_articles = [articles[i] for i in selected_indexes]
-        
+
+        # 선택된 중요기사만 summary_data로 넘김
+        final_important_articles = [articles[i] for i in st.session_state.get("important_selected_index", [])]
+
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
-            final_important_articles,         # 체크된 중요기사만 summary_data로
-            favorite_categories,              # config.json 기반
-            excel_company_categories,         # config.json 기반
-            st.session_state.search_results   # 전체기사 pool
+            final_important_articles,
+            favorite_categories,
+            excel_company_categories,
+            st.session_state.search_results
         )
-        
+
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=excel_data.getvalue(),
