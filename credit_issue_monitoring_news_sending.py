@@ -785,6 +785,22 @@ def extract_keyword_from_link(search_results, article_link):
                 return kw
     return ""
 
+def build_important_excel_same_format(important_articles, favorite_categories, excel_company_categories, search_results):
+    """
+    중요한 기사 목록을 엑셀 파일(BytesIO) 형태로 생성해 반환
+    """
+    df = pd.DataFrame(important_articles)
+
+    # 원하는 열 순서 지정 (필요 시 수정)
+    columns = ["회사명", "감성", "제목", "링크", "날짜", "출처"]
+    df = df[[col for col in columns if col in df.columns]]
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="중요뉴스")
+    output.seek(0)
+    return output
+
 def render_important_article_review_and_download():
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
