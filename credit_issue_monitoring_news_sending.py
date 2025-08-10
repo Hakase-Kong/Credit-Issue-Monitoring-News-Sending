@@ -88,7 +88,6 @@ def exclude_by_title_keywords(title, exclude_keywords):
     return False
 
 # --- 세션 초기화 함수 ---
-python
 def init_session_state():
     """Streamlit 세션 변수들을 일괄 초기화"""
     defaults = {
