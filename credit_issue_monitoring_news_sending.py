@@ -1208,14 +1208,16 @@ def render_important_article_review_and_download():
         final_selected_indexes = st.session_state.get("important_selected_index", [])
         articles_source = st.session_state.get("important_articles_preview", [])
 
+        # 산업 키워드 전체 수집 (필터용)
         industry_keywords_all = []
         if st.session_state.get("use_industry_filter", False):
             for sublist in st.session_state.industry_major_sub_map.values():
                 industry_keywords_all.extend(sublist)
-
+        
         def enrich_article_for_excel(raw_article):
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
+            # 링크 캐시에 요약, 감성 등 있으면 가져옴
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
             sentiment, one_line, summary, full_text = None, "", "", ""
             for k, v in st.session_state.items():
@@ -1223,9 +1225,11 @@ def render_important_article_review_and_download():
                     one_line, summary, sentiment, full_text = v
                     break
             if not sentiment:
+                # 캐시 없으면 직접 요약/감성 얻기
                 one_line, summary, sentiment, full_text = summarize_article_from_url(
                     link, raw_article.get("기사제목", "")
                 )
+            # 필터 키워드 히트 계산
             filter_hits = matched_filter_keywords(
                 {"title": raw_article.get("기사제목", ""), "요약본": summary, "요약": one_line, "full_text": full_text},
                 ALL_COMMON_FILTER_KEYWORDS,
@@ -1243,19 +1247,20 @@ def render_important_article_review_and_download():
                 "출처": raw_article.get("출처", ""),
                 "full_text": full_text or "",
             }
-
+        
+        # 선택된 중요기사들(자동/수동 모두) → 엑셀 포맷으로 변환
         final_important_articles_full = [
             enrich_article_for_excel(articles_source[i])
             for i in final_selected_indexes if i < len(articles_source)
         ]
-
+        
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
             final_important_articles_full,
             favorite_categories,
             excel_company_categories,
             st.session_state.search_results
         )
-
+        
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=excel_data.getvalue(),
