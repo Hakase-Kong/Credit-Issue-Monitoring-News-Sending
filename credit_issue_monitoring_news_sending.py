@@ -834,6 +834,7 @@ def render_articles_with_single_summary_and_telegram(
                         updated_checked_left[k] = new_val
                     st.session_state.article_checked = updated_checked
                     st.session_state.article_checked_left = updated_checked_left
+                    st.rerun()
 
                 # 4) 전체 선택/해제 체크박스 (버벅임 개선)
                 st.checkbox(
