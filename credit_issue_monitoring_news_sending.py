@@ -1056,35 +1056,8 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
-        # 중요기사로 체크된 기사 리스트
         articles = st.session_state.get("important_articles_preview", [])
         selected_indexes = st.session_state.get("important_selected_index", [])
-        final_important_articles = [
-            {
-                "키워드": articles[i].get("키워드") or articles[i].get("회사명") or "",
-                "기사제목": articles[i].get("기사제목") or articles[i].get("제목") or articles[i].get("title") or "",
-                "감성": articles[i].get("감성", ""),
-                "링크": articles[i].get("링크") or articles[i].get("link") or "",
-                "날짜": articles[i].get("날짜") or articles[i].get("date") or "",
-                "출처": articles[i].get("출처") or articles[i].get("source") or ""
-            }
-            for i in selected_indexes if len(articles) > i
-        ]
-        st.write(final_important_articles)  # << 디버깅용. 리스트가 진짜 있는지 확인
-        
-        excel_data = get_excel_download_with_favorite_and_excel_company_col(
-            final_important_articles,
-            favorite_categories,
-            excel_company_categories,
-            st.session_state.search_results
-        )
-        
-        st.download_button(
-            label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
-            data=excel_data.getvalue(),
-            file_name="중요뉴스_최종선정_양식.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
 
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
         new_selection = []
@@ -1092,7 +1065,7 @@ def render_important_article_review_and_download():
             checked = st.checkbox(
                 f"{article.get('키워드', '')} | {article.get('감성', '')} | {article.get('기사제목', '')}",
                 key=f"important_chk_{idx}",
-                value=(idx in st.session_state.get("important_selected_index", []))
+                value=(idx in selected_indexes)
             )
             if checked:
                 new_selection.append(idx)
@@ -1140,7 +1113,6 @@ def render_important_article_review_and_download():
                                 selected_article["link"], selected_article["title"]
                             )
 
-                        # 반드시 key 통일
                         new_article = {
                             "키워드": keyword,
                             "기사제목": selected_article["title"],
@@ -1214,7 +1186,6 @@ def render_important_article_review_and_download():
                         selected_article["link"], selected_article["title"]
                     )
 
-                # 반드시 key 통일
                 new_article = {
                     "키워드": keyword,
                     "기사제목": selected_article["title"],
@@ -1230,20 +1201,61 @@ def render_important_article_review_and_download():
                 st.success("중요 기사 교체 완료")
                 st.rerun()
 
-        # --- 엑셀 다운로드 ---
+        # --- 맞춤 양식 동일 포맷 엑셀 다운로드 ---
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
 
-        final_important_articles = [articles[i] for i in st.session_state.get("important_selected_index", [])]
-        st.write(final_important_articles)  # <--- 데이터 확인
-        
+        final_selected_indexes = st.session_state.get("important_selected_index", [])
+        articles_source = st.session_state.get("important_articles_preview", [])
+
+        industry_keywords_all = []
+        if st.session_state.get("use_industry_filter", False):
+            for sublist in st.session_state.industry_major_sub_map.values():
+                industry_keywords_all.extend(sublist)
+
+        def enrich_article_for_excel(raw_article):
+            link = raw_article.get("링크", "")
+            keyword = raw_article.get("키워드", "")
+            cleaned_id = re.sub(r"\W+", "", link)[-16:]
+            sentiment, one_line, summary, full_text = None, "", "", ""
+            for k, v in st.session_state.items():
+                if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
+                    one_line, summary, sentiment, full_text = v
+                    break
+            if not sentiment:
+                one_line, summary, sentiment, full_text = summarize_article_from_url(
+                    link, raw_article.get("기사제목", "")
+                )
+            filter_hits = matched_filter_keywords(
+                {"title": raw_article.get("기사제목", ""), "요약본": summary, "요약": one_line, "full_text": full_text},
+                ALL_COMMON_FILTER_KEYWORDS,
+                industry_keywords_all
+            )
+            return {
+                "키워드": keyword,
+                "필터히트": ", ".join(filter_hits),
+                "기사제목": safe_title(raw_article.get("기사제목", "")),
+                "요약": one_line,
+                "요약본": summary,
+                "감성": sentiment,
+                "링크": link,
+                "날짜": raw_article.get("날짜", ""),
+                "출처": raw_article.get("출처", ""),
+                "full_text": full_text or "",
+            }
+
+        final_important_articles_full = [
+            enrich_article_for_excel(articles_source[i])
+            for i in final_selected_indexes if i < len(articles_source)
+        ]
+
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
-            final_important_articles,
+            final_important_articles_full,
             favorite_categories,
             excel_company_categories,
             st.session_state.search_results
         )
-        
+
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=excel_data.getvalue(),
