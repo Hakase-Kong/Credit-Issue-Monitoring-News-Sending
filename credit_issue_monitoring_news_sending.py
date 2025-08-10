@@ -815,9 +815,19 @@ def render_important_article_review_and_download():
 
         # 🔒 조건부: 후보 없으면 안내 메시지 + 엑셀버튼 미출력
         if not st.session_state.get("important_articles_preview"):
-            st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
+            st.info("아직 중요 기사 후보가 없습니다. ...")
+            # --- 엑셀 다운로드 버튼 일단 항상 노출! ---
+            output_excel = build_important_excel_same_format(
+                [], favorite_categories, excel_company_categories, st.session_state.search_results
+            )
+            st.download_button(
+                label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
+                data=output_excel.getvalue(),
+                file_name="중요뉴스_최종선정_양식.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
             return
-
+        
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
 
         # --- 중요기사 체크박스 리스트 (인덱스 기반) ---
@@ -981,6 +991,7 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        st.write('엑셀에 들어가는 중요기사 개수:', len(st.session_state["important_articles_preview"]))
         
 def matched_filter_keywords(article, common_keywords, industry_keywords):
     """
