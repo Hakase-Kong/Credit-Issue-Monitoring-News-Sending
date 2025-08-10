@@ -1056,24 +1056,35 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
+        # 중요기사로 체크된 기사 리스트
         articles = st.session_state.get("important_articles_preview", [])
         selected_indexes = st.session_state.get("important_selected_index", [])
-
-        if not articles:
-            st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
-            empty_excel = get_excel_download_with_favorite_and_excel_company_col(
-                [],
-                favorite_categories,
-                excel_company_categories,
-                st.session_state.search_results
-            )
-            st.download_button(
-                label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
-                data=empty_excel.getvalue(),
-                file_name="중요뉴스_최종선정_양식.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            return
+        final_important_articles = [
+            {
+                "키워드": articles[i].get("키워드") or articles[i].get("회사명") or "",
+                "기사제목": articles[i].get("기사제목") or articles[i].get("제목") or articles[i].get("title") or "",
+                "감성": articles[i].get("감성", ""),
+                "링크": articles[i].get("링크") or articles[i].get("link") or "",
+                "날짜": articles[i].get("날짜") or articles[i].get("date") or "",
+                "출처": articles[i].get("출처") or articles[i].get("source") or ""
+            }
+            for i in selected_indexes if len(articles) > i
+        ]
+        st.write(final_important_articles)  # << 디버깅용. 리스트가 진짜 있는지 확인
+        
+        excel_data = get_excel_download_with_favorite_and_excel_company_col(
+            final_important_articles,
+            favorite_categories,
+            excel_company_categories,
+            st.session_state.search_results
+        )
+        
+        st.download_button(
+            label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
+            data=excel_data.getvalue(),
+            file_name="중요뉴스_최종선정_양식.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
         new_selection = []
