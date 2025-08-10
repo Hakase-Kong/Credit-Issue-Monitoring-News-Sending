@@ -1286,9 +1286,6 @@ def render_articles_with_single_summary_and_telegram(
                             unsafe_allow_html=True
                         )
 
-                    st.session_state.article_checked_left[key] = checked
-                    st.session_state.article_checked[key] = checked
-
                 # 전체 선택/해제 체크박스
                 select_all = st.checkbox(
                     f"전체 기사 선택/해제 ({keyword})",
