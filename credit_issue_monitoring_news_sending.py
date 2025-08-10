@@ -1253,24 +1253,42 @@ def render_articles_with_single_summary_and_telegram(
     # ---------------------------- 뉴스 목록 열 ----------------------------
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
-
         for keyword, articles in results.items():
             with st.container(border=True):
                 st.markdown(f"**[{keyword}] ({len(articles)}건)**")
 
+                # 전체 선택/해제 체크박스
                 all_article_keys = []
                 for idx, article in enumerate(articles):
                     uid = re.sub(r"\W+", "", article["link"])[-16:]
                     key = f"{keyword}_{idx}_{uid}"
                     all_article_keys.append(key)
 
+                select_all = st.checkbox(
+                    f"전체 기사 선택/해제 ({keyword})",
+                    value=all(st.session_state.article_checked.get(k, False) for k in all_article_keys),
+                    key=f"{keyword}_select_all",
+                )
+                if select_all:
+                    for k in all_article_keys:
+                        st.session_state.article_checked[k] = True
+                        st.session_state.article_checked_left[k] = True
+                else:
+                    for k in all_article_keys:
+                        st.session_state.article_checked[k] = False
+                        st.session_state.article_checked_left[k] = False
+
+                # 개별 기사 체크박스
+                for idx, article in enumerate(articles):
+                    uid = re.sub(r"\W+", "", article["link"])[-16:]
+                    key = f"{keyword}_{idx}_{uid}"
                     cache_key = f"summary_{key}"
                     cols = st.columns([0.04, 0.96])
                     with cols[0]:
                         checked = st.checkbox(
-                            "", 
-                            value=st.session_state.article_checked.get(key, False), 
-                            key=f"news_{key}"
+                            "",
+                            value=st.session_state.article_checked.get(key, False),
+                            key=f"news_{key}",
                         )
                     with cols[1]:
                         sentiment = ""
@@ -1281,35 +1299,25 @@ def render_articles_with_single_summary_and_telegram(
                             if sentiment else ""
                         )
                         st.markdown(
-                            f"<span class='news-title'><a href='{article['link']}' target='_blank'>"
-                            f"{article['title']}</a></span> {badge_html} {article['date']} | {article['source']}",
-                            unsafe_allow_html=True
+                            f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
+                            f"{badge_html} {article['date']} | {article['source']}",
+                            unsafe_allow_html=True,
                         )
-
-                # 전체 선택/해제 체크박스
-                select_all = st.checkbox(
-                    f"전체 기사 선택/해제 ({keyword})",
-                    value=all(
-                        st.session_state.article_checked.get(k, False)
-                        for k in all_article_keys
-                    ),
-                    key=f"{keyword}_select_all",
-                )
-                for k in all_article_keys:
-                    st.session_state.article_checked[k] = select_all
-                    st.session_state.article_checked_left[k] = select_all
+                    st.session_state.article_checked_left[key] = checked
+                    if checked:
+                        st.session_state.article_checked[key] = True
 
     # ---------------------------- 선택 기사 요약 열 ----------------------------
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
 
-            # 선택된 기사 목록
+            # 1) 현재 선택된 기사 목록 수집
             selected_to_process = []
             industry_keywords_all = []
             if st.session_state.get("use_industry_filter", False):
-                for sub in st.session_state.industry_major_sub_map.values():
-                    industry_keywords_all.extend(sub)
+                for sublist in st.session_state.industry_major_sub_map.values():
+                    industry_keywords_all.extend(sublist)
 
             for keyword, articles in results.items():
                 for idx, article in enumerate(articles):
@@ -1318,6 +1326,7 @@ def render_articles_with_single_summary_and_telegram(
                     if st.session_state.article_checked.get(key, False):
                         selected_to_process.append((keyword, idx, article))
 
+            # 2) 병렬 처리로 요약/감성분석 모두 마친 후 결과 리스트 구성
             def process_article(item):
                 keyword, idx, art = item
                 cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
@@ -1347,34 +1356,16 @@ def render_articles_with_single_summary_and_telegram(
                     "full_text": full_text or "",
                 }
 
-            with ThreadPoolExecutor(max_workers=10) as exe:
-                selected_articles = list(exe.map(process_article, selected_to_process))
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                selected_articles = list(executor.map(process_article, selected_to_process))
 
-            # 렌더링 + X버튼
-            for idx, art in enumerate(selected_articles):
-                cols_title = st.columns([0.9, 0.1])
-                with cols_title[0]:
-                    st.markdown(
-                        f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>"
-                        f"{art['기사제목']}</a></span> "
-                        f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
-                        unsafe_allow_html=True,
-                    )
-                with cols_title[1]:
-                    link_uid = re.sub(r"\W+", "", art['링크'])[-8:]
-                    remove_btn_key = f"remove_summary_{idx}_{link_uid}"
-                    if st.button("❌", key=remove_btn_key):
-                        uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
-                        target_key = None
-                        for k in st.session_state.article_checked.keys():
-                            if k.endswith(uid_tail):
-                                target_key = k
-                                break
-                        if target_key:
-                            st.session_state.article_checked[target_key] = False
-                            st.session_state.article_checked_left[target_key] = False
-                        st.rerun()
-                        
+            # 3) 전체 결과를 한 번에 렌더링
+            for art in selected_articles:
+                st.markdown(
+                    f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
+                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
+                    unsafe_allow_html=True,
+                )
                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
@@ -1386,7 +1377,7 @@ def render_articles_with_single_summary_and_telegram(
             st.session_state.selected_articles = selected_articles
             st.write(f"선택된 기사 개수: {len(selected_articles)}")
 
-            # 다운로드 / 전체 해제
+            # 다운로드 / 전체해제 버튼
             col_dl1, col_dl2 = st.columns([0.55, 0.45])
             with col_dl1:
                 st.download_button(
@@ -1398,11 +1389,13 @@ def render_articles_with_single_summary_and_telegram(
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
+
             with col_dl2:
                 if st.button("🗑 선택 해제 (전체)"):
-                    for key in st.session_state.article_checked.keys():
+                    # 선택 해제
+                    for key in list(st.session_state.article_checked.keys()):
                         st.session_state.article_checked[key] = False
-                    for key in st.session_state.article_checked_left.keys():
+                    for key in list(st.session_state.article_checked_left.keys()):
                         st.session_state.article_checked_left[key] = False
                     st.rerun()
 
