@@ -1368,14 +1368,16 @@ def render_articles_with_single_summary_and_telegram(
                     remove_btn_key = f"remove_summary_{idx}_{link_uid}"
                     if st.button("❌", key=remove_btn_key):
                         uid_tail = re.sub(r'\W+', '', art['링크'])[-16:]
-                        # 해당 기사만 체크 해제
-                        for k in list(st.session_state.article_checked.keys()):
+                        target_key = None
+                        for k in st.session_state.article_checked.keys():
                             if k.endswith(uid_tail):
-                                st.session_state.article_checked[k] = False
-                                st.session_state.article_checked_left[k] = False
+                                target_key = k
                                 break
+                        if target_key:
+                            st.session_state.article_checked[target_key] = False
+                            st.session_state.article_checked_left[target_key] = False
                         st.rerun()
-
+                        
                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
