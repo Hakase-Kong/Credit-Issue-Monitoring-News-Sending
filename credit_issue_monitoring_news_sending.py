@@ -92,7 +92,7 @@ def init_session_state():
         "industry_major_sub_map": {},
         "end_date": datetime.today().date(),
         "start_date": datetime.today().date() - timedelta(days=7),
-        "remove_duplicate_articles": False,
+        "remove_duplicate_articles": True,
         "require_exact_keyword_in_title_or_content": True,
         "filter_allowed_sources_only": False,
         "use_industry_filter": True,
@@ -786,6 +786,7 @@ def extract_keyword_from_link(search_results, article_link):
     return ""
 
 def render_important_article_review_and_download():
+    st.write("중요기사프리뷰 갯수:", len(st.session_state.get("important_articles_preview", [])))
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
         
@@ -973,6 +974,7 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        st.write("엑셀 다운로드 부분 실행됨")
         
 def matched_filter_keywords(article, common_keywords, industry_keywords):
     """
