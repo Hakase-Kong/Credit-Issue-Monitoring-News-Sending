@@ -787,17 +787,63 @@ def extract_keyword_from_link(search_results, article_link):
 
 def build_important_excel_same_format(important_articles, favorite_categories, excel_company_categories, search_results):
     """
-    중요한 기사 목록을 엑셀 파일(BytesIO) 형태로 생성해 반환
+    중요기사 목록을 '맞춤 양식' 엑셀 파일로 생성하여 BytesIO 형태로 반환
     """
+
+    # DataFrame 생성
     df = pd.DataFrame(important_articles)
 
-    # 원하는 열 순서 지정 (필요 시 수정)
-    columns = ["회사명", "감성", "제목", "링크", "날짜", "출처"]
-    df = df[[col for col in columns if col in df.columns]]
+    # 맞춤 항목 순서 지정
+    desired_columns = ["산업대분류", "산업소분류", "회사명", "감성", "제목", "링크", "날짜", "출처"]
+    for col in desired_columns:
+        if col not in df.columns:
+            df[col] = ""
 
+    # 산업대분류/소분류 채우기
+    for idx, row in df.iterrows():
+        company = row["회사명"]
+        major_cat, sub_cat = "", ""
+        # 소분류 매칭
+        for sub, comps in favorite_categories.items():
+            if company in comps:
+                sub_cat = sub
+                break
+        # 대분류 매칭
+        for major, subs in excel_company_categories.items():
+            if sub_cat in subs:
+                major_cat = major
+                break
+        df.at[idx, "산업대분류"] = major_cat
+        df.at[idx, "산업소분류"] = sub_cat
+
+    # 날짜 포맷
+    if "날짜" in df.columns:
+        try:
+            df["날짜"] = pd.to_datetime(df["날짜"]).dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    # 열 순서 재정렬
+    df = df[desired_columns]
+
+    # 엑셀 생성
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="중요뉴스")
+
+        # 서식
+        workbook  = writer.book
+        worksheet = writer.sheets["중요뉴스"]
+
+        header_format = workbook.add_format({
+            "bold": True, "bg_color": "#DCE6F1", "border": 1,
+            "align": "center", "valign": "vcenter"
+        })
+
+        for col_num, value in enumerate(df.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+            worksheet.set_column(col_num, col_num, 20)
+
     output.seek(0)
     return output
 
@@ -826,11 +872,7 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
-        # 반드시 articles에 값이 있어야 버튼이 보임, 조건 개선!
         articles = st.session_state.get("important_articles_preview", [])
-        st.write(f"중요기사 갯수(세션): {len(articles)}")
-        for i, a in enumerate(articles):
-            st.write(i, a.get("회사명"), a.get("감성"), a.get("제목"))
         
         # 안내 메시지 및 버튼 미출력 조건 명확화
         if articles is None or len(articles) == 0:
@@ -1000,11 +1042,12 @@ def render_important_article_review_and_download():
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
         output_excel = build_important_excel_same_format(
-            st.session_state["important_articles_preview"],
+            articles,
             favorite_categories,
             excel_company_categories,
             st.session_state.search_results
         )
+
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=output_excel.getvalue(),
