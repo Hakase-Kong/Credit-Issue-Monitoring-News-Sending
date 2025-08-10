@@ -1018,8 +1018,6 @@ def render_articles_with_single_summary_and_telegram(
         render_important_article_review_and_download()
 
 def render_important_article_review_and_download():
-    import streamlit as st
-
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
@@ -1041,15 +1039,15 @@ def render_important_article_review_and_download():
                     industry_keywords=st.session_state.get("industry_sub", []),
                     favorites=favorite_categories
                 )
-                # 반드시 dict key 통일
+                # key naming 통일
                 for i, art in enumerate(important_articles):
                     important_articles[i] = {
                         "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
                         "기사제목": art.get("기사제목") or art.get("제목") or art.get("title") or "",
                         "감성": art.get("감성", ""),
-                        "링크": art.get("링크") or art.get("link") or "",
-                        "날짜": art.get("날짜") or art.get("date") or "",
-                        "출처": art.get("출처") or art.get("source") or ""
+                        "링크": art.get("링크") or art.get("link", ""),
+                        "날짜": art.get("날짜") or art.get("date", ""),
+                        "출처": art.get("출처") or art.get("source", "")
                     }
 
                 st.session_state["important_articles_preview"] = important_articles
@@ -1059,48 +1057,55 @@ def render_important_article_review_and_download():
         selected_indexes = st.session_state.get("important_selected_index", [])
 
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
+
+        # ====== 병렬 요약 준비 ======
+        from concurrent.futures import ThreadPoolExecutor
+        one_line_map = {}
+        to_summarize = []
+
+        for idx, article in enumerate(articles):
+            link = article.get("링크", "")
+            cleaned_id = re.sub(r"\W+", "", link)[-16:] if link else ""
+            in_cache = False
+            for k, v in st.session_state.items():
+                if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
+                    one_line_map[idx] = v[0]
+                    in_cache = True
+                    break
+            if not in_cache and link:
+                to_summarize.append((idx, link, article.get("기사제목", "")))
+
+        if to_summarize:
+            with st.spinner("중요 기사 요약 생성 중..."):
+                def get_one_line(args):
+                    idx, link, title = args
+                    one_line, _, _, _ = summarize_article_from_url(link, title, do_summary=True)
+                    return idx, one_line
+
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for idx, one_line in executor.map(get_one_line, to_summarize):
+                        one_line_map[idx] = one_line
+        # ====== 병렬 요약 완료 ======
+
         new_selection = []
         for idx, article in enumerate(articles):
-            # 체크박스 1행: 키워드 | 감성 | 제목
             checked = st.checkbox(
                 f"{article.get('키워드', '')} | {article.get('감성', '')} | {article.get('기사제목', '')}",
                 key=f"important_chk_{idx}",
                 value=(idx in selected_indexes)
             )
-
-            # ---- ✅ '한 줄 요약' 행 추가 ----
-            link = article.get("링크", "")
-            cleaned_id = re.sub(r"\W+", "", link)[-16:] if link else ""
-            one_line_summary = None
-        
-            # 1) 캐시에서 찾기
-            for k, v in st.session_state.items():
-                if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                    one_line_summary = v[0]  # tuple: (한줄요약, 전체요약, 감성, full_text)
-                    break
-        
-            # 2) 없으면 생성
-            if not one_line_summary and link:
-                one_line_summary, _, _, _ = summarize_article_from_url(
-                    link, article.get("기사제목", ""), do_summary=True
-                )
-        
-            # 3) 표시
-            if one_line_summary:
+            if idx in one_line_map and one_line_map[idx]:
                 st.markdown(
-                    f"<span style='color:gray;font-style:italic;'>{one_line_summary}</span>",
+                    f"<span style='color:gray;font-style:italic;'>{one_line_map[idx]}</span>",
                     unsafe_allow_html=True
                 )
-            # --------------------------------
-        
             if checked:
                 new_selection.append(idx)
-        
+
         st.session_state["important_selected_index"] = new_selection
-
         st.markdown("---")
-        col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
+        col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
         # ➕ 선택 기사 추가
         with col_add:
             if st.button("➕ 선택 기사 추가"):
