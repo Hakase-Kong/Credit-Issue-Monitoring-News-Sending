@@ -14,7 +14,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import html
 import json
+from datetime import datetime, timedelta
 
+# --- config.json 로드 ---
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
@@ -73,26 +75,42 @@ def exclude_by_title_keywords(title, exclude_keywords):
             return True
     return False
 
-# --- 세션 상태 변수 초기화 ---
-if "favorite_keywords" not in st.session_state:
-    st.session_state.favorite_keywords = set()
-if "search_results" not in st.session_state:
-    st.session_state.search_results = {}
-if "show_limit" not in st.session_state:
-    st.session_state.show_limit = {}
-if "search_triggered" not in st.session_state:
-    st.session_state.search_triggered = False
-if "selected_articles" not in st.session_state:
-    st.session_state.selected_articles = []
-if "cat_major_autoset" not in st.session_state:
-    st.session_state.cat_major_autoset = []
-if "important_articles_preview" not in st.session_state:
-    st.session_state.important_articles_preview = []
-if "important_selected_index" not in st.session_state:
-    st.session_state["important_selected_index"] = []
-if "article_checked_left" not in st.session_state:
-    st.session_state.article_checked_left = {}
+def init_session_state():
+    """Streamlit 세션 변수들을 일괄 초기화"""
+    defaults = {
+        "favorite_keywords": set(),
+        "search_results": {},
+        "show_limit": {},
+        "search_triggered": False,
+        "selected_articles": [],
+        "cat_multi": [],
+        "cat_major_autoset": [],
+        "important_articles_preview": [],
+        "important_selected_index": [],
+        "article_checked_left": {},
+        "article_checked": {},
+        "industry_major_sub_map": {},
+        "end_date": datetime.today().date(),
+        "start_date": datetime.today().date() - timedelta(days=7),
+        "remove_duplicate_articles": False,
+        "require_exact_keyword_in_title_or_content": True,
+        "filter_allowed_sources_only": False,
+        "use_industry_filter": True,
+        "show_sentiment_badge": False,
+        "enable_summary": True,
+        "keyword_input": ""
+    }
+    for key, default_val in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_val
 
+# --- UI 시작 ---
+st.set_page_config(layout="wide")
+
+# ✅ 세션 변수 초기화 호출
+init_session_state()
+
+col_title, col_option1, col_option2 = st.columns([0.5, 0.2, 0.3])
 
 # --- 카테고리-산업 대분류 매핑 함수 ---
 def get_industry_majors_from_favorites(selected_categories):
@@ -143,11 +161,6 @@ for cat in selected_categories:
     st.session_state.favorite_keywords.update(favorite_categories[cat])
 
 # 날짜 입력 (기본 세팅: 종료일=오늘, 시작일=오늘-7일)
-today = datetime.today().date()
-if "end_date" not in st.session_state:
-    st.session_state["end_date"] = today
-if "start_date" not in st.session_state:
-    st.session_state["start_date"] = today - timedelta(days=7)
 date_col1, date_col2 = st.columns([1, 1])
 with date_col1:
     start_date = st.date_input("시작일", value=st.session_state["start_date"], key="start_date_input")
@@ -162,10 +175,6 @@ with st.expander("🧩 공통 필터 옵션 (항상 적용됨)"):
 
 with st.expander("🏭 산업별 필터 옵션 (대분류별 소분류 필터링)"):
     use_industry_filter = st.checkbox("이 필터 적용", value=True, key="use_industry_filter")
-    
-    # 세션 변수 초기화
-    if "industry_major_sub_map" not in st.session_state:
-        st.session_state.industry_major_sub_map = {}
 
     # UI: 선택된 산업군에서 자동 매핑된 대분류 추출
     selected_major_map = get_industry_majors_from_favorites(selected_categories)
@@ -990,12 +999,6 @@ def render_articles_with_single_summary_and_telegram(
     results, show_limit, show_sentiment_badge=True, enable_summary=True
 ):
     SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
-
-    if "article_checked" not in st.session_state:
-        st.session_state.article_checked = {}
-    if "article_checked_left" not in st.session_state:
-        st.session_state.article_checked_left = {}
-
     col_list, col_summary = st.columns([1, 1])
 
     # ---------------------------- 뉴스 목록 열 ----------------------------
