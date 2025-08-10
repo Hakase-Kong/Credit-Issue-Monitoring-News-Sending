@@ -809,30 +809,41 @@ def render_articles_with_single_summary_and_telegram(
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
         for keyword, articles in results.items():
-            # ✅ 접었다/펼칠 수 있는 expander로 변경
+            # ✅ 접었다/펼칠 수 있는 expander
             with st.expander(f"[{keyword}] ({len(articles)}건)", expanded=True):
-                # 전체 선택/해제 체크박스
+                # 1) 전체 기사 key 목록 생성
                 all_article_keys = []
                 for idx, article in enumerate(articles):
                     uid = re.sub(r"\W+", "", article["link"])[-16:]
                     key = f"{keyword}_{idx}_{uid}"
                     all_article_keys.append(key)
 
-                select_all = st.checkbox(
-                    f"전체 기사 선택/해제 ({keyword})",
-                    value=all(st.session_state.article_checked.get(k, False) for k in all_article_keys),
-                    key=f"{keyword}_select_all",
+                # 2) 현재 전체선택 상태 계산
+                select_all_key = f"{keyword}_select_all"
+                select_all_value = all(
+                    st.session_state.article_checked.get(k, False) for k in all_article_keys
                 )
-                if select_all:
-                    for k in all_article_keys:
-                        st.session_state.article_checked[k] = True
-                        st.session_state.article_checked_left[k] = True
-                else:
-                    for k in all_article_keys:
-                        st.session_state.article_checked[k] = False
-                        st.session_state.article_checked_left[k] = False
 
-                # 개별 기사 체크박스
+                # 3) 전체 선택/해제 상태 변경 함수
+                def toggle_select_all():
+                    new_val = st.session_state[select_all_key]
+                    updated_checked = st.session_state.article_checked.copy()
+                    updated_checked_left = st.session_state.article_checked_left.copy()
+                    for k in all_article_keys:
+                        updated_checked[k] = new_val
+                        updated_checked_left[k] = new_val
+                    st.session_state.article_checked = updated_checked
+                    st.session_state.article_checked_left = updated_checked_left
+
+                # 4) 전체 선택/해제 체크박스 (버벅임 개선)
+                st.checkbox(
+                    f"전체 기사 선택/해제 ({keyword})",
+                    value=select_all_value,
+                    key=select_all_key,
+                    on_change=toggle_select_all
+                )
+
+                # 5) 개별 기사 체크박스
                 for idx, article in enumerate(articles):
                     uid = re.sub(r"\W+", "", article["link"])[-16:]
                     key = f"{keyword}_{idx}_{uid}"
@@ -858,15 +869,13 @@ def render_articles_with_single_summary_and_telegram(
                             unsafe_allow_html=True,
                         )
                     st.session_state.article_checked_left[key] = checked
-                    if checked:
-                        st.session_state.article_checked[key] = True
+                    st.session_state.article_checked[key] = checked
 
     # ---------------------------- 선택 기사 요약 열 ----------------------------
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
-
-            # 1) 현재 선택된 기사 목록 수집
+            # 1) 현재 선택된 기사 수집
             selected_to_process = []
             industry_keywords_all = []
             if st.session_state.get("use_industry_filter", False):
