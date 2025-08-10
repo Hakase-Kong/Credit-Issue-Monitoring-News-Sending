@@ -545,7 +545,8 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
 
         items = response.json().get("items", [])
         for item in items:
-            title, desc = item["title"], item["description"]
+            title = html.unescape(re.sub("<.*?>", "", item["title"]))
+            desc  = html.unescape(re.sub("<.*?>", "", item["description"]))
             pub_date = datetime.strptime(item["pubDate"], "%a, %d %b %Y %H:%M:%S %z").date()
 
             if start_date and pub_date < start_date:
@@ -554,23 +555,19 @@ def fetch_naver_news(query, start_date=None, end_date=None, limit=1000, require_
                 continue
             if not filter_by_issues(title, desc, [query], require_keyword_in_title):
                 continue
-            if exclude_by_title_keywords(re.sub("<.*?>", "", title), EXCLUDE_TITLE_KEYWORDS):
+            if exclude_by_title_keywords(title, EXCLUDE_TITLE_KEYWORDS):
                 continue
 
-            source = item.get("source")
-            if not source or source.strip() == "":
-                source = infer_source_from_url(item.get("originallink", ""))
-                if not source:
-                    source = "Naver"
+            source = item.get("source") or infer_source_from_url(item.get("originallink", "")) or "Naver"
             source_domain = source.lower()
             if source_domain.startswith("www."):
                 source_domain = source_domain[4:]
 
-            # ✅ originallink 우선 저장, 없으면 fallback으로 일반 link 사용
             real_link = item.get("originallink") or item["link"]
 
             articles.append({
-                "title": re.sub("<.*?>", "", title),
+                "title": title,
+                "description": desc,  # 혹시 엑셀에 설명도 쓸 경우 대비
                 "link": real_link,
                 "date": pub_date.strftime("%Y-%m-%d"),
                 "source": source_domain
