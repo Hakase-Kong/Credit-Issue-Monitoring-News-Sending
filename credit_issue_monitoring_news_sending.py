@@ -810,15 +810,20 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
-        # 🔍 디버깅: 중요기사 프리뷰 리스트 갯수 출력 (필요시/개발중)
-        st.write(f"중요기사 갯수: {len(st.session_state.get('important_articles_preview', []))}")
-
-        # 🔒 조건부: 후보 없으면 안내 메시지 + 엑셀버튼 미출력
-        if not st.session_state.get("important_articles_preview"):
-            st.info("아직 중요 기사 후보가 없습니다. ...")
-            # --- 엑셀 다운로드 버튼 일단 항상 노출! ---
+        # 반드시 articles에 값이 있어야 버튼이 보임, 조건 개선!
+        articles = st.session_state.get("important_articles_preview", [])
+        st.write(f"중요기사 갯수(세션): {len(articles)}")
+        for i, a in enumerate(articles):
+            st.write(i, a.get("회사명"), a.get("감성"), a.get("제목"))
+        
+        # 안내 메시지 및 버튼 미출력 조건 명확화
+        if articles is None or len(articles) == 0:
+            st.info("아직 중요 기사 후보가 없습니다. 위 버튼을 눌러 자동 생성하십시오.")
             output_excel = build_important_excel_same_format(
-                [], favorite_categories, excel_company_categories, st.session_state.search_results
+                [],
+                favorite_categories,
+                excel_company_categories,
+                st.session_state.search_results
             )
             st.download_button(
                 label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
@@ -832,8 +837,7 @@ def render_important_article_review_and_download():
 
         # --- 중요기사 체크박스 리스트 (인덱스 기반) ---
         new_selection = []
-        important_articles_list = st.session_state["important_articles_preview"]
-        for idx, article in enumerate(important_articles_list):
+        for idx, article in enumerate(articles):
             checked = st.checkbox(
                 f"{article['회사명']} | {article['감성']} | {article['제목']}",
                 key=f"important_chk_{idx}",
@@ -980,7 +984,7 @@ def render_important_article_review_and_download():
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
         output_excel = build_important_excel_same_format(
-            st.session_state.get("important_articles_preview", []),
+            articles,
             favorite_categories,
             excel_company_categories,
             st.session_state.search_results
@@ -991,7 +995,6 @@ def render_important_article_review_and_download():
             file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        st.write('엑셀에 들어가는 중요기사 개수:', len(st.session_state["important_articles_preview"]))
         
 def matched_filter_keywords(article, common_keywords, industry_keywords):
     """
