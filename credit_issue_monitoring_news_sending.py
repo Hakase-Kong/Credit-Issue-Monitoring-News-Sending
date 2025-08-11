@@ -818,19 +818,19 @@ def render_articles_with_single_summary_and_telegram(
                     key = f"{keyword}_{idx}_{uid}"
                     all_article_keys.append(key)
 
+                prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
+                # 현재 상태(유저가 실제로 클릭한 후의 값)
                 select_all = st.checkbox(
                     f"전체 기사 선택/해제 ({keyword})",
-                    value=all(st.session_state.article_checked.get(k, False) for k in all_article_keys),
-                    key=f"{keyword}_select_all",
+                    value=prev_value,
+                    key=f"{keyword}_select_all"
                 )
-                if select_all:
+                # 클릭 변화 감지 — 한 번의 클릭에 즉시 처리!
+                if select_all != prev_value:
                     for k in all_article_keys:
-                        st.session_state.article_checked[k] = True
-                        st.session_state.article_checked_left[k] = True
-                else:
-                    for k in all_article_keys:
-                        st.session_state.article_checked[k] = False
-                        st.session_state.article_checked_left[k] = False
+                        st.session_state.article_checked[k] = select_all
+                        st.session_state.article_checked_left[k] = select_all
+                    st.rerun()  # 즉시 리렌더링
 
                 # 개별 기사 체크박스
                 for idx, article in enumerate(articles):
@@ -1187,23 +1187,21 @@ def render_important_article_review_and_download():
         def enrich_article_for_excel(raw_article):
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
+            # 링크 캐시에 요약, 감성 등 있으면 가져옴
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
             sentiment, one_line, summary, full_text = None, "", "", ""
-
-            # 캐시에서 요약/감성 꺼내오기
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
                     one_line, summary, sentiment, full_text = v
                     break
-            # 없으면 직접 분석
             if not sentiment:
+                # 캐시 없으면 직접 요약/감성 얻기
                 one_line, summary, sentiment, full_text = summarize_article_from_url(
                     link, raw_article.get("기사제목", "")
                 )
-
+            # 필터 키워드 히트 계산
             filter_hits = matched_filter_keywords(
-                {"title": raw_article.get("기사제목", ""), "요약본": summary,
-                 "요약": one_line, "full_text": full_text},
+                {"title": raw_article.get("기사제목", ""), "요약본": summary, "요약": one_line, "full_text": full_text},
                 ALL_COMMON_FILTER_KEYWORDS,
                 industry_keywords_all
             )
@@ -1220,25 +1218,26 @@ def render_important_article_review_and_download():
                 "full_text": full_text or "",
             }
         
-        # ✅ 모든 '중요 기사 리스트'를 엑셀 summary_data 구조로 변환
-        #    → 선택/비선택과 관계없이 전체 리스트 사용 가능
-        summary_data = [enrich_article_for_excel(a) for a in articles_source]
-
-        # 🔹 favorite_categories / excel_company_categories 순서에 맞춰 모든 기업 출력
+        # 선택된 중요기사들(자동/수동 모두) → 엑셀 포맷으로 변환
+        final_important_articles_full = [
+            enrich_article_for_excel(articles_source[i])
+            for i in final_selected_indexes if i < len(articles_source)
+        ]
+        
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
-            summary_data,
+            final_important_articles_full,
             favorite_categories,
             excel_company_categories,
             st.session_state.search_results
         )
-
+        
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=excel_data.getvalue(),
-            file_name=f"중요뉴스_최종선정_양식_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            file_name="중요뉴스_최종선정_양식.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        
+
 if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
