@@ -858,8 +858,7 @@ def render_articles_with_single_summary_and_telegram(
                             unsafe_allow_html=True,
                         )
                     st.session_state.article_checked_left[key] = checked
-                    if checked:
-                        st.session_state.article_checked[key] = True
+                    st.session_state.article_checked[key] = checked
 
     # ---------------------------- 선택 기사 요약 열 ----------------------------
     with col_summary:
