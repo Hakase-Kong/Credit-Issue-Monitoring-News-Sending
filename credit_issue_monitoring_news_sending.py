@@ -557,7 +557,6 @@ def clean_excel_formula_text(text):
     text = text.replace('"', "'")   # 큰따옴표 → 홑따옴표
     text = text.replace('\n', ' ')  # 줄바꿈 → 공백
     text = text.replace('\r', '')
-    text = text.replace('=', '')    # 혹시 셀 첫문자가 =이면 제거
     return text[:250]  # 안전하게 255자 미만으로 제한
 
 def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories, search_results):
