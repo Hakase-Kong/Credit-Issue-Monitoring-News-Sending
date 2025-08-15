@@ -43,12 +43,25 @@ def expand_keywords_with_synonyms(original_keywords):
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
     for main_kw, kw_list in favorite_to_expand_map.items():
         all_articles = []
-        for search_kw in kw_list:
-            fetched = fetch_naver_news(search_kw, start_date, end_date,
-                                       require_keyword_in_title=require_keyword_in_title)
-            all_articles.extend(fetched)
 
-        # 중복 제거
+        # 병렬 처리 시작
+        with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
+            futures = {
+                executor.submit(fetch_naver_news, search_kw, start_date, end_date, 
+                                require_keyword_in_title=require_keyword_in_title): search_kw
+                for search_kw in kw_list
+            }
+            for future in as_completed(futures):
+                search_kw = futures[future]
+                try:
+                    fetched = future.result()
+                    # 각 기사에 검색어 정보 추가
+                    fetched = [{**a, "검색어": search_kw} for a in fetched]
+                    all_articles.extend(fetched)
+                except Exception as e:
+                    st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
+
+        # 중복 제거 여부
         if st.session_state.get("remove_duplicate_articles", False):
             all_articles = remove_duplicates(all_articles)
 
@@ -869,9 +882,10 @@ def render_articles_with_single_summary_and_telegram(
                             f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>"
                             if sentiment else ""
                         )
+                        search_word_info = f" | 검색어: {article.get('검색어', '')}" if article.get("검색어") else ""
                         st.markdown(
                             f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
-                            f"{badge_html} {article['date']} | {article['source']}",
+                            f"{badge_html} {article['date']} | {article['source']}{search_word_info}",
                             unsafe_allow_html=True,
                         )
                     st.session_state.article_checked_left[key] = checked
