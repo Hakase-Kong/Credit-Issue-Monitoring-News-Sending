@@ -76,6 +76,21 @@ def process_keywords_grouped_by_main(favorite_keywords, synonym_map, start_date,
         st.session_state.search_results[main_kw] = articles
         st.session_state.show_limit[main_kw] = 5
 
+def get_searched_main_keywords():
+    # 직접 키워드 입력
+    if "keyword_input" in st.session_state and st.session_state["keyword_input"]:
+        input_keywords = [k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()]
+        used = expand_keywords_for_search(input_keywords, synonym_map)
+        return [k for k in used if st.session_state.search_results.get(k)]
+    # 카테고리 사용
+    if "cat_multi" in st.session_state and st.session_state["cat_multi"]:
+        main_keywords = []
+        for cat in st.session_state["cat_multi"]:
+            main_keywords.extend(favorite_categories[cat])
+        return [k for k in main_keywords if st.session_state.search_results.get(k)]
+    # 예외(혹시 모름)
+    return [k for k in st.session_state.search_results if st.session_state.search_results.get(k)]
+
 # --- CSS 스타일 ---
 st.markdown("""
 <style>
@@ -1282,28 +1297,18 @@ def render_important_article_review_and_download():
         )
 
 if st.session_state.search_results:
-    for category_name, main_keywords in favorite_categories.items():
-        st.markdown(f"### 📌 {category_name}")
+    for main_kw in get_searched_main_keywords():
+        articles = st.session_state.search_results.get(main_kw, [])
+        filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
-        for main_kw in main_keywords:
-            # 해당 대표키워드의 기사 목록 가져오기
-            articles = st.session_state.search_results.get(main_kw, [])
-
-            # 필터 적용
-            filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-
-            # 중복 기사 제거
-            if st.session_state.get("remove_duplicate_articles", False):
-                filtered_articles = remove_duplicates(filtered_articles)
-
-            with st.expander(f"[{main_kw}] ({len(filtered_articles)}건)", expanded=True):
-                if filtered_articles:
-                    # 기존 요약/감성, 선택 기능 포함 UI 호출
-                    render_articles_with_single_summary_and_telegram(
-                        {main_kw: filtered_articles},
-                        st.session_state.show_limit,
-                        show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
-                        enable_summary=st.session_state.get("enable_summary", True)
-                    )
-                else:
-                    st.write("결과 없음")
+        with st.expander(f"[{main_kw}] ({len(filtered_articles)}건)", expanded=True):
+            if filtered_articles:
+                render_articles_with_single_summary_and_telegram(
+                    {main_kw: filtered_articles},
+                    st.session_state.show_limit,
+                    show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
+                    enable_summary=st.session_state.get("enable_summary", True),
+                    unique_key=main_kw    # 👈 이 인자도 render 함수에 넘긴 뒤 버튼에도 유니크 지정!
+                )
+            else:
+                st.write("결과 없음")
