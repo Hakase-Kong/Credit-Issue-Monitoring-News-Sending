@@ -234,54 +234,61 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
-def summarize_and_sentiment_with_openai(text, do_summary=True):
+def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=None):
     """
-    본문 요약/감성분석과 모든 예외 처리 포함.
-    - OpenAI 응답 포맷 불일치/비정규 출력/본문 오류/키 누락 모두 안전하게 처리
-    - 반환값: (한줄요약, 주요키워드, 감성, 전체본문)
+    본문 요약/감성분석.
+    target_keyword: 감성 판단의 초점을 맞출 기업/키워드
     """
-    # 1. 키 없을 때 반환
     if not OPENAI_API_KEY:
         return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", text
-
-    # 2. 본문 체크
     if not text or "본문 추출 오류" in text:
         return "기사 본문이 추출 실패", "", "감성 추출 실패", text
 
-    # 3. 프롬프트(최적화 version, 이전 답변 참고)
     lang = detect_lang(text)
-    if lang == "ko":
-        role_prompt = (
-            "너는 경제 뉴스 요약/분석 전문가야. 한 문장 요약에는 반드시 주체, 핵심 사건, 결과를, "
-            "감성 분류는 파산·감원 등 부정 이슈면 '부정', 신규 투자·호재 땐 '긍정', 중립은 금지. 포맷은 지정된 키 그대로."
-        )
-        main_prompt = """
-아래 기사 본문을 분석해 다음 세가지를 정확히 응답하라.
 
-[한 줄 요약]: 주요 인물/기업, 사건, 결과 포함
-[검색 키워드]: 이 기사가 검색에 사용된 키워드를 콤마(,)로 모두 명시 
-[감성]: 긍정 또는 부정 (둘 중 하나만)
+    # 🔹 프롬프트 구성: target_keyword를 중심으로 감성 판정
+    if lang == "ko":
+        focus_info = f" 분석의 초점은 반드시 '{target_keyword}' 기업(또는 키워드)이며, 기사의 전체 분위기가 아닌 이 기업에 대한 기사 내용과 문맥을 기준으로 감성을 판정해야 합니다." if target_keyword else ""
+        role_prompt = (
+            "너는 경제 뉴스 요약/분석 전문가야."
+            " 한 문장 요약에는 반드시 주체, 핵심 사건, 결과를 포함하고,"
+            " 감성 분류는 해당 기업에 긍정/부정 영향을 주는지를 판단해야 한다."
+            + focus_info +
+            " 감성은 '긍정' 또는 '부정' 중 하나만 선택. 중립은 금지."
+        )
+        main_prompt = f"""
+아래 기사 본문을 분석해 다음 세 가지를 정확히 응답하라.
+대상 기업/키워드: "{target_keyword or 'N/A'}"
+
+[한 줄 요약]: 대상 기업에 대한 주요 사건과 결과 포함
+[검색 키워드]: 이 기사가 검색에 사용된 키워드를 콤마(,)로 명시
+[감성]: 대상 기업에 긍정 또는 부정 (둘 중 하나만)
 [주요 키워드]: 인물, 기업, 조직명만 콤마(,)로, 없으면 없음
 
 [기사 본문]
-""" + text
+{text}
+"""
     else:
+        focus_info = f" Focus strictly on sentiment toward '{target_keyword}' (the entity), not the overall industry tone." if target_keyword else ""
         role_prompt = (
-            "You are a financial news summarization expert. The summary must contain entity, main event, outcome. "
-            "Sentiment is only positive/negative strictly (never neutral). Use labels exactly as requested."
+            "You are a financial news summarization expert."
+            " Your summary must highlight the entity, key event, and result."
+            " Sentiment classification must reflect the impact on the specific entity of interest."
+            + focus_info +
+            " Sentiment must be either positive or negative. Neutral is not allowed."
         )
-        main_prompt = """
-Analyze the article and extract these three exactly:
+        main_prompt = f"""
+Analyze the following article focusing on this target entity: "{target_keyword or 'N/A'}"
 
-[One-line Summary]: One sentence, include entity, event, outcome
-[Search Keywords]: Comma-separated list of keywords used to retrieve this article  
-[Sentiment]: positive or negative (only one)
-[Key Entities]: All mentioned companies/people/org, comma separated, or None
+[One-line Summary]: Include event and outcome relevant to the target entity
+[Search Keywords]: Keywords that retrieved this article
+[Sentiment]: positive or negative (based ONLY on the target entity's context)
+[Key Entities]: Companies/people/org mentioned, comma separated
 
 [ARTICLE]
-""" + text
+{text}
+"""
 
-    # 4. OpenAI 호출 & 오류 처리
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -422,11 +429,10 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
 
-def summarize_article_from_url(article_url, title, do_summary=True):
+def summarize_article_from_url(article_url, title, do_summary=True, target_keyword=None):
     cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
     summary_key = f"summary_{cache_key_base}"
 
-    # 이미 요약 결과가 있으면 그대로 반환
     if summary_key in st.session_state:
         return st.session_state[summary_key]
 
@@ -435,12 +441,14 @@ def summarize_article_from_url(article_url, title, do_summary=True):
         if full_text.startswith("본문 추출 오류"):
             result = (full_text, None, None, None)
         else:
-            one_line, summary, sentiment, _ = summarize_and_sentiment_with_openai(full_text, do_summary=do_summary)
+            # 🔹 target_keyword 전달
+            one_line, summary, sentiment, _ = summarize_and_sentiment_with_openai(
+                full_text, do_summary=do_summary, target_keyword=target_keyword
+            )
             result = (one_line, summary, sentiment, full_text)
     except Exception as e:
         result = (f"요약 오류: {e}", None, None, None)
 
-    # 캐시에 저장
     st.session_state[summary_key] = result
     return result
 
@@ -923,8 +931,9 @@ def render_articles_with_single_summary_and_telegram(
                 if cache_key in st.session_state:
                     one_line, summary, sentiment, full_text = st.session_state[cache_key]
                 else:
+                    # 🔹 keyword를 target_keyword로 전달
                     one_line, summary, sentiment, full_text = summarize_article_from_url(
-                        art["link"], art["title"], do_summary=enable_summary
+                        art["link"], art["title"], do_summary=enable_summary, target_keyword=keyword
                     )
                     st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
                 filter_hits = matched_filter_keywords(
