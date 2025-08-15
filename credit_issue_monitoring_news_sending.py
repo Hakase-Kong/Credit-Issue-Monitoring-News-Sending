@@ -33,35 +33,28 @@ ALL_COMMON_FILTER_KEYWORDS = []
 for keywords in common_filter_categories.values():
     ALL_COMMON_FILTER_KEYWORDS.extend(keywords)
 
-def expand_with_synonyms(keyword):
-    """원본 + synonyms 반환"""
-    expanded = [keyword]
-    if keyword in SYNONYM_MAP:
-        expanded.extend(SYNONYM_MAP[keyword])
-    return list(set(expanded))  # 중복 제거
+def expand_keywords_with_synonyms(original_keywords):
+    expanded_map = {}
+    for kw in original_keywords:
+        synonyms = SYNONYM_MAP.get(kw, [])
+        expanded_map[kw] = [kw] + synonyms
+    return expanded_map
 
-def process_keywords_parallel_with_synonyms(keyword_list, start_date, end_date, require_keyword_in_title=False):
-    # keyword_list는 favorite_categories에서 온 '원본 키워드' 리스트
-    def fetch_and_store_for_base_keyword(base_kw):
-        # base_kw에 대한 synonyms 확장
-        syns = expand_with_synonyms(base_kw)
-        collected_articles = []
-        for kw in syns:
-            articles = fetch_naver_news(kw, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
-            collected_articles.extend(articles)
+def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
+    for main_kw, kw_list in favorite_to_expand_map.items():
+        all_articles = []
+        for search_kw in kw_list:
+            fetched = fetch_naver_news(search_kw, start_date, end_date,
+                                       require_keyword_in_title=require_keyword_in_title)
+            all_articles.extend(fetched)
+
         # 중복 제거
-        seen_links = set()
-        unique_articles = []
-        for a in collected_articles:
-            if a['link'] not in seen_links:
-                seen_links.add(a['link'])
-                unique_articles.append(a)
-        st.session_state.search_results[base_kw] = unique_articles
-        if base_kw not in st.session_state.show_limit:
-            st.session_state.show_limit[base_kw] = 5
+        if st.session_state.get("remove_duplicate_articles", False):
+            all_articles = remove_duplicates(all_articles)
 
-    with ThreadPoolExecutor(max_workers=min(5, len(keyword_list))) as executor:
-        executor.map(lambda kw: fetch_and_store_for_base_keyword(kw), keyword_list)
+        st.session_state.search_results[main_kw] = all_articles
+        if main_kw not in st.session_state.show_limit:
+            st.session_state.show_limit[main_kw] = 5
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -540,31 +533,35 @@ def remove_duplicates(articles):
 keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()] if keywords_input else []
 search_clicked = False
 
-keyword_list = []
+if keyword_list:
+        search_clicked = True
 
-# 1) 카테고리 선택 시 (카테고리 검색 버튼)
-if category_search_clicked and selected_categories:
-    keywords = set()
-    for cat in selected_categories:
-        keywords.update(favorite_categories[cat])
-    st.session_state.favorite_keywords = list(keywords)
-    st.session_state.search_triggered = True
-
-# 2) 직접 키워드 입력 (검색 버튼)
-if search_clicked and keywords_input:
-    st.session_state.favorite_keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
-    st.session_state.search_triggered = True
-
-# 3) 렌더링/검색
-if st.session_state.search_triggered and st.session_state.favorite_keywords:
+if keyword_list and (search_clicked or st.session_state.get("search_triggered")):
     with st.spinner("뉴스 검색 중..."):
-        process_keywords_parallel_with_synonyms(
-            sorted(st.session_state.favorite_keywords),
+        # 동의어 확장
+        expanded = expand_keywords_with_synonyms(sorted(keyword_list))
+        process_keywords_with_synonyms(
+            expanded,
             st.session_state["start_date"],
             st.session_state["end_date"],
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
     st.session_state.search_triggered = False
+
+
+if category_search_clicked and selected_categories:
+    with st.spinner("뉴스 검색 중..."):
+        keywords = set()
+        for cat in selected_categories:
+            keywords.update(favorite_categories[cat])
+
+        expanded = expand_keywords_with_synonyms(sorted(keywords))
+        process_keywords_with_synonyms(
+            expanded,
+            st.session_state["start_date"],
+            st.session_state["end_date"],
+            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+        )
 
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
@@ -1262,8 +1259,11 @@ if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+        
+        # --- 중복 기사 제거 처리 ---
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
+        
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
 
