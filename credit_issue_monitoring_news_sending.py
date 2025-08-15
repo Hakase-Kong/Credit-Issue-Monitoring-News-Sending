@@ -762,9 +762,10 @@ def extract_article_text(url, fallback_desc=None, fallback_title=None):
         text = re.sub(r"(무단전재\s*및\s*재배포\s*금지.*$)", "", text)
 
         # 2차: 텍스트 길이 검증 (글자가 너무 짧으면 fallback)
-        if len(text) < 300:
-            raise ValueError("본문 짧음")
-
+        if len(text) < 100 and fallback_desc:
+            # 너무 짧으면 설명(description) 붙여서 보완
+            text = text + "\n\n" + fallback_desc
+        
         return text
 
     except Exception as e:
