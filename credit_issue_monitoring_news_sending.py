@@ -429,7 +429,7 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
 
-def summarize_article_from_url(article_url, title, do_summary=True, target_keyword=None):
+def summarize_article_from_url(article_url, title, do_summary=True, target_keyword=None, description=None):
     cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
     summary_key = f"summary_{cache_key_base}"
 
@@ -437,11 +437,11 @@ def summarize_article_from_url(article_url, title, do_summary=True, target_keywo
         return st.session_state[summary_key]
 
     try:
-        full_text = extract_article_text(article_url)
+        # 🔹 fallback_title, fallback_desc 전달
+        full_text = extract_article_text(article_url, fallback_desc=description, fallback_title=title)
         if full_text.startswith("본문 추출 오류"):
             result = (full_text, None, None, None)
         else:
-            # 🔹 target_keyword 전달
             one_line, summary, sentiment, _ = summarize_and_sentiment_with_openai(
                 full_text, do_summary=do_summary, target_keyword=target_keyword
             )
@@ -738,17 +738,62 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 continue
     return result
 
-def extract_article_text(url):
-    # 네이버, 다음 등 포털 뉴스 중계 URL은 본문 추출 실패 - 바로 오류 반환
+def extract_article_text(url, fallback_desc=None, fallback_title=None):
+    """
+    뉴스 기사 본문을 최대한 정확하게 추출
+    url: 기사 원문 URL
+    fallback_desc, fallback_title: 본문 추출 실패시 사용할 검색 API의 요약/제목
+    """
+    # 포털 뉴스 차단
     PORTAL_DOMAINS = ["news.naver.com", "n.news.naver.com", "news.daum.net"]
     if any(domain in url for domain in PORTAL_DOMAINS):
-        return "본문 추출 오류: 포털 뉴스 중계 URL입니다. 'originallink'를 사용하세요."
+        return f"본문 추출 오류: 포털 뉴스 중계 URL입니다. originallink 사용 권장."
+
     try:
-        article = newspaper.Article(url)
+        # 1차 시도: newspaper3k
+        article = newspaper.Article(url, language='ko')
         article.download()
         article.parse()
-        return article.text
+        text = article.text.strip()
+
+        # 불필요 문구 제거
+        text = re.sub(r"\S+@\S+", "", text)  # 이메일 제거
+        text = re.sub(r"▶.*", "", text)      # '▶'로 시작하는 행 제거
+        text = re.sub(r"(무단전재\s*및\s*재배포\s*금지.*$)", "", text)
+
+        # 2차: 텍스트 길이 검증 (글자가 너무 짧으면 fallback)
+        if len(text) < 300:
+            raise ValueError("본문 짧음")
+
+        return text
+
     except Exception as e:
+        # 2차 시도: 직접 HTML 파싱
+        try:
+            resp = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+            soup = BeautifulSoup(resp.text, "html.parser")
+            # 대표적인 한국 언론 본문 영역 선택자
+            selectors = [
+                "div#articleBodyContents", 
+                "div.article_body", 
+                "div#newsEndContents",
+                "div[itemprop='articleBody']"
+            ]
+            for sel in selectors:
+                body = soup.select_one(sel)
+                if body:
+                    # 텍스트 정제
+                    text = " ".join(body.get_text(separator=" ").split())
+                    text = re.sub(r"\S+@\S+", "", text)
+                    if len(text) > 200:
+                        return text
+        except Exception:
+            pass
+
+        # fallback: 제목 + 설명이라도 제공
+        if fallback_title or fallback_desc:
+            return f"[기사제목] {fallback_title or ''}\n[요약정보] {fallback_desc or ''}"
+
         return f"본문 추출 오류: {e}"
     
 def extract_keyword_from_link(search_results, article_link):
