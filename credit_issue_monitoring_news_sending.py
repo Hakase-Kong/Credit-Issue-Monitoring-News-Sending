@@ -26,6 +26,7 @@ favorite_categories = config["favorite_categories"] # --- 즐겨찾기 카테고
 excel_company_categories = config["excel_company_categories"]
 common_filter_categories = config["common_filter_categories"] # --- 공통 필터 옵션(대분류/소분류 없이 모두 적용) ---
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
+synonym_map = config["synonym_map"]
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
@@ -42,6 +43,38 @@ def process_keywords_parallel(keyword_list, start_date, end_date, require_keywor
             st.session_state.search_results[k] = articles
             if k not in st.session_state.show_limit:
                 st.session_state.show_limit[k] = 5
+
+# === 동의어 확장 ===
+def expand_keywords_for_search(favorite_keywords, synonym_map):
+    expanded = {}
+    for main_kw in favorite_keywords:
+        all_variants = [main_kw] + synonym_map.get(main_kw, [])
+        expanded[main_kw] = all_variants
+    return expanded
+
+def process_keywords_grouped_by_main(favorite_keywords, synonym_map, start_date, end_date, require_keyword_in_title):
+    expanded = expand_keywords_for_search(favorite_keywords, synonym_map)
+
+    for main_kw, search_kw_list in expanded.items():
+        articles = []
+
+        # 🔹 동의어 목록 병렬 처리
+        def fetch_one(kw):
+            return fetch_naver_news(kw, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
+
+        with ThreadPoolExecutor(max_workers=min(5, len(search_kw_list))) as executor:
+            futures = {executor.submit(fetch_one, kw): kw for kw in search_kw_list}
+            for future in as_completed(futures):
+                try:
+                    results = future.result()
+                    articles.extend(results)
+                except Exception as e:
+                    st.warning(f"[{main_kw}] 동의어 검색 중 오류: {e}")
+
+        # 중복 제거 후 저장
+        articles = remove_duplicates(articles)
+        st.session_state.search_results[main_kw] = articles
+        st.session_state.show_limit[main_kw] = 5
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -103,6 +136,8 @@ def init_session_state():
     for key, default_val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default_val
+
+
 
 # --- UI 시작 ---
 st.set_page_config(layout="wide")
@@ -525,23 +560,32 @@ if keyword_list:
 
 if keyword_list and (search_clicked or st.session_state.get("search_triggered")):
     with st.spinner("뉴스 검색 중..."):
-        process_keywords_parallel(
-            sorted(keyword_list),  # ✅ 오류 발생 안 함
-            st.session_state["start_date"],
-            st.session_state["end_date"],
-            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+        # 🔹 keyword_list를 대표키워드 리스트로 간주하고 동의어 확장 검색 실행
+        process_keywords_grouped_by_main(
+            favorite_keywords=keyword_list,           # 직접 입력한 키워드 목록
+            synonym_map=synonym_map,                  # config.json에서 로드된 동의어 맵
+            start_date=st.session_state["start_date"],
+            end_date=st.session_state["end_date"],
+            require_keyword_in_title=st.session_state.get(
+                "require_exact_keyword_in_title_or_content", 
+                False
+            )
         )
     st.session_state.search_triggered = False
-
+    
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
-        keywords = set()
+        # 선택된 카테고리의 대표키워드 목록 수집
+        favorite_keywords = []
         for cat in selected_categories:
-            keywords.update(favorite_categories[cat])
-        process_keywords_parallel(
-            sorted(keywords),  # ✅ 수정: keyword_list → sorted(keywords)
-            st.session_state["start_date"],
-            st.session_state["end_date"],
+            favorite_keywords.extend(favorite_categories[cat])
+
+        # 🔹 대표키워드+동의어 확장 검색 실행
+        process_keywords_grouped_by_main(
+            favorite_keywords=favorite_keywords,
+            synonym_map=synonym_map,  # config.json에서 로드됨
+            start_date=st.session_state["start_date"],
+            end_date=st.session_state["end_date"],
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
 
@@ -1238,20 +1282,28 @@ def render_important_article_review_and_download():
         )
 
 if st.session_state.search_results:
-    filtered_results = {}
-    for keyword, articles in st.session_state.search_results.items():
-        filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-        
-        # --- 중복 기사 제거 처리 ---
-        if st.session_state.get("remove_duplicate_articles", False):
-            filtered_articles = remove_duplicates(filtered_articles)
-        
-        if filtered_articles:
-            filtered_results[keyword] = filtered_articles
+    for category_name, main_keywords in favorite_categories.items():
+        st.markdown(f"### 📌 {category_name}")
 
-    render_articles_with_single_summary_and_telegram(
-        filtered_results,
-        st.session_state.show_limit,
-        show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
-        enable_summary=st.session_state.get("enable_summary", True)
-    )
+        for main_kw in main_keywords:
+            # 해당 대표키워드의 기사 목록 가져오기
+            articles = st.session_state.search_results.get(main_kw, [])
+
+            # 필터 적용
+            filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+
+            # 중복 기사 제거
+            if st.session_state.get("remove_duplicate_articles", False):
+                filtered_articles = remove_duplicates(filtered_articles)
+
+            with st.expander(f"[{main_kw}] ({len(filtered_articles)}건)", expanded=True):
+                if filtered_articles:
+                    # 기존 요약/감성, 선택 기능 포함 UI 호출
+                    render_articles_with_single_summary_and_telegram(
+                        {main_kw: filtered_articles},
+                        st.session_state.show_limit,
+                        show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
+                        enable_summary=st.session_state.get("enable_summary", True)
+                    )
+                else:
+                    st.write("결과 없음")
