@@ -828,29 +828,24 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
     matched_industry = [kw for kw in industry_keywords if kw in text_long]
     return list(set(matched_common + matched_industry))
 
-
 def render_articles_with_single_summary_and_telegram(
     results, show_limit, show_sentiment_badge=True, enable_summary=True
 ):
     SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
     col_list, col_summary = st.columns([1, 1])
 
+    # ---------------------------- 뉴스 목록 열 ----------------------------
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
 
-        # 1) favorite_categories 순서대로 그룹화 출력
+        # favorite_categories 순서대로 대분류/기업 출력
         for category_name, company_list in favorite_categories.items():
-            # 실제 results에 데이터가 있는 기업만 필터링
             companies_with_results = [c for c in company_list if c in results]
             if not companies_with_results:
-                continue  # ✅ 이 대분류 전체를 출력하지 않음
-    
-            # 대분류 expander
+                continue
             with st.expander(f"📂 {category_name}", expanded=True):
                 for company in companies_with_results:
                     articles = results[company]
-                    
-                    # 기존 회사별 expander
                     with st.expander(f"[{company}] ({len(articles)}건)", expanded=False):
                         all_article_keys = []
                         for idx, article in enumerate(articles):
@@ -903,21 +898,25 @@ def render_articles_with_single_summary_and_telegram(
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
 
-            # 1) 현재 선택된 기사 목록 수집
-            selected_to_process = []
             industry_keywords_all = []
             if st.session_state.get("use_industry_filter", False):
                 for sublist in st.session_state.industry_major_sub_map.values():
                     industry_keywords_all.extend(sublist)
 
-            for keyword, articles in results.items():
-                for idx, article in enumerate(articles):
-                    uid = re.sub(r"\W+", "", article["link"])[-16:]
-                    key = f"{keyword}_{idx}_{uid}"
-                    if st.session_state.article_checked.get(key, False):
-                        selected_to_process.append((keyword, idx, article))
+            # 선택된 기사 그룹핑
+            grouped_selected = {}
+            for cat_name, company_list in favorite_categories.items():
+                for company in company_list:
+                    if company in results:
+                        for idx, article in enumerate(results[company]):
+                            uid = re.sub(r"\W+", "", article["link"])[-16:]
+                            key = f"{company}_{idx}_{uid}"
+                            if st.session_state.article_checked.get(key, False):
+                                grouped_selected.setdefault(cat_name, {}).setdefault(company, []).append(
+                                    (company, idx, article)
+                                )
 
-            # 2) 병렬 처리로 요약/감성분석
+            # 병렬 요약 처리
             def process_article(item):
                 keyword, idx, art = item
                 cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
@@ -928,7 +927,6 @@ def render_articles_with_single_summary_and_telegram(
                         art["link"], art["title"], do_summary=enable_summary
                     )
                     st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
-
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
                     ALL_COMMON_FILTER_KEYWORDS,
@@ -948,40 +946,50 @@ def render_articles_with_single_summary_and_telegram(
                 }
 
             from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                selected_articles = list(executor.map(process_article, selected_to_process))
+            for cat_name, comp_map in grouped_selected.items():
+                for company, items in comp_map.items():
+                    with ThreadPoolExecutor(max_workers=10) as executor:
+                        grouped_selected[cat_name][company] = list(executor.map(process_article, items))
 
-            # 3) 전체 결과 렌더링
-            for art in selected_articles:
-                st.markdown(
-                    f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
-                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
-                    unsafe_allow_html=True,
-                )
-                st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
-                st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
-                st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
-                if enable_summary:
-                    st.markdown(f"- **한 줄 요약:** {art['요약']}")
-                st.markdown(f"- **감성분석:** `{art['감성']}`")
-                st.markdown("---")
+            total_selected_count = 0
+            for cat_name, comp_map in grouped_selected.items():
+                with st.expander(f"📂 {cat_name}", expanded=True):
+                    for company, arts in comp_map.items():
+                        with st.expander(f"[{company}] ({len(arts)}건)", expanded=True):
+                            for art in arts:
+                                total_selected_count += 1
+                                st.markdown(
+                                    f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
+                                    unsafe_allow_html=True,
+                                )
+                                st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
+                                st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
+                                st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
+                                if enable_summary:
+                                    st.markdown(f"- **한 줄 요약:** {art['요약']}")
+                                st.markdown(f"- **감성분석:** `{art['감성']}`")
+                                st.markdown("---")
 
-            st.session_state.selected_articles = selected_articles
-            st.write(f"선택된 기사 개수: {len(selected_articles)}")
+            st.session_state.selected_articles = [
+                art for comp_map in grouped_selected.values() for arts in comp_map.values() for art in arts
+            ]
+            st.write(f"선택된 기사 개수: {total_selected_count}")
 
-            # 다운로드 / 전체 해제 버튼
+            # 다운로드 / 전체 해제
             col_dl1, col_dl2 = st.columns([0.55, 0.45])
             with col_dl1:
                 st.download_button(
                     label="📥 맞춤 엑셀 다운로드",
                     data=get_excel_download_with_favorite_and_excel_company_col(
-                        selected_articles, favorite_categories, excel_company_categories,
+                        st.session_state.selected_articles,
+                        favorite_categories,
+                        excel_company_categories,
                         st.session_state.search_results
                     ).getvalue(),
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
-
             with col_dl2:
                 if st.button("🗑 선택 해제 (전체)"):
                     for key in list(st.session_state.article_checked.keys()):
