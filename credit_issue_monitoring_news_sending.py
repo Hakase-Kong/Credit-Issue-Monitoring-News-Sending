@@ -26,70 +26,42 @@ favorite_categories = config["favorite_categories"] # --- 즐겨찾기 카테고
 excel_company_categories = config["excel_company_categories"]
 common_filter_categories = config["common_filter_categories"] # --- 공통 필터 옵션(대분류/소분류 없이 모두 적용) ---
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
-synonym_map = config["synonym_map"]
+SYNONYM_MAP = config["synonym_map"]
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
 for keywords in common_filter_categories.values():
     ALL_COMMON_FILTER_KEYWORDS.extend(keywords)
 
-def process_keywords_parallel(keyword_list, start_date, end_date, require_keyword_in_title=False):
-    def fetch_and_store(k):
-        return k, fetch_naver_news(k, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
+def expand_with_synonyms(keyword):
+    """원본 + synonyms 반환"""
+    expanded = [keyword]
+    if keyword in SYNONYM_MAP:
+        expanded.extend(SYNONYM_MAP[keyword])
+    return list(set(expanded))  # 중복 제거
+
+def process_keywords_parallel_with_synonyms(keyword_list, start_date, end_date, require_keyword_in_title=False):
+    # keyword_list는 favorite_categories에서 온 '원본 키워드' 리스트
+    def fetch_and_store_for_base_keyword(base_kw):
+        # base_kw에 대한 synonyms 확장
+        syns = expand_with_synonyms(base_kw)
+        collected_articles = []
+        for kw in syns:
+            articles = fetch_naver_news(kw, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
+            collected_articles.extend(articles)
+        # 중복 제거
+        seen_links = set()
+        unique_articles = []
+        for a in collected_articles:
+            if a['link'] not in seen_links:
+                seen_links.add(a['link'])
+                unique_articles.append(a)
+        st.session_state.search_results[base_kw] = unique_articles
+        if base_kw not in st.session_state.show_limit:
+            st.session_state.show_limit[base_kw] = 5
+
     with ThreadPoolExecutor(max_workers=min(5, len(keyword_list))) as executor:
-        futures = [executor.submit(fetch_and_store, k) for k in keyword_list]
-        for future in as_completed(futures):
-            k, articles = future.result()
-            st.session_state.search_results[k] = articles
-            if k not in st.session_state.show_limit:
-                st.session_state.show_limit[k] = 5
-
-# === 동의어 확장 ===
-def expand_keywords_for_search(favorite_keywords, synonym_map):
-    expanded = {}
-    for main_kw in favorite_keywords:
-        all_variants = [main_kw] + synonym_map.get(main_kw, [])
-        expanded[main_kw] = all_variants
-    return expanded
-
-def process_keywords_grouped_by_main(favorite_keywords, synonym_map, start_date, end_date, require_keyword_in_title):
-    expanded = expand_keywords_for_search(favorite_keywords, synonym_map)
-
-    for main_kw, search_kw_list in expanded.items():
-        articles = []
-
-        # 🔹 동의어 목록 병렬 처리
-        def fetch_one(kw):
-            return fetch_naver_news(kw, start_date, end_date, require_keyword_in_title=require_keyword_in_title)
-
-        with ThreadPoolExecutor(max_workers=min(5, len(search_kw_list))) as executor:
-            futures = {executor.submit(fetch_one, kw): kw for kw in search_kw_list}
-            for future in as_completed(futures):
-                try:
-                    results = future.result()
-                    articles.extend(results)
-                except Exception as e:
-                    st.warning(f"[{main_kw}] 동의어 검색 중 오류: {e}")
-
-        # 중복 제거 후 저장
-        articles = remove_duplicates(articles)
-        st.session_state.search_results[main_kw] = articles
-        st.session_state.show_limit[main_kw] = 5
-
-def get_searched_main_keywords():
-    # 직접 키워드 입력
-    if "keyword_input" in st.session_state and st.session_state["keyword_input"]:
-        input_keywords = [k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()]
-        used = expand_keywords_for_search(input_keywords, synonym_map)
-        return [k for k in used if st.session_state.search_results.get(k)]
-    # 카테고리 사용
-    if "cat_multi" in st.session_state and st.session_state["cat_multi"]:
-        main_keywords = []
-        for cat in st.session_state["cat_multi"]:
-            main_keywords.extend(favorite_categories[cat])
-        return [k for k in main_keywords if st.session_state.search_results.get(k)]
-    # 예외(혹시 모름)
-    return [k for k in st.session_state.search_results if st.session_state.search_results.get(k)]
+        executor.map(lambda kw: fetch_and_store_for_base_keyword(kw), keyword_list)
 
 # --- CSS 스타일 ---
 st.markdown("""
@@ -151,8 +123,6 @@ def init_session_state():
     for key, default_val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default_val
-
-
 
 # --- UI 시작 ---
 st.set_page_config(layout="wide")
@@ -575,32 +545,22 @@ if keyword_list:
 
 if keyword_list and (search_clicked or st.session_state.get("search_triggered")):
     with st.spinner("뉴스 검색 중..."):
-        # 🔹 keyword_list를 대표키워드 리스트로 간주하고 동의어 확장 검색 실행
-        process_keywords_grouped_by_main(
-            favorite_keywords=keyword_list,           # 직접 입력한 키워드 목록
-            synonym_map=synonym_map,                  # config.json에서 로드된 동의어 맵
-            start_date=st.session_state["start_date"],
-            end_date=st.session_state["end_date"],
-            require_keyword_in_title=st.session_state.get(
-                "require_exact_keyword_in_title_or_content", 
-                False
-            )
+        process_keywords_parallel_with_synonyms(
+            sorted(keywords),
+            st.session_state["start_date"],
+            st.session_state["end_date"],
+            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
-    st.session_state.search_triggered = False
-    
+
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
-        # 선택된 카테고리의 대표키워드 목록 수집
-        favorite_keywords = []
+        keywords = set()
         for cat in selected_categories:
-            favorite_keywords.extend(favorite_categories[cat])
-
-        # 🔹 대표키워드+동의어 확장 검색 실행
-        process_keywords_grouped_by_main(
-            favorite_keywords=favorite_keywords,
-            synonym_map=synonym_map,  # config.json에서 로드됨
-            start_date=st.session_state["start_date"],
-            end_date=st.session_state["end_date"],
+            keywords.update(favorite_categories[cat])
+        process_keywords_parallel_with_synonyms(
+            sorted(keywords),
+            st.session_state["start_date"],
+            st.session_state["end_date"],
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
 
@@ -858,7 +818,7 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
 
 
 def render_articles_with_single_summary_and_telegram(
-    results, show_limit, show_sentiment_badge=True, enable_summary=True, unique_key="default"
+    results, show_limit, show_sentiment_badge=True, enable_summary=True
 ):
     SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
     col_list, col_summary = st.columns([1, 1])
@@ -996,7 +956,7 @@ def render_articles_with_single_summary_and_telegram(
                     label="📥 맞춤 엑셀 다운로드",
                     data=get_excel_download_with_favorite_and_excel_company_col(
                         selected_articles, favorite_categories, excel_company_categories,
-                        st.session_state.search_results,key=f"download_btn_summary_{unique_key}"
+                        st.session_state.search_results
                     ).getvalue(),
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1297,21 +1257,20 @@ def render_important_article_review_and_download():
         )
 
 if st.session_state.search_results:
-    for main_kw in get_searched_main_keywords():
-        articles = st.session_state.search_results.get(main_kw, [])
+    filtered_results = {}
+    for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+        
+        # --- 중복 기사 제거 처리 ---
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
-        # ① 대표 키워드(expander)마다 ②뉴스+요약+중요기사 한 번에 세트로
-        with st.expander(f"[{main_kw}] ({len(filtered_articles)}건)", expanded=True):
-            if filtered_articles:
-                # "작은 2분할"을 위해
-                col_left, col_right = st.columns([1,1])
-                with col_left:
-                    # 뉴스리스트+전체선택+체크박스 (paste-2 방식처럼)
-                    render_news_checkboxes(main_kw, filtered_articles)
-                with col_right:
-                    # 선택된 기사 요약/감성+다운로드+중요기사 함수(dummy/hook 함수명 예시)
-                    render_summary_download_important(main_kw, filtered_articles)
-            else:
-                st.write("결과 없음")
+        
+        if filtered_articles:
+            filtered_results[keyword] = filtered_articles
+
+    render_articles_with_single_summary_and_telegram(
+        filtered_results,
+        st.session_state.show_limit,
+        show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
+        enable_summary=st.session_state.get("enable_summary", True)
+    )
