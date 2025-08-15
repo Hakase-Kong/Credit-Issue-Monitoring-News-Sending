@@ -835,61 +835,65 @@ def render_articles_with_single_summary_and_telegram(
     SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
     col_list, col_summary = st.columns([1, 1])
 
-    # ---------------------------- 뉴스 목록 열 ----------------------------
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
-        for keyword, articles in results.items():
-            # ✅ 접었다/펼칠 수 있는 expander로 변경
-            with st.expander(f"[{keyword}] ({len(articles)}건)", expanded=True):
-                # 전체 선택/해제 체크박스
-                all_article_keys = []
-                for idx, article in enumerate(articles):
-                    uid = re.sub(r"\W+", "", article["link"])[-16:]
-                    key = f"{keyword}_{idx}_{uid}"
-                    all_article_keys.append(key)
 
-                prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
-                # 현재 상태(유저가 실제로 클릭한 후의 값)
-                select_all = st.checkbox(
-                    f"전체 기사 선택/해제 ({keyword})",
-                    value=prev_value,
-                    key=f"{keyword}_select_all"
-                )
-                # 클릭 변화 감지 — 한 번의 클릭에 즉시 처리!
-                if select_all != prev_value:
-                    for k in all_article_keys:
-                        st.session_state.article_checked[k] = select_all
-                        st.session_state.article_checked_left[k] = select_all
-                    st.rerun()  # 즉시 리렌더링
+        # 1) favorite_categories 순서대로 그룹화 출력
+        for category_name, company_list in favorite_categories.items():
+            # 대분류 expander
+            with st.expander(f"📂 {category_name}", expanded=True):
+                for company in company_list:
+                    if company not in results:
+                        continue
+                    articles = results[company]
 
-                # 개별 기사 체크박스
-                for idx, article in enumerate(articles):
-                    uid = re.sub(r"\W+", "", article["link"])[-16:]
-                    key = f"{keyword}_{idx}_{uid}"
-                    cache_key = f"summary_{key}"
-                    cols = st.columns([0.04, 0.96])
-                    with cols[0]:
-                        checked = st.checkbox(
-                            "",
-                            value=st.session_state.article_checked.get(key, False),
-                            key=f"news_{key}",
+                    # 기존 회사별 expander
+                    with st.expander(f"[{company}] ({len(articles)}건)", expanded=False):
+                        all_article_keys = []
+                        for idx, article in enumerate(articles):
+                            uid = re.sub(r"\W+", "", article["link"])[-16:]
+                            key = f"{company}_{idx}_{uid}"
+                            all_article_keys.append(key)
+
+                        prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
+                        select_all = st.checkbox(
+                            f"전체 기사 선택/해제 ({company})",
+                            value=prev_value,
+                            key=f"{company}_select_all"
                         )
-                    with cols[1]:
-                        sentiment = ""
-                        if show_sentiment_badge and cache_key in st.session_state:
-                            _, _, sentiment, _ = st.session_state[cache_key]
-                        badge_html = (
-                            f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>"
-                            if sentiment else ""
-                        )
-                        search_word_info = f" | 검색어: {article.get('검색어', '')}" if article.get("검색어") else ""
-                        st.markdown(
-                            f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
-                            f"{badge_html} {article['date']} | {article['source']}{search_word_info}",
-                            unsafe_allow_html=True,
-                        )
-                    st.session_state.article_checked_left[key] = checked
-                    st.session_state.article_checked[key] = checked
+                        if select_all != prev_value:
+                            for k in all_article_keys:
+                                st.session_state.article_checked[k] = select_all
+                                st.session_state.article_checked_left[k] = select_all
+                            st.rerun()
+
+                        for idx, article in enumerate(articles):
+                            uid = re.sub(r"\W+", "", article["link"])[-16:]
+                            key = f"{company}_{idx}_{uid}"
+                            cache_key = f"summary_{key}"
+                            cols = st.columns([0.04, 0.96])
+                            with cols[0]:
+                                checked = st.checkbox(
+                                    "",
+                                    value=st.session_state.article_checked.get(key, False),
+                                    key=f"news_{key}",
+                                )
+                            with cols[1]:
+                                sentiment = ""
+                                if show_sentiment_badge and cache_key in st.session_state:
+                                    _, _, sentiment, _ = st.session_state[cache_key]
+                                badge_html = (
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>"
+                                    if sentiment else ""
+                                )
+                                search_word_info = f" | 검색어: {article.get('검색어', '')}" if article.get("검색어") else ""
+                                st.markdown(
+                                    f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
+                                    f"{badge_html} {article['date']} | {article['source']}{search_word_info}",
+                                    unsafe_allow_html=True,
+                                )
+                            st.session_state.article_checked_left[key] = checked
+                            st.session_state.article_checked[key] = checked
 
     # ---------------------------- 선택 기사 요약 열 ----------------------------
     with col_summary:
