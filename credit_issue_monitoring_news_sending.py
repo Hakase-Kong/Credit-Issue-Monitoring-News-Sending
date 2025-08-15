@@ -540,29 +540,31 @@ def remove_duplicates(articles):
 keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()] if keywords_input else []
 search_clicked = False
 
-if keyword_list:
-        search_clicked = True
+keyword_list = []
 
-if keyword_list and (search_clicked or st.session_state.get("search_triggered")):
-    with st.spinner("뉴스 검색 중..."):
-        process_keywords_parallel_with_synonyms(
-            sorted(keywords),
-            st.session_state["start_date"],
-            st.session_state["end_date"],
-            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
-        )
-
+# 1) 카테고리 선택 시 (카테고리 검색 버튼)
 if category_search_clicked and selected_categories:
+    keywords = set()
+    for cat in selected_categories:
+        keywords.update(favorite_categories[cat])
+    st.session_state.favorite_keywords = list(keywords)
+    st.session_state.search_triggered = True
+
+# 2) 직접 키워드 입력 (검색 버튼)
+if search_clicked and keywords_input:
+    st.session_state.favorite_keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
+    st.session_state.search_triggered = True
+
+# 3) 렌더링/검색
+if st.session_state.search_triggered and st.session_state.favorite_keywords:
     with st.spinner("뉴스 검색 중..."):
-        keywords = set()
-        for cat in selected_categories:
-            keywords.update(favorite_categories[cat])
         process_keywords_parallel_with_synonyms(
-            sorted(keywords),
+            sorted(st.session_state.favorite_keywords),
             st.session_state["start_date"],
             st.session_state["end_date"],
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
+    st.session_state.search_triggered = False
 
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
@@ -1260,11 +1262,8 @@ if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-        
-        # --- 중복 기사 제거 처리 ---
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
-        
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
 
