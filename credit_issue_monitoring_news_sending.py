@@ -1300,15 +1300,18 @@ if st.session_state.search_results:
     for main_kw in get_searched_main_keywords():
         articles = st.session_state.search_results.get(main_kw, [])
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-
+        if st.session_state.get("remove_duplicate_articles", False):
+            filtered_articles = remove_duplicates(filtered_articles)
+        # ① 대표 키워드(expander)마다 ②뉴스+요약+중요기사 한 번에 세트로
         with st.expander(f"[{main_kw}] ({len(filtered_articles)}건)", expanded=True):
             if filtered_articles:
-                render_articles_with_single_summary_and_telegram(
-                    {main_kw: filtered_articles},
-                    st.session_state.show_limit,
-                    show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
-                    enable_summary=st.session_state.get("enable_summary", True),
-                    unique_key=main_kw    # 👈 이 인자도 render 함수에 넘긴 뒤 버튼에도 유니크 지정!
-                )
+                # "작은 2분할"을 위해
+                col_left, col_right = st.columns([1,1])
+                with col_left:
+                    # 뉴스리스트+전체선택+체크박스 (paste-2 방식처럼)
+                    render_news_checkboxes(main_kw, filtered_articles)
+                with col_right:
+                    # 선택된 기사 요약/감성+다운로드+중요기사 함수(dummy/hook 함수명 예시)
+                    render_summary_download_important(main_kw, filtered_articles)
             else:
                 st.write("결과 없음")
