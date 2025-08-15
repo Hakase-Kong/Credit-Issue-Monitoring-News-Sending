@@ -840,13 +840,16 @@ def render_articles_with_single_summary_and_telegram(
 
         # 1) favorite_categories 순서대로 그룹화 출력
         for category_name, company_list in favorite_categories.items():
+            # 실제 results에 데이터가 있는 기업만 필터링
+            companies_with_results = [c for c in company_list if c in results]
+            if not companies_with_results:
+                continue  # ✅ 이 대분류 전체를 출력하지 않음
+    
             # 대분류 expander
             with st.expander(f"📂 {category_name}", expanded=True):
-                for company in company_list:
-                    if company not in results:
-                        continue
+                for company in companies_with_results:
                     articles = results[company]
-
+                    
                     # 기존 회사별 expander
                     with st.expander(f"[{company}] ({len(articles)}건)", expanded=False):
                         all_article_keys = []
