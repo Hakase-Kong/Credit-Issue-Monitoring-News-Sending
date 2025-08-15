@@ -858,7 +858,7 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
 
 
 def render_articles_with_single_summary_and_telegram(
-    results, show_limit, show_sentiment_badge=True, enable_summary=True
+    results, show_limit, show_sentiment_badge=True, enable_summary=True, unique_key="default"
 ):
     SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
     col_list, col_summary = st.columns([1, 1])
@@ -996,7 +996,7 @@ def render_articles_with_single_summary_and_telegram(
                     label="📥 맞춤 엑셀 다운로드",
                     data=get_excel_download_with_favorite_and_excel_company_col(
                         selected_articles, favorite_categories, excel_company_categories,
-                        st.session_state.search_results
+                        st.session_state.search_results,key=f"download_btn_summary_{unique_key}"
                     ).getvalue(),
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
