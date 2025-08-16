@@ -234,27 +234,29 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
-def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=None):
+def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=None, fallback_title=None, fallback_desc=None):
     """
-    본문 요약/감성분석.
-    target_keyword: 감성 판단의 초점을 맞출 기업/키워드
+    본문, 또는 fallback_title/fallback_desc만 갖고서도 무조건 요약 감성 분석 시도!
     """
-    if not OPENAI_API_KEY:
-        return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", text
+    # 필요시 title/desc만으로 최소 정보로 본문 생성
+    if (not text or "본문 추출 오류" in text) and (fallback_title or fallback_desc):
+        text = f"[기사제목] {fallback_title or ''}\n[요약정보] {fallback_desc or ''}"
     if not text or "본문 추출 오류" in text:
         return "기사 본문이 추출 실패", "", "감성 추출 실패", text
 
     lang = detect_lang(text)
+    extra_hint = (
+        "\n※ 만약 본문이 너무 짧거나, 제목/요약만 제시돼도 제한된 정보를 최대한 활용해 질문에 답하라."
+        "\n가능하면 핵심 주체, 사건, 대상 키워드(기업)에 초점을 맞출 것."
+    )
 
-    # 🔹 프롬프트 구성: target_keyword를 중심으로 감성 판정
     if lang == "ko":
         focus_info = f" 분석의 초점은 반드시 '{target_keyword}' 기업(또는 키워드)이며, 기사의 전체 분위기가 아닌 이 기업에 대한 기사 내용과 문맥을 기준으로 감성을 판정해야 합니다." if target_keyword else ""
         role_prompt = (
-            "너는 경제 뉴스 요약/분석 전문가야."
-            " 한 문장 요약에는 반드시 주체, 핵심 사건, 결과를 포함하고,"
+            "너는 경제 뉴스 요약/분석 전문가야. 한 문장 요약에는 반드시 주체, 핵심 사건, 결과를 포함하고,"
             " 감성 분류는 해당 기업에 긍정/부정 영향을 주는지를 판단해야 한다."
-            + focus_info +
-            " 감성은 '긍정' 또는 '부정' 중 하나만 선택. 중립은 금지."
+            + focus_info + " 감성은 '긍정' 또는 '부정' 중 하나만 선택. 중립은 금지."
+            + extra_hint
         )
         main_prompt = f"""
 아래 기사 본문을 분석해 다음 세 가지를 정확히 응답하라.
@@ -276,6 +278,7 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
             " Sentiment classification must reflect the impact on the specific entity of interest."
             + focus_info +
             " Sentiment must be either positive or negative. Neutral is not allowed."
+            + extra_hint
         )
         main_prompt = f"""
 Analyze the following article focusing on this target entity: "{target_keyword or 'N/A'}"
@@ -288,7 +291,6 @@ Analyze the following article focusing on this target entity: "{target_keyword o
 [ARTICLE]
 {text}
 """
-
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
