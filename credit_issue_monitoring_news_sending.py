@@ -45,7 +45,7 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
         all_articles = []
 
         # 병렬 처리 시작
-        with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
                 executor.submit(fetch_naver_news, search_kw, start_date, end_date, 
                                 require_keyword_in_title=require_keyword_in_title): search_kw
