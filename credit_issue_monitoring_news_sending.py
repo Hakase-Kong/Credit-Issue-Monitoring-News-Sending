@@ -730,8 +730,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 "[선정 기사 예시]\n"
                 "[긍정]:(기사 제목)\n"
                 "[부정]:(기사 제목)\n"
-                "[참고]:(기사 제목)\n" +
-                prompt_example
             )
 
             try:
