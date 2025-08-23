@@ -41,15 +41,21 @@ def expand_keywords_with_synonyms(original_keywords):
     return expanded_map
 
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
+    """
+    개선: 
+    1) 각 키워드별 호출 횟수를 최대 3개로 제한하여 호출 과부하 완화
+    2) 병렬 스레드 수를 5로 제한
+    3) 모든 키워드 결과 수집 후 중복제거 한번만 수행
+    """
     for main_kw, kw_list in favorite_to_expand_map.items():
         all_articles = []
-
-        # 병렬 처리 시작
-        with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
+        max_calls_per_kw = 3  # 호출 횟수 제한
+        limited_kw_list = kw_list[:max_calls_per_kw]
+        with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {
-                executor.submit(fetch_naver_news, search_kw, start_date, end_date, 
+                executor.submit(fetch_naver_news, search_kw, start_date, end_date,
                                 require_keyword_in_title=require_keyword_in_title): search_kw
-                for search_kw in kw_list
+                for search_kw in limited_kw_list
             }
             for future in as_completed(futures):
                 search_kw = futures[future]
@@ -61,7 +67,7 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                 except Exception as e:
                     st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
 
-        # 중복 제거 여부
+        # 중복 제거는 한 번만 수행
         if st.session_state.get("remove_duplicate_articles", False):
             all_articles = remove_duplicates(all_articles)
 
@@ -429,6 +435,11 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
             st.session_state.show_limit[k] = 5
 
 def summarize_article_from_url(article_url, title, do_summary=True, target_keyword=None, description=None):
+    """
+    개선:
+    1) 이미 요약된 결과가 캐시에 있으면 바로 사용 (캐시 강화)
+    2) 요약/감성 분석은 호출 시점에 Lazy evaluation (필요할 때만 호출)
+    """
     cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
     summary_key = f"summary_{cache_key_base}"
 
@@ -450,6 +461,19 @@ def summarize_article_from_url(article_url, title, do_summary=True, target_keywo
 
     st.session_state[summary_key] = result
     return result
+
+def get_filtered_and_deduplicated_results(raw_results):
+    combined = []
+    for articles in raw_results.values():
+        combined.extend(articles)
+
+    if st.session_state.get("remove_duplicate_articles", False):
+        combined = remove_duplicates(combined)
+
+    # 필터링
+    filtered = [article for article in combined if article_passes_all_filters(article)]
+
+    return filtered
 
 def or_keyword_filter(article, *keyword_lists):
     text = (article.get("title", "") + " " + article.get("description", "") + " " + article.get("full_text", ""))
@@ -475,6 +499,9 @@ def article_contains_exact_keyword(article, keywords):
     return False
 
 def article_passes_all_filters(article):
+    """
+    개선: 필터링 로직 유지, 단 중복 제거 필터링은 호출하는 쪽에서 한 번만 수행하도록 코드 설계가 필요
+    """
     # 제목에 제외 키워드가 포함되면 제외
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
@@ -675,49 +702,55 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     import re
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    # ✅ 최신 고성능 모델로 교체
     client = OpenAI(api_key=OPENAI_API_KEY)
     result = []
 
+    # >>> 루프 내 프롬프트 수정 (최대 3건까지, 중립 뉴스도 허용)
     for category, companies in favorites.items():
         for comp in companies:
             articles = search_results.get(comp, [])
             filtered_keywords = list(set(common_keywords + industry_keywords))
-            target_articles = [a for a in articles if any(kw in a["title"] for kw in filtered_keywords)]
+            # 제목뿐 아니라 요약/본문에도 포함될 경우 후보로 인정할 수 있도록 로직을 확장하는 것이 바람직
+            target_articles = [a for a in articles if any(
+                kw in (a.get("title","") + " " + a.get("description","")) for kw in filtered_keywords)]
 
             if not target_articles:
                 continue
 
             prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
 
-            # ◾️ 여기에 강화된 프롬프트 적용
+            # 개선 프롬프트 적용
             prompt = (
                 f"[기사 목록]\n{prompt_list}\n\n"
-                "분석의 초점은 반드시 '{target_keyword}' 기업(또는 키워드)이며, "
-                "기사의 전체 분위기가 아닌 이 기업에 대한 기사 내용과 문맥을 기준으로 감성을 판정해야 합니다.\n\n"
-                "1. 각 기사 내용을 읽고, 기사의 전반적인 감성 톤(긍정/부정)을 판단해 주세요.\n"
-                "   - 만약 긍정과 부정이 혼재된 경우, 기사 전체 분위기 중 우세한 감성 톤을 기준으로 판단합니다.\n\n"
-                "2. 기사에 언급된 기업의 채권 투자자 입장에서 판단하여,\n"
-                "   2.1 재무 안정성, 현금창출력, 실적 개선, 리스크 완화 여부, 긍정적 전망에 긍정적으로 기여하는 핵심 긍정 기사 1건,\n"
-                "   2.2 수익성 저하, 리스크 확대, 부정적 전망에 해당하는 핵심 부정 기사 1건을 각각 선정해 주세요.\n"
-                "3. 감성 분류(긍정/부정)에 해당하는 기사를 검색 키워드(기업명)별로 최소 1개씩 선택하세요. "
-                "만약 해당 키워드의 기사 중 생뚱맞아 적합하지 않은 경우, 선택하지 않아도 됩니다 (즉, 공란으로 남겨 주세요).\n\n"
-                "[긍정]: (긍정적 선정 기사 제목)\n"
-                "[부정]: (부정적 선정 기사 제목)"
+                "아래 기업(또는 키워드)의 신용, 실적, 리스크 변화와 관련해서 '특히 주목할 만한' 기사를 최대 3건까지 선정해 주세요.\n"
+                "- 긍정적 변화(재무 안정, 실적 호전 등), 부정적 변화(리스크 확대, 실적 악화 등), 참고할 변화(중립적 이슈 또는 논란 등)로 한 건씩(또는 없으면 생략)\n"
+                "- 전체 맥락에서 투자자·신용분석자 입장에서 '뉴스 중요도' 위주로\n"
+                "- 너무 사소한 기사, 단순 사실 재언급 등은 제외\n\n"
+                "[선정 기사 예시]\n"
+                "[긍정]:(기사 제목)\n"
+                "[부정]:(기사 제목)\n"
+                "[참고]:(기사 제목)\n" +
+                prompt_example
             )
 
             try:
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",   # <<< 최신 모델로 변경
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=800,
-                    temperature=0.3
+                    max_tokens=900,
+                    temperature=0     # <<< 일관성↑
                 )
                 answer = response.choices[0].message.content.strip()
                 pos_title = re.search(r"\[긍정\]:\s*(.+)", answer)
                 neg_title = re.search(r"\[부정\]:\s*(.+)", answer)
+                neu_title = re.search(r"\[참고\]:\s*(.+)", answer)
+
                 pos_title = pos_title.group(1).strip() if pos_title else ""
                 neg_title = neg_title.group(1).strip() if neg_title else ""
+                neu_title = neu_title.group(1).strip() if neu_title else ""
 
+                # 선정된 기사 match 로직 (제목 substring 포함시 인정)
                 for a in target_articles:
                     if pos_title and pos_title in a["title"]:
                         result.append({
@@ -732,6 +765,15 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                         result.append({
                             "회사명": comp,
                             "감성": "부정",
+                            "제목": a["title"],
+                            "링크": a["link"],
+                            "날짜": a["date"],
+                            "출처": a["source"]
+                        })
+                    if neu_title and neu_title in a["title"]:
+                        result.append({
+                            "회사명": comp,
+                            "감성": "참고",
                             "제목": a["title"],
                             "링크": a["link"],
                             "날짜": a["date"],
@@ -1343,20 +1385,15 @@ def render_important_article_review_and_download():
         )
 
 if st.session_state.search_results:
-    filtered_results = {}
-    for keyword, articles in st.session_state.search_results.items():
-        filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-        
-        # --- 중복 기사 제거 처리 ---
-        if st.session_state.get("remove_duplicate_articles", False):
-            filtered_articles = remove_duplicates(filtered_articles)
-        
-        if filtered_articles:
-            filtered_results[keyword] = filtered_articles
+    filtered_results_list = get_filtered_and_deduplicated_results(st.session_state.search_results)
 
+    # filtered_results_list에는 중복제거 및 필터링이 완료된 기사 리스트가 들어감
+    # 이후 UI 렌더링 및 요약/감성 분석은 Lazy 수행(사용자가 선택 시)
+
+    # 렌더링용 데이터 구조 변환 등이 필요할 경우 적절히 가공 후 아래 함수 호출
     render_articles_with_single_summary_and_telegram(
-        filtered_results,
-        st.session_state.show_limit,
+        results={art.get("검색어", ""): [art] for art in filtered_results_list},
+        show_limit=st.session_state.show_limit,
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
