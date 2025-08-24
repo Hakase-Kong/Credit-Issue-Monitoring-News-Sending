@@ -1089,6 +1089,16 @@ def render_articles_with_single_summary_and_telegram(
         render_important_article_review_and_download()
 
 def render_important_article_review_and_download():
+    # 여백 최소화 CSS (한 번만 선언, 중복 선언 시는 위쪽 선언 삭제)
+    st.markdown("""
+        <style>
+        [data-testid="stVerticalBlock"] > div {margin-bottom: 0.05rem !important;}
+        .stCheckbox {margin-bottom: 0.03rem!important;}
+        .stMarkdown {margin-bottom: 0.05rem !important;}
+        .stExpanderContent {padding-top:0.01rem!important; padding-bottom:0.01rem!important;}
+        </style>
+    """, unsafe_allow_html=True)
+
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
@@ -1124,7 +1134,6 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
-        # ========================== 출력부 ==============================
         articles = st.session_state.get("important_articles_preview", [])
         if not articles:
             st.info("자동선정된 중요 기사가 없습니다. 필터 기준 또는 선정 프롬프트/파싱 코드를 점검해주세요.")
@@ -1146,38 +1155,15 @@ def render_important_article_review_and_download():
         for kw in all_keywords:
             items = grouped[kw]
             with st.expander(f"[{kw}] ({len(items)}건)", expanded=False):
-                for idx, article in items:
-                    checked = idx in selected_indexes
 
-                    # 한 줄에 체크박스+감성|제목 하이퍼링크
-                    col_checkbox, col_label = st.columns([0.06, 0.94])
-                    with col_checkbox:
-                        cb = st.checkbox(
-                            '',  # label 없이 체크만
-                            key=f"important_chk_{idx}",
-                            value=checked
-                        )
-                    with col_label:
-                        label = (
-                            f"{article.get('감성', '')} | "
-                            f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a>"
-                        )
-                        st.markdown(label, unsafe_allow_html=True)
+                # 병렬 요약처리
+                from concurrent.futures import ThreadPoolExecutor
 
-                    # 체크상태 업데이트
-                    if cb:
-                        if idx not in selected_indexes:
-                            selected_indexes.append(idx)
-                    else:
-                        if idx in selected_indexes:
-                            selected_indexes.remove(idx)
-
-                    # 한 줄 요약(아래 슬림하게)
+                def summarize_for_render(idx_and_art):
+                    idx, article = idx_and_art
                     cleaned_id = re.sub(r"\W+", "", article.get("링크", ""))[-16:]
                     summary_key = f"summary_{cleaned_id}"
-                    one_line = ""
-                    if summary_key in st.session_state and \
-                       type(st.session_state[summary_key]) is tuple:
+                    if summary_key in st.session_state and type(st.session_state[summary_key]) is tuple:
                         one_line = st.session_state[summary_key][0]
                     else:
                         try:
@@ -1188,13 +1174,37 @@ def render_important_article_review_and_download():
                             st.session_state[summary_key] = (one_line, None, None, None)
                         except Exception:
                             one_line = ""
+                    return idx, article, one_line
+
+                item_list = [(idx, article) for idx, article in items]
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    summarized_results = list(executor.map(summarize_for_render, item_list))
+
+                # 결과 일괄 렌더링
+                for idx, article, one_line in summarized_results:
+                    col_checkbox, col_label = st.columns([0.04, 0.96], gap="small")
+                    with col_checkbox:
+                        cb = st.checkbox('', key=f"important_chk_{idx}", value=(idx in selected_indexes))
+                    with col_label:
+                        label = (
+                            f"{article.get('감성', '')} | "
+                            f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a>"
+                        )
+                        st.markdown(label, unsafe_allow_html=True)
                     if one_line and one_line != "요약 추출 실패":
                         st.markdown(
-                            f"<span style='color:gray;font-style:italic;'>{one_line}</span>",
+                            f"<span style='color:gray;font-style:italic;font-size:0.94em'>{one_line}</span>",
                             unsafe_allow_html=True
                         )
+                    st.write("")  # 얇은 줄
 
-                    st.markdown("---")
+                    # 체크상태 동기화
+                    if cb:
+                        if idx not in selected_indexes:
+                            selected_indexes.append(idx)
+                    else:
+                        if idx in selected_indexes:
+                            selected_indexes.remove(idx)
 
         st.session_state["important_selected_index"] = selected_indexes
 
@@ -1343,7 +1353,6 @@ def render_important_article_review_and_download():
             keyword = raw_article.get("키워드", "")
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
             sentiment, one_line, summary, full_text = None, "", "", ""
-
             # 캐시에서 요약/감성 꺼내오기
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
