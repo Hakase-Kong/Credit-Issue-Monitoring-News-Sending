@@ -1088,7 +1088,7 @@ def render_articles_with_single_summary_and_telegram(
 
         render_important_article_review_and_download()
 
-def render_important_article_review_and_edit():
+def render_important_article_review_and_download():
     # CSS - 출력 간격 줄이기
     st.markdown("""
         <style>
