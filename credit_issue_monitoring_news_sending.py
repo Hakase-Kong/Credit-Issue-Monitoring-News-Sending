@@ -1167,7 +1167,7 @@ def render_important_article_review_and_download():
                 
                     # ---- [요약 가져오기: 캐시 우선, 없으면 실시간 생성] ----
                     cleaned_id = re.sub(r"\W+", "", article.get("링크", ""))[-16:]
-                        summary_key = f"summary_{cleaned_id}"
+                    summary_key = f"summary_{cleaned_id}"
                     one_line = ""
                     if summary_key in st.session_state and \
                        type(st.session_state[summary_key]) is tuple:
@@ -1412,3 +1412,4 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
+
