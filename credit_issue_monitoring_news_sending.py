@@ -673,10 +673,28 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     import os
     from openai import OpenAI
     import re
+    import difflib
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     client = OpenAI(api_key=OPENAI_API_KEY)
     result = []
+
+    # 유사도 기반 부분일치
+    def match_title(target, candidates):
+        # 완전일치 우선
+        for cand in candidates:
+            if cand == target:
+                return True
+        # 유사도 0.8 이상이면 true
+        for cand in candidates:
+            if difflib.SequenceMatcher(None, cand, target).ratio() >= 0.8:
+                return True
+        # 후보 제목 일부가 기사에 들어가도 인정 (5글자 이상)
+        for cand in candidates:
+            seg = cand[:min(8, len(cand))]
+            if seg and seg in target:
+                return True
+        return False
 
     for category, companies in favorites.items():
         for comp in companies:
@@ -689,7 +707,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
             prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
 
-            # ◾️ 여기에 강화된 프롬프트 적용
             prompt = (
                 f"[기사 목록]\n{prompt_list}\n\n"
                 "각 키워드(혹은 회사)별로 [긍정 기사 최대 3건], [부정 기사 최대 3건]씩 선정하세요.\n"
@@ -699,7 +716,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 "\n[선택결과 출력형식]\n"
                 "[긍정]:\n1. (기사제목)\n2. (기사제목)\n3. (기사제목)\n[부정]:\n1. (기사제목)\n2. (기사제목)\n3. (기사제목)"
             )
-
             try:
                 response = client.chat.completions.create(
                     model="gpt-4o",
@@ -708,13 +724,31 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                     temperature=0
                 )
                 answer = response.choices[0].message.content.strip()
-                pos_title = re.search(r"\[긍정\]:\s*(.+)", answer)
-                neg_title = re.search(r"\[부정\]:\s*(.+)", answer)
-                pos_title = pos_title.group(1).strip() if pos_title else ""
-                neg_title = neg_title.group(1).strip() if neg_title else ""
 
+                # 긍정/부정 번호제목 라인 robust 파싱
+                def parse_titles(block):
+                    titles = []
+                    for line in block.strip().split("\n"):
+                        m = re.match(r"([0-9]+)\.\s*(.+)", line.strip())
+                        if m:
+                            titles.append(m.group(2).strip())
+                    return titles
+
+                # 긍정 블럭 추출  
+                pos_titles = []
+                m_pos = re.search(r"\[긍정\]:\s*((?:[0-9]+\..+\n?)*)", answer)
+                if m_pos:
+                    pos_titles = parse_titles(m_pos.group(1))
+
+                # 부정 블럭 추출
+                neg_titles = []
+                m_neg = re.search(r"\[부정\]:\s*((?:[0-9]+\..+\n?)*)", answer)
+                if m_neg:
+                    neg_titles = parse_titles(m_neg.group(1))
+
+                # 기사제목과 부분일치(유사도) 매칭
                 for a in target_articles:
-                    if pos_title and pos_title in a["title"]:
+                    if any(match_title(a["title"], [t]) for t in pos_titles):
                         result.append({
                             "회사명": comp,
                             "감성": "긍정",
@@ -723,7 +757,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                             "날짜": a["date"],
                             "출처": a["source"]
                         })
-                    if neg_title and neg_title in a["title"]:
+                    if any(match_title(a["title"], [t]) for t in neg_titles):
                         result.append({
                             "회사명": comp,
                             "감성": "부정",
@@ -732,7 +766,8 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                             "날짜": a["date"],
                             "출처": a["source"]
                         })
-            except Exception:
+            except Exception as e:
+                print("OpenAI 중요기사 자동선정 오류:", e)
                 continue
     return result
 
@@ -1090,6 +1125,9 @@ def render_important_article_review_and_download():
                 st.session_state["important_selected_index"] = []
 
         articles = st.session_state.get("important_articles_preview", [])
+        if not articles:
+            st.info("자동선정된 중요 기사가 없습니다. 필터 기준 또는 선정 프롬프트/파싱 코드를 점검해주세요.")
+            return
         selected_indexes = st.session_state.get("important_selected_index", [])
 
         st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
