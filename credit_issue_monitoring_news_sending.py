@@ -1102,14 +1102,20 @@ def render_important_article_review_and_download():
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
-        # --- 반드시 필터링된 결과만 활용 ---
-        filtered_results_for_important = st.session_state.get("filtered_results", {})
-
         # 중요기사 자동선정 버튼
         auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
         if auto_btn:
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
-                # 중요기사 자동선정(수집)시 반드시 filtered_results_for_important만 사용!
+                # 필터링 및 중복제거 후 후보군 준비
+                filtered_results_for_important = {}
+                for keyword, articles in st.session_state.search_results.items():
+                    filtered = [a for a in articles if article_passes_all_filters(a)]
+                    if st.session_state.get("remove_duplicate_articles", False):
+                        filtered = remove_duplicates(filtered)
+                    if filtered:
+                        filtered_results_for_important[keyword] = filtered
+
+                # OpenAI 자동 선정
                 important_articles = generate_important_article_list(
                     search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
@@ -1148,9 +1154,10 @@ def render_important_article_review_and_download():
         ordered_keywords = list(favorite_categories.keys())
         shown_keywords = [kw for kw in ordered_keywords if kw in grouped]
         etc_keywords = [kw for kw in grouped if kw not in shown_keywords]
+        # ETC 키워드는 favorite_categories 순서 밖이므로 정렬하지 않고 그대로 뒤에 배치
         all_keywords = shown_keywords + etc_keywords
 
-        # 요약 캐싱 (병렬)
+        # 병렬로 요약 한번에 미리 처리 (OpenAI 호출 캐시 활용)
         from concurrent.futures import ThreadPoolExecutor
 
         def summarize_for_render(idx_and_art):
@@ -1170,17 +1177,20 @@ def render_important_article_review_and_download():
                     one_line = ""
             return idx, article, one_line
 
+        # 모든 그룹별 요약 결과를 한꺼번에 캐시 및 저장
         for kw in all_keywords:
             items = grouped[kw]
             with ThreadPoolExecutor(max_workers=8) as executor:
                 grouped[kw] = list(executor.map(summarize_for_render, items))
 
+        # 렌더링 시 한꺼번에 출력 (한 기사씩 끊어 출력하지 않음)
         for kw in all_keywords:
             items = grouped[kw]
             with st.expander(f"[{kw}] ({len(items)}건)", expanded=False):
                 for idx, article, one_line in items:
                     col_checkbox, col_label = st.columns([0.04, 0.96], gap="small")
                     with col_checkbox:
+                        # 체크박스 상태만 업데이트하고 rerun 호출 제거
                         cb = st.checkbox('', key=f"important_chk_{idx}", value=(idx in selected_indexes))
                     with col_label:
                         label = (
@@ -1194,6 +1204,7 @@ def render_important_article_review_and_download():
                             unsafe_allow_html=True
                         )
                     st.write("")
+
                     # 체크박스 상태 동기화 (rerun 없이 session_state만 갱신)
                     if cb:
                         if idx not in selected_indexes:
@@ -1202,10 +1213,10 @@ def render_important_article_review_and_download():
                         if idx in selected_indexes:
                             selected_indexes.remove(idx)
 
-        # 최종 선택 인덱스 저장
+        # 최종 선택된 인덱스 세션 저장
         st.session_state["important_selected_index"] = selected_indexes
 
-        # 하단 버튼 및 다운로드 UI
+        # 하단 작업 버튼 및 엑셀 다운로드 UI (기존과 동일)
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
 
         with col_add:
@@ -1222,8 +1233,7 @@ def render_important_article_review_and_download():
                             continue
                         key_tail = m.group(1)
                         selected_article = None
-                        # 반드시 필터된 결과에서만 추가하도록 보장
-                        for kw, arts in filtered_results_for_important.items():
+                        for kw, arts in st.session_state.search_results.items():
                             for art in arts:
                                 uid = re.sub(r'\W+', '', art['link'])[-16:]
                                 if uid == key_tail:
@@ -1233,7 +1243,8 @@ def render_important_article_review_and_download():
                                 break
                         if not selected_article:
                             continue
-                        keyword = extract_keyword_from_link(filtered_results_for_important, selected_article["link"])
+
+                        keyword = extract_keyword_from_link(st.session_state.search_results, selected_article["link"])
                         cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                         sentiment = None
                         for k in st.session_state.keys():
@@ -1242,7 +1253,9 @@ def render_important_article_review_and_download():
                                 break
                         if not sentiment:
                             _, _, sentiment, _ = summarize_article_from_url(
-                                selected_article["link"], selected_article["title"])
+                                selected_article["link"], selected_article["title"]
+                            )
+
                         new_article = {
                             "키워드": keyword,
                             "기사제목": selected_article["title"],
@@ -1286,8 +1299,8 @@ def render_important_article_review_and_download():
                     return
                 key_tail = m.group(1)
                 selected_article = None
-                for kw, arts in filtered_results_for_important.items():
-                    for art in arts:
+                for kw, art_list in st.session_state.search_results.items():
+                    for art in art_list:
                         uid = re.sub(r'\W+', '', art['link'])[-16:]
                         if uid == key_tail:
                             selected_article = art
@@ -1297,7 +1310,8 @@ def render_important_article_review_and_download():
                 if not selected_article:
                     st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
                     return
-                keyword = extract_keyword_from_link(filtered_results_for_important, selected_article["link"])
+
+                keyword = extract_keyword_from_link(st.session_state.search_results, selected_article["link"])
                 cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
                 sentiment = None
                 for k in st.session_state.keys():
@@ -1306,7 +1320,9 @@ def render_important_article_review_and_download():
                         break
                 if not sentiment:
                     _, _, sentiment, _ = summarize_article_from_url(
-                        selected_article["link"], selected_article["title"])
+                        selected_article["link"], selected_article["title"]
+                    )
+
                 new_article = {
                     "키워드": keyword,
                     "기사제목": selected_article["title"],
@@ -1325,7 +1341,9 @@ def render_important_article_review_and_download():
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
 
+        final_selected_indexes = st.session_state.get("important_selected_index", [])
         articles_source = st.session_state.get("important_articles_preview", [])
+
         industry_keywords_all = []
         if st.session_state.get("use_industry_filter", False):
             for sublist in st.session_state.industry_major_sub_map.values():
@@ -1361,11 +1379,12 @@ def render_important_article_review_and_download():
             }
 
         summary_data = [enrich_article_for_excel(a) for a in articles_source]
+
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
             summary_data,
             favorite_categories,
             excel_company_categories,
-            filtered_results_for_important,       # 반드시 여기서도 filtered를 사용해야 함!
+            st.session_state.search_results
         )
 
         st.download_button(
