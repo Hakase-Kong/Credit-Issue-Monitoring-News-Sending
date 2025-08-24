@@ -1124,7 +1124,7 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
-        # ========================== 여기부터 출력부 개선 ==============================
+        # ========================== 출력부 ==============================
         articles = st.session_state.get("important_articles_preview", [])
         if not articles:
             st.info("자동선정된 중요 기사가 없습니다. 필터 기준 또는 선정 프롬프트/파싱 코드를 점검해주세요.")
@@ -1133,47 +1133,46 @@ def render_important_article_review_and_download():
 
         st.markdown("🎯 **중요 기사 목록** (키워드별 분류, 교체/삭제/추가 반영)")
 
-        # 키워드별 그룹핑 및 expander 출력
         from collections import defaultdict
         grouped = defaultdict(list)
         for idx, article in enumerate(articles):
             kw = article.get("키워드") or article.get("회사명") or "기타"
             grouped[kw].append((idx, article))
-
-        # keyword order: favorite_categories 우선, 그 외는 sorted
         ordered_keywords = list(favorite_categories.keys())
-        # 실제 기사에 나타난 키워드만 표시
         shown_keywords = [kw for kw in ordered_keywords if kw in grouped]
         etc_keywords = [kw for kw in grouped if kw not in shown_keywords]
         all_keywords = shown_keywords + sorted(etc_keywords)
 
-        # 반복 출력
         for kw in all_keywords:
             items = grouped[kw]
             with st.expander(f"[{kw}] ({len(items)}건)", expanded=False):
                 for idx, article in items:
                     checked = idx in selected_indexes
-                    # 1. 체크박스만(라벨 없이)
-                    cb = st.checkbox(
-                        '',  # label 없이 체크만
-                        key=f"important_chk_{idx}",
-                        value=checked
-                    )
+
+                    # 한 줄에 체크박스+감성|제목 하이퍼링크
+                    col_checkbox, col_label = st.columns([0.06, 0.94])
+                    with col_checkbox:
+                        cb = st.checkbox(
+                            '',  # label 없이 체크만
+                            key=f"important_chk_{idx}",
+                            value=checked
+                        )
+                    with col_label:
+                        label = (
+                            f"{article.get('감성', '')} | "
+                            f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a>"
+                        )
+                        st.markdown(label, unsafe_allow_html=True)
+
+                    # 체크상태 업데이트
                     if cb:
                         if idx not in selected_indexes:
                             selected_indexes.append(idx)
                     else:
                         if idx in selected_indexes:
                             selected_indexes.remove(idx)
-                
-                    # 2. 감성|기사제목(하이퍼링크)
-                    checkbox_label = (
-                        f"{article.get('감성', '')} | "
-                        f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a>"
-                    )
-                    st.markdown(checkbox_label, unsafe_allow_html=True)
-                
-                    # 3. 한 줄 요약
+
+                    # 한 줄 요약(아래 슬림하게)
                     cleaned_id = re.sub(r"\W+", "", article.get("링크", ""))[-16:]
                     summary_key = f"summary_{cleaned_id}"
                     one_line = ""
@@ -1194,9 +1193,9 @@ def render_important_article_review_and_download():
                             f"<span style='color:gray;font-style:italic;'>{one_line}</span>",
                             unsafe_allow_html=True
                         )
+
                     st.markdown("---")
 
-        # 선택 인덱스 최종 반영
         st.session_state["important_selected_index"] = selected_indexes
 
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
@@ -1252,7 +1251,6 @@ def render_important_article_review_and_download():
                             added_count += 1
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-
                     st.session_state["important_articles_preview"] = important
                     if added_count > 0:
                         st.success(f"{added_count}건의 기사가 중요 기사 목록에 추가되었습니다.")
@@ -1327,7 +1325,7 @@ def render_important_article_review_and_download():
                 st.success("중요 기사 교체 완료")
                 st.rerun()
 
-        # --- 맞춤 양식 동일 포맷 엑셀 다운로드 ---
+        # --- 엑셀 다운로드 ---
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
 
@@ -1356,7 +1354,6 @@ def render_important_article_review_and_download():
                 one_line, summary, sentiment, full_text = summarize_article_from_url(
                     link, raw_article.get("기사제목", "")
                 )
-
             filter_hits = matched_filter_keywords(
                 {"title": raw_article.get("기사제목", ""), "요약본": summary,
                  "요약": one_line, "full_text": full_text},
@@ -1376,11 +1373,8 @@ def render_important_article_review_and_download():
                 "full_text": full_text or "",
             }
         
-        # ✅ 모든 '중요 기사 리스트'를 엑셀 summary_data 구조로 변환
-        #    → 선택/비선택과 관계없이 전체 리스트 사용 가능
         summary_data = [enrich_article_for_excel(a) for a in articles_source]
 
-        # 🔹 favorite_categories / excel_company_categories 순서에 맞춰 모든 기업 출력
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
             summary_data,
             favorite_categories,
