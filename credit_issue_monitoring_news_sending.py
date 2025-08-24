@@ -1164,16 +1164,31 @@ def render_important_article_review_and_download():
                     else:
                         if idx in selected_indexes:
                             selected_indexes.remove(idx)
-        
-                    # ------- [여기서 한 줄 요약 기울임 출력 추가!] -------
-                    # 한 줄 요약 표시(있을 때)
-                    one_line = article.get('요약', '') or ''
+                
+                    # ---- [요약 가져오기: 캐시 우선, 없으면 실시간 생성] ----
+                    cleaned_id = re.sub(r"\W+", "", article.get("링크", ""))[-16:]
+                        summary_key = f"summary_{cleaned_id}"
+                    one_line = ""
+                    if summary_key in st.session_state and \
+                       type(st.session_state[summary_key]) is tuple:
+                        one_line = st.session_state[summary_key][0]
+                    else:
+                        # **기사제목/링크로 요약 생성**
+                        try:
+                            one_line, *_ = summarize_article_from_url(
+                                article.get("링크", ""), article.get("기사제목", ""),
+                                do_summary=True, target_keyword=article.get("키워드", "")
+                            )
+                            st.session_state[summary_key] = (one_line, None, None, None)
+                        except Exception:
+                            one_line = ""
+                    # ---- 요약 출력 ----
                     if one_line and one_line != "요약 추출 실패":
                         st.markdown(
                             f"<span style='color:gray;font-style:italic;'>{one_line}</span>",
                             unsafe_allow_html=True
                         )
-                    # 기타 정보
+                
                     st.markdown(
                         f"- **날짜/출처:** {article.get('날짜')} | {article.get('출처')}\n"
                         f"- [기사 바로가기]({article.get('링크')})"
