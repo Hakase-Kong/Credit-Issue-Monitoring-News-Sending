@@ -748,7 +748,11 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
                 # 기사제목과 부분일치(유사도) 매칭
                 for a in target_articles:
-                    if any(match_title(a["title"], [t]) for t in pos_titles):
+                    is_positive = any(match_title(a["title"], [t]) for t in pos_titles)
+                    is_negative = any(match_title(a["title"], [t]) for t in neg_titles)
+                
+                    # 긍정 ⇨ 부정 우선순위는 논의대로 맞춰 적용(여기선 "긍정 우선")
+                    if is_positive and not is_negative:
                         result.append({
                             "회사명": comp,
                             "감성": "긍정",
@@ -757,7 +761,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                             "날짜": a["date"],
                             "출처": a["source"]
                         })
-                    if any(match_title(a["title"], [t]) for t in neg_titles):
+                    elif is_negative and not is_positive:
                         result.append({
                             "회사명": comp,
                             "감성": "부정",
@@ -766,6 +770,17 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                             "날짜": a["date"],
                             "출처": a["source"]
                         })
+                    # is_positive and is_negative 모두 True면, "긍정" 또는 "부정"만 추가 (여기선 긍정)
+                    elif is_positive and is_negative:
+                        result.append({
+                            "회사명": comp,
+                            "감성": "긍정",  # 또는 "부정"으로 교체 가능
+                            "제목": a["title"],
+                            "링크": a["link"],
+                            "날짜": a["date"],
+                            "출처": a["source"]
+                        })
+                    # 둘다 False면 무시
             except Exception as e:
                 print("OpenAI 중요기사 자동선정 오류:", e)
                 continue
@@ -1157,44 +1172,32 @@ def render_important_article_review_and_download():
             cleaned_id = re.sub(r"\W+", "", article.get("링크", ""))[-16:]
             summary_key = f"summary_{cleaned_id}"
             if summary_key in st.session_state and isinstance(st.session_state[summary_key], tuple):
-                one_line = st.session_state[summary_key][0]
+                one_line, _, sentiment, _ = st.session_state[summary_key]
             else:
-                try:
-                    one_line, *_ = summarize_article_from_url(
-                        article.get("링크", ""), article.get("기사제목", ""),
-                        do_summary=True, target_keyword=article.get("키워드", "")
-                    )
-                    st.session_state[summary_key] = (one_line, None, None, None)
-                except Exception:
-                    one_line = ""
-            return idx, article, one_line
-
-        # 모든 그룹별 요약 결과를 한꺼번에 캐시 및 저장
+                one_line, _, sentiment, _ = summarize_article_from_url(
+                    article.get("링크", ""),             # 링크
+                    article.get("기사제목", ""),         # 타이틀
+                    do_summary=True,                     # 요약 always
+                    target_keyword=article.get("키워드", "") # 핵심키워드(회사명 등)
+                )
+                st.session_state[summary_key] = (one_line, None, sentiment, None)
+            return idx, article, one_line, sentiment
+        
+        # summary_for_render를 통해 한 줄 요약/감성 동시 제공
         for kw in all_keywords:
             items = grouped[kw]
             with ThreadPoolExecutor(max_workers=8) as executor:
                 grouped[kw] = list(executor.map(summarize_for_render, items))
-
-        # 렌더링 시 한꺼번에 출력 (한 기사씩 끊어 출력하지 않음)
-        for kw in all_keywords:
-            items = grouped[kw]
+        
             with st.expander(f"[{kw}] ({len(items)}건)", expanded=False):
-                for idx, article, one_line in items:
-                    col_checkbox, col_label = st.columns([0.04, 0.96], gap="small")
-                    with col_checkbox:
-                        # 체크박스 상태만 업데이트하고 rerun 호출 제거
-                        cb = st.checkbox('', key=f"important_chk_{idx}", value=(idx in selected_indexes))
-                    with col_label:
-                        label = (
-                            f"{article.get('감성', '')} | "
-                            f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a>"
-                        )
-                        st.markdown(label, unsafe_allow_html=True)
-                    if one_line and one_line != "요약 추출 실패":
-                        st.markdown(
-                            f"<span style='color:gray;font-style:italic;font-size:0.94em'>{one_line}</span>",
-                            unsafe_allow_html=True
-                        )
+                for idx, article, one_line, sentiment in grouped[kw]:
+                    # 라벨에 감성 및 요약 모두 표기
+                    label = (
+                        f"{sentiment} | "
+                        f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a><br>"
+                        f"<span style='color:gray;font-style:italic;font-size:0.94em'>{one_line}</span>"
+                    )
+                    st.markdown(label, unsafe_allow_html=True)
                     st.write("")
 
                     # 체크박스 상태 동기화 (rerun 없이 session_state만 갱신)
