@@ -1153,8 +1153,9 @@ def render_important_article_review_and_download():
             with st.expander(f"[{kw}] ({len(items)}건)", expanded=False):
                 for idx, article in items:
                     checked = idx in selected_indexes
+                    # 1. 체크박스만(라벨 없이)
                     cb = st.checkbox(
-                        f"{article.get('감성', '')} | {article.get('기사제목', '')}",
+                        '',  # label 없이 체크만
                         key=f"important_chk_{idx}",
                         value=checked
                     )
@@ -1165,7 +1166,14 @@ def render_important_article_review_and_download():
                         if idx in selected_indexes:
                             selected_indexes.remove(idx)
                 
-                    # ---- [요약 가져오기: 캐시 우선, 없으면 실시간 생성] ----
+                    # 2. 감성|기사제목(하이퍼링크)
+                    checkbox_label = (
+                        f"{article.get('감성', '')} | "
+                        f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a>"
+                    )
+                    st.markdown(checkbox_label, unsafe_allow_html=True)
+                
+                    # 3. 한 줄 요약
                     cleaned_id = re.sub(r"\W+", "", article.get("링크", ""))[-16:]
                     summary_key = f"summary_{cleaned_id}"
                     one_line = ""
@@ -1173,7 +1181,6 @@ def render_important_article_review_and_download():
                        type(st.session_state[summary_key]) is tuple:
                         one_line = st.session_state[summary_key][0]
                     else:
-                        # **기사제목/링크로 요약 생성**
                         try:
                             one_line, *_ = summarize_article_from_url(
                                 article.get("링크", ""), article.get("기사제목", ""),
@@ -1182,17 +1189,11 @@ def render_important_article_review_and_download():
                             st.session_state[summary_key] = (one_line, None, None, None)
                         except Exception:
                             one_line = ""
-                    # ---- 요약 출력 ----
                     if one_line and one_line != "요약 추출 실패":
                         st.markdown(
                             f"<span style='color:gray;font-style:italic;'>{one_line}</span>",
                             unsafe_allow_html=True
                         )
-                
-                    st.markdown(
-                        f"- **날짜/출처:** {article.get('날짜')} | {article.get('출처')}\n"
-                        f"- [기사 바로가기]({article.get('링크')})"
-                    )
                     st.markdown("---")
 
         # 선택 인덱스 최종 반영
@@ -1412,4 +1413,3 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
-
