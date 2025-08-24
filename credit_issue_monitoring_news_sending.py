@@ -290,7 +290,7 @@ Analyze the following article focusing on this target entity: "{target_keyword o
 """
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": role_prompt},
                 {"role": "user", "content": main_prompt}
@@ -718,7 +718,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
             )
             try:
                 response = client.chat.completions.create(
-                    model="gpt-4o",
+                    model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=800,
                     temperature=0
@@ -1124,60 +1124,63 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
+        # ========================== 여기부터 출력부 개선 ==============================
         articles = st.session_state.get("important_articles_preview", [])
         if not articles:
             st.info("자동선정된 중요 기사가 없습니다. 필터 기준 또는 선정 프롬프트/파싱 코드를 점검해주세요.")
             return
         selected_indexes = st.session_state.get("important_selected_index", [])
 
-        st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
+        st.markdown("🎯 **중요 기사 목록** (키워드별 분류, 교체/삭제/추가 반영)")
 
-        # ====== 병렬 요약 준비 ======
-        from concurrent.futures import ThreadPoolExecutor
-        one_line_map = {}
-        to_summarize = []
-
+        # 키워드별 그룹핑 및 expander 출력
+        from collections import defaultdict
+        grouped = defaultdict(list)
         for idx, article in enumerate(articles):
-            link = article.get("링크", "")
-            cleaned_id = re.sub(r"\W+", "", link)[-16:] if link else ""
-            in_cache = False
-            for k, v in st.session_state.items():
-                if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                    one_line_map[idx] = v[0]
-                    in_cache = True
-                    break
-            if not in_cache and link:
-                to_summarize.append((idx, link, article.get("기사제목", "")))
+            kw = article.get("키워드") or article.get("회사명") or "기타"
+            grouped[kw].append((idx, article))
 
-        if to_summarize:
-            with st.spinner("중요 기사 요약 생성 중..."):
-                def get_one_line(args):
-                    idx, link, title = args
-                    one_line, _, _, _ = summarize_article_from_url(link, title, do_summary=True)
-                    return idx, one_line
+        # keyword order: favorite_categories 우선, 그 외는 sorted
+        ordered_keywords = list(favorite_categories.keys())
+        # 실제 기사에 나타난 키워드만 표시
+        shown_keywords = [kw for kw in ordered_keywords if kw in grouped]
+        etc_keywords = [kw for kw in grouped if kw not in shown_keywords]
+        all_keywords = shown_keywords + sorted(etc_keywords)
 
-                with ThreadPoolExecutor(max_workers=10) as executor:
-                    for idx, one_line in executor.map(get_one_line, to_summarize):
-                        one_line_map[idx] = one_line
-        # ====== 병렬 요약 완료 ======
+        # 반복 출력
+        for kw in all_keywords:
+            items = grouped[kw]
+            with st.expander(f"[{kw}] ({len(items)}건)", expanded=False):
+                for idx, article in items:
+                    checked = idx in selected_indexes
+                    cb = st.checkbox(
+                        f"{article.get('감성', '')} | {article.get('기사제목', '')}",
+                        key=f"important_chk_{idx}",
+                        value=checked
+                    )
+                    if cb:
+                        if idx not in selected_indexes:
+                            selected_indexes.append(idx)
+                    else:
+                        if idx in selected_indexes:
+                            selected_indexes.remove(idx)
 
-        new_selection = []
-        for idx, article in enumerate(articles):
-            checked = st.checkbox(
-                f"{article.get('키워드', '')} | {article.get('감성', '')} | {article.get('기사제목', '')}",
-                key=f"important_chk_{idx}",
-                value=(idx in selected_indexes)
-            )
-            if idx in one_line_map and one_line_map[idx]:
-                st.markdown(
-                    f"<span style='color:gray;font-style:italic;'>{one_line_map[idx]}</span>",
-                    unsafe_allow_html=True
-                )
-            if checked:
-                new_selection.append(idx)
+                    # 한 줄 요약 표시(있을 때)
+                    one_line = article.get('요약', '') or ''
+                    if one_line:
+                        st.markdown(
+                            f"<span style='color:gray;font-style:italic;'>{one_line}</span>",
+                            unsafe_allow_html=True
+                        )
+                    # 기타 정보
+                    st.markdown(
+                        f"- **날짜/출처:** {article.get('날짜')} | {article.get('출처')}\n"
+                        f"- [기사 바로가기]({article.get('링크')})"
+                    )
+                    st.markdown("---")
 
-        st.session_state["important_selected_index"] = new_selection
-        st.markdown("---")
+        # 선택 인덱스 최종 반영
+        st.session_state["important_selected_index"] = selected_indexes
 
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
         # ➕ 선택 기사 추가
