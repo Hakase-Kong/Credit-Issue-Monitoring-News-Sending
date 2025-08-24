@@ -290,13 +290,13 @@ Analyze the following article focusing on this target entity: "{target_keyword o
 """
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": role_prompt},
                 {"role": "user", "content": main_prompt}
             ],
             max_tokens=900,
-            temperature=0.3
+            temperature=0
         )
         answer = response.choices[0].message.content.strip()
     except Exception as e:
@@ -692,25 +692,20 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
             # ◾️ 여기에 강화된 프롬프트 적용
             prompt = (
                 f"[기사 목록]\n{prompt_list}\n\n"
-                "분석의 초점은 반드시 '{target_keyword}' 기업(또는 키워드)이며, "
-                "기사의 전체 분위기가 아닌 이 기업에 대한 기사 내용과 문맥을 기준으로 감성을 판정해야 합니다.\n\n"
-                "1. 각 기사 내용을 읽고, 기사의 전반적인 감성 톤(긍정/부정)을 판단해 주세요.\n"
-                "   - 만약 긍정과 부정이 혼재된 경우, 기사 전체 분위기 중 우세한 감성 톤을 기준으로 판단합니다.\n\n"
-                "2. 기사에 언급된 기업의 채권 투자자 입장에서 판단하여,\n"
-                "   2.1 재무 안정성, 현금창출력, 실적 개선, 리스크 완화 여부, 긍정적 전망에 긍정적으로 기여하는 핵심 긍정 기사 1건,\n"
-                "   2.2 수익성 저하, 리스크 확대, 부정적 전망에 해당하는 핵심 부정 기사 1건을 각각 선정해 주세요.\n"
-                "3. 감성 분류(긍정/부정)에 해당하는 기사를 검색 키워드(기업명)별로 최소 1개씩 선택하세요. "
-                "만약 해당 키워드의 기사 중 생뚱맞아 적합하지 않은 경우, 선택하지 않아도 됩니다 (즉, 공란으로 남겨 주세요).\n\n"
-                "[긍정]: (긍정적 선정 기사 제목)\n"
-                "[부정]: (부정적 선정 기사 제목)"
+                "각 키워드(혹은 회사)별로 [긍정 기사 최대 3건], [부정 기사 최대 3건]씩 선정하세요.\n"
+                "- 긍정은 신용등급 방어나 실적 개선에, 부정은 리스크 확대나 수익성 악화에 영향을 줄 인상적 이슈 기사 우선 선정\n"
+                "- 제목이 중복/유사한 기사는 한 번만 선택\n"
+                "- 각 항목별로 없으면 공란으로 남기세요.\n"
+                "\n[선택결과 출력형식]\n"
+                "[긍정]:\n1. (기사제목)\n2. (기사제목)\n3. (기사제목)\n[부정]:\n1. (기사제목)\n2. (기사제목)\n3. (기사제목)"
             )
 
             try:
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=800,
-                    temperature=0.3
+                    temperature=0
                 )
                 answer = response.choices[0].message.content.strip()
                 pos_title = re.search(r"\[긍정\]:\s*(.+)", answer)
