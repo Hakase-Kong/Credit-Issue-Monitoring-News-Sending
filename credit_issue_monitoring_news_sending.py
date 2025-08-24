@@ -1164,10 +1164,11 @@ def render_important_article_review_and_download():
                     else:
                         if idx in selected_indexes:
                             selected_indexes.remove(idx)
-
+        
+                    # ------- [여기서 한 줄 요약 기울임 출력 추가!] -------
                     # 한 줄 요약 표시(있을 때)
                     one_line = article.get('요약', '') or ''
-                    if one_line:
+                    if one_line and one_line != "요약 추출 실패":
                         st.markdown(
                             f"<span style='color:gray;font-style:italic;'>{one_line}</span>",
                             unsafe_allow_html=True
