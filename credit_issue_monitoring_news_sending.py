@@ -1106,16 +1106,8 @@ def render_important_article_review_and_download():
         auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
         if auto_btn:
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
-                # 필터링 및 중복제거 후 후보군 준비
-                filtered_results_for_important = {}
-                for keyword, articles in st.session_state.search_results.items():
-                    filtered = [a for a in articles if article_passes_all_filters(a)]
-                    if st.session_state.get("remove_duplicate_articles", False):
-                        filtered = remove_duplicates(filtered)
-                    if filtered:
-                        filtered_results_for_important[keyword] = filtered
-
-                # OpenAI 자동 선정
+                # 이 줄만 바꿔주세요!
+                filtered_results_for_important = st.session_state.get('filtered_results', {})
                 important_articles = generate_important_article_list(
                     search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
@@ -1398,13 +1390,13 @@ if st.session_state.search_results:
     filtered_results = {}
     for keyword, articles in st.session_state.search_results.items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-        
-        # --- 중복 기사 제거 처리 ---
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
-        
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
+
+    # 여기에 저장
+    st.session_state['filtered_results'] = filtered_results
 
     render_articles_with_single_summary_and_telegram(
         filtered_results,
@@ -1412,3 +1404,4 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
+
