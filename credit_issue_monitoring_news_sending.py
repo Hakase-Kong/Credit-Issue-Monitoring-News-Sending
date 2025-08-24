@@ -1191,15 +1191,19 @@ def render_important_article_review_and_download():
         
             with st.expander(f"[{kw}] ({len(items)}건)", expanded=False):
                 for idx, article, one_line, sentiment in grouped[kw]:
-                    # 라벨에 감성 및 요약 모두 표기
-                    label = (
-                        f"{sentiment} | "
-                        f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a><br>"
-                        f"<span style='color:gray;font-style:italic;font-size:0.94em'>{one_line}</span>"
-                    )
-                    st.markdown(label, unsafe_allow_html=True)
-                    st.write("")
-
+                    col_checkbox, col_label = st.columns([0.04, 0.96], gap="small")
+                
+                    with col_checkbox:
+                        cb = st.checkbox('', key=f"important_chk_{idx}", value=(idx in selected_indexes))
+                
+                    with col_label:
+                        label = (
+                            f"{sentiment} | "
+                            f"<a href='{article.get('링크')}' target='_blank'>{article.get('기사제목', '')}</a><br>"
+                            f"<span style='color:gray;font-style:italic;font-size:0.94em'>{one_line}</span>"
+                        )
+                        st.markdown(label, unsafe_allow_html=True)
+                
                     # 체크박스 상태 동기화 (rerun 없이 session_state만 갱신)
                     if cb:
                         if idx not in selected_indexes:
