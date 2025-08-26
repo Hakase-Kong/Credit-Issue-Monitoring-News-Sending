@@ -1059,10 +1059,14 @@ def render_articles_with_single_summary_and_telegram(
         render_important_article_review_and_download()
 
 def render_important_article_review_and_download():
+    import re
+    from collections import defaultdict
+    import streamlit as st
+
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
-        # 중요기사 자동선정 버튼
+        # --- 중요기사 자동선정 버튼 및 선정기사 갱신 ---
         auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
         if auto_btn:
             with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
@@ -1090,63 +1094,73 @@ def render_important_article_review_and_download():
                         "날짜": art.get("날짜") or art.get("date", ""),
                         "출처": art.get("출처") or art.get("source", "")
                     }
-
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
+        # --- 중요 기사 프리뷰 get ---
         articles = st.session_state.get("important_articles_preview", [])
         selected_indexes = st.session_state.get("important_selected_index", [])
 
-        st.markdown("🎯 **중요 기사 목록** (교체 또는 삭제할 항목을 체크하세요)")
+        # --- 회사명(키워드)별로 기사 그룹핑
+        grouped_articles = defaultdict(list)
+        for art in articles:
+            keyword = art.get("키워드") or art.get("회사명") or ""
+            grouped_articles[keyword].append(art)
 
-        # ====== 병렬 요약 준비 ======
+        st.markdown("🎯 **중요 기사 목록 (교체 또는 삭제할 항목을 체크하세요)**")
+
+        # --- (병렬) 요약 및 감성 캐싱
         from concurrent.futures import ThreadPoolExecutor
         one_line_map = {}
         to_summarize = []
-
-        for idx, article in enumerate(articles):
-            link = article.get("링크", "")
-            cleaned_id = re.sub(r"\W+", "", link)[-16:] if link else ""
-            in_cache = False
-            for k, v in st.session_state.items():
-                if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                    one_line_map[idx] = v[0]
-                    in_cache = True
-                    break
-            if not in_cache and link:
-                to_summarize.append((idx, link, article.get("기사제목", "")))
-
+        for group, arts in grouped_articles.items():
+            for idx, article in enumerate(arts):
+                link = article.get("링크", "")
+                cleaned_id = re.sub(r"\W+", "", link)[-16:] if link else ""
+                cache_hit = False
+                for k, v in st.session_state.items():
+                    if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
+                        one_line_map[(group, idx)] = v[0]
+                        cache_hit = True
+                        break
+                if not cache_hit and link:
+                    to_summarize.append((group, idx, link, article.get("기사제목", "")))
         if to_summarize:
             with st.spinner("중요 기사 요약 생성 중..."):
                 def get_one_line(args):
-                    idx, link, title = args
+                    group, idx, link, title = args
                     one_line, _, _, _ = summarize_article_from_url(link, title, do_summary=True)
-                    return idx, one_line
-
+                    return (group, idx), one_line
                 with ThreadPoolExecutor(max_workers=10) as executor:
-                    for idx, one_line in executor.map(get_one_line, to_summarize):
-                        one_line_map[idx] = one_line
-        # ====== 병렬 요약 완료 ======
+                    for key, one_line in executor.map(get_one_line, to_summarize):
+                        one_line_map[key] = one_line
 
+        # --- Expander로 UI 그리기
         new_selection = []
-        for idx, article in enumerate(articles):
-            checked = st.checkbox(
-                f"{article.get('키워드', '')} | {article.get('감성', '')} | {article.get('기사제목', '')}",
-                key=f"important_chk_{idx}",
-                value=(idx in selected_indexes)
-            )
-            if idx in one_line_map and one_line_map[idx]:
-                st.markdown(
-                    f"<span style='color:gray;font-style:italic;'>{one_line_map[idx]}</span>",
-                    unsafe_allow_html=True
-                )
-            if checked:
-                new_selection.append(idx)
+        for keyword, article_list in grouped_articles.items():
+            with st.expander(f"[{keyword}] ({len(article_list)}건)", expanded=True):
+                for idx, article in enumerate(article_list):
+                    check_key = f"important_chk_{keyword}_{idx}"
+                    checked = st.checkbox(
+                        f"{article.get('감성', '')} | {article.get('기사제목', '')}",
+                        key=check_key,
+                        value=(check_key in selected_indexes)
+                    )
+                    if (keyword, idx) in one_line_map and one_line_map[(keyword, idx)]:
+                        st.markdown(
+                            f"<span style='color:gray;font-style:italic;'>{one_line_map[(keyword, idx)]}</span>",
+                            unsafe_allow_html=True
+                        )
+                    st.markdown(f"- **날짜/출처:** {article.get('날짜', '')} | {article.get('출처', '')}")
+                    if checked:
+                        new_selection.append((keyword, idx))
+                    st.markdown("---")
 
         st.session_state["important_selected_index"] = new_selection
-        st.markdown("---")
 
+        # --- 버튼 영역 (추가, 삭제, 교체)
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
+
         # ➕ 선택 기사 추가
         with col_add:
             if st.button("➕ 선택 기사 추가"):
@@ -1211,9 +1225,15 @@ def render_important_article_review_and_download():
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 important = st.session_state.get("important_articles_preview", [])
-                for idx in sorted(st.session_state["important_selected_index"], reverse=True):
-                    if 0 <= idx < len(important):
-                        important.pop(idx)
+                # new_selection : [(keyword, idx), ...]
+                remove_links = []
+                for key, idx in st.session_state["important_selected_index"]:
+                    try:
+                        link = grouped_articles[key][idx]["링크"]
+                        remove_links.append(link)
+                    except Exception:
+                        continue
+                important = [a for a in important if a.get("링크") not in remove_links]
                 st.session_state["important_articles_preview"] = important
                 st.session_state["important_selected_index"] = []
                 st.rerun()
@@ -1227,7 +1247,7 @@ def render_important_article_review_and_download():
                     st.warning("왼쪽 1개, 오른쪽 1개만 선택해주세요.")
                     return
                 from_key = left_selected_keys[0]
-                target_idx = right_selected_indexes[0]
+                (target_keyword, target_idx) = right_selected_indexes[0]
                 m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                 if not m:
                     st.warning("기사 식별자 파싱 실패")
@@ -1259,6 +1279,9 @@ def render_important_article_review_and_download():
                         selected_article["link"], selected_article["title"]
                     )
 
+                important = st.session_state.get("important_articles_preview", [])
+                remove_link = grouped_articles[target_keyword][target_idx]["링크"]
+                important = [a for a in important if a.get("링크") != remove_link]
                 new_article = {
                     "키워드": keyword,
                     "기사제목": selected_article["title"],
@@ -1267,43 +1290,36 @@ def render_important_article_review_and_download():
                     "날짜": selected_article["date"],
                     "출처": selected_article["source"]
                 }
-                st.session_state["important_articles_preview"][target_idx] = new_article
+                important.append(new_article)
+                st.session_state["important_articles_preview"] = important
                 st.session_state.article_checked_left[from_key] = False
                 st.session_state.article_checked[from_key] = False
                 st.session_state["important_selected_index"] = []
                 st.success("중요 기사 교체 완료")
                 st.rerun()
 
-        # --- 맞춤 양식 동일 포맷 엑셀 다운로드 ---
+        # --- 엑셀 다운로드 ---
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
-
-        final_selected_indexes = st.session_state.get("important_selected_index", [])
         articles_source = st.session_state.get("important_articles_preview", [])
-
-        # 산업 키워드 전체 수집 (필터용)
         industry_keywords_all = []
         if st.session_state.get("use_industry_filter", False):
             for sublist in st.session_state.industry_major_sub_map.values():
                 industry_keywords_all.extend(sublist)
-        
+
         def enrich_article_for_excel(raw_article):
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
             sentiment, one_line, summary, full_text = None, "", "", ""
-
-            # 캐시에서 요약/감성 꺼내오기
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
                     one_line, summary, sentiment, full_text = v
                     break
-            # 없으면 직접 분석
             if not sentiment:
                 one_line, summary, sentiment, full_text = summarize_article_from_url(
                     link, raw_article.get("기사제목", "")
                 )
-
             filter_hits = matched_filter_keywords(
                 {"title": raw_article.get("기사제목", ""), "요약본": summary,
                  "요약": one_line, "full_text": full_text},
@@ -1322,17 +1338,10 @@ def render_important_article_review_and_download():
                 "출처": raw_article.get("출처", ""),
                 "full_text": full_text or "",
             }
-        
-        # ✅ 모든 '중요 기사 리스트'를 엑셀 summary_data 구조로 변환
-        #    → 선택/비선택과 관계없이 전체 리스트 사용 가능
-        summary_data = [enrich_article_for_excel(a) for a in articles_source]
 
-        # 🔹 favorite_categories / excel_company_categories 순서에 맞춰 모든 기업 출력
+        summary_data = [enrich_article_for_excel(a) for a in articles_source]
         excel_data = get_excel_download_with_favorite_and_excel_company_col(
-            summary_data,
-            favorite_categories,
-            excel_company_categories,
-            st.session_state.search_results
+            summary_data, favorite_categories, excel_company_categories, st.session_state.search_results
         )
 
         st.download_button(
