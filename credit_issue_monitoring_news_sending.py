@@ -234,35 +234,58 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def detect_lang(text):
     return "ko" if re.search(r"[가-힣]", text) else "en"
 
+def get_industry_credit_keywords():
+    return """
+보험사: 다각화된 보험 포트폴리오, 안정적 수익성 및 자본 적정성, IFRS17 및 K-ICS 도입 영향, 자본적정성, 위험관리, 보험계약 마진, 손해율, 재보험 구조, 유동성 위험, 투자자산 품질, 스트레스 테스트, 경영투명성, 내부통제, 시장지위, 자금 조달 안정성, 정책 및 규제 영향, 대체투자 리스크, 손익 변동성.
+5대금융지주 및 시중은행: 핵심 자회사 신용도 영향, 배당 수익 유지, 자산 건전성 및 하락 위험, 내재신용도, 정부지원 가능성, 자본비율(Tier1, BIS), 유동성 커버리지 비율, 자산 품질, 대손충당금 수준, 레버리지 비율, 스트레스 시나리오, 시장 위험 노출, 금리 위험, 비이자수익, 다각화, 거버넌스, 규제 준수, 운영위험 관리.
+카드사: 시장 지위, 결제 수수료율, 대손 비용 증가, 자산 건전성 관리, 신용 리스크 프로파일, 대손율, 상환능력, 고객 포트폴리오 다각화, 수익성, 결제 트랜잭션 볼륨, 운영리스크, 법적환경, 파트너십 시너지, 비용 구조, 금융조달 안정성, 신용 지원 의지, 시장 경쟁력, 리스크 기반 가격 책정.
+캐피탈: 사업 통합, 수익 안정성, 자산 건전성, 해외시장 확대, 부실률, 자금조달 구조, 유동성 비율, 이익 창출력, 성장성, 신용 리스크 관리, 시장 리스크, 법적제약, 내부통제수준, 채권 포트폴리오, 파생상품 사용, 그룹 지원, 사업 다각화, 리스크 집중도 관리.
+지주사: 자회사 신용도 변화, 배당 수익 안정성, 재무부담, 그룹 신용 프로필, 지배구조, 재무 레버리지, 부채 만기 구조, 신용 지원 책임, 수익 안정성, 자본조달 능력, 자산 건전성, 현금흐름 변동성, 자본성 증권 특성, 자회사 재무 상태, 투자 리스크, 전략적 지원 의지.
+에너지: 시장 독점 경쟁 환경, 사업 다각화, 해외 실적 변동성, 사업 포트폴리오 안정성, 투자 규모, 에너지 가격 변동성, 재무 안정성, 정책 변화 대응력, 환경 규제 위험, 현금흐름 변동성, 프로젝트 집행 능력, 재무파생상품 리스크, 부채구조, 자본조달, 공급망 안정성, 기술 전환 전략, 글로벌 경제 영향.
+발전: 안정적 전력 기반, 설비 투자, 전력 가격 변동성, 설비 가동률, 계약 기반, 연료 비용 경쟁력, 부채 수준, 자본구조, 배당 정책, 재무 유연성, 정부 규제, 환경 법규, 현금 흐름 안정성, 투자 계획, 차입금 상환능력, 기술 리스크, 사업 다각화, 시장 수요 변동성.
+자동차: 전지 시장 점유율, 전기차 수요, 설비 투자, 수익성 저하, 시장 점유율, 기술 경쟁력, 매출 다각화, 수익성 지표, 레버리지, 고정비 부담, 생산능력, 신제품 개발, 정부 정책 및 인센티브, 공급망 리스크, 자본지출 계획, 연구개발 투자, 현금흐름, 시장 성장 전망, 경쟁 환경.
+전기전자: 반도체 시장 점유율, AI 수요, 무역 규제, 기술 우위, 제품 수요 변동성, 관세 및 무역 정책 영향, 투자 계획, 생산 시설 현황, 재무 안정성, 연구개발 역량, 글로벌 공급망 리스크, 시장 진입 장벽, 운영 효율성, 환율 변동성, 보안 리스크, 가격 경쟁력, 인재 확보 및 유지, 보수적 재무 정책.
+소비재: 오프라인 유통 변화, M&A 재무 부담, 온라인 사업 손실, 유통 채널 다변화, 브랜드 가치, 시장 점유율, 영업이익률, 현금흐름, M&A 영향, 재무 건전성, 재고 관리, 경쟁 압력, 혁신 역량, 고객 충성도, 비용 구조, 공급망 관리, 신용 지원 의지, 매출 성장률.
+비철철강: 글로벌 수요 공급 변화, 가격 변동성, 해외 프로젝트, 친환경 설비 투자, 수요 변동성, 가격 전가력, 비용 구조, 자본 지출 부담, 프로젝트 실행력, 환경 규제 대응, 부채 관리, 현금흐름 안정성, 시장 다변화, 상품 및 고객 포트폴리오, 경쟁 환경, 공급망 안정성, 기술 전환 노력.
+석유화학: 사업 경쟁력, 포트폴리오 다각화, 투자 및 차입금 증가, 세제 혜택, 재무관리, 업황 민감도, 차입금 비율, 자금 조달 조건, 세제 및 정책 효과, 인수합병 전략, 수익성 지표, 현금흐름 관리, 자산 유동화, 리스크 분산, 시장 점유율, 비용 효율성, 비핵심자산 매각, 프로젝트 관리.
+특수채: 준정부기관 의존도, 보증 시장 지위, 보증 사고, 자본 확충 필요, 정부 지원 가능성, 신용 연계도, 보증 잔액 규모, 리스크 노출, 현금성 자산 수준, 단기 부채 구조, 미회수 채권, 자산 건전성, 운영 안정성, 보증 한도, 재무 안정성 지표, 시장 지위, 관리체계, 정책 환경.
+"""
+
 def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=None):
     """
     본문 요약/감성분석.
     target_keyword: 감성 판단의 초점을 맞출 기업/키워드
     """
     if not OPENAI_API_KEY:
-        return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", text
+        return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", "", text
     if not text or "본문 추출 오류" in text:
-        return "기사 본문이 추출 실패", "", "감성 추출 실패", text
+        return "기사 본문이 추출 실패", "", "감성 추출 실패", "", text
 
     lang = detect_lang(text)
+    industry_keywords = get_industry_credit_keywords()
 
-    # 🔹 프롬프트 구성: target_keyword를 중심으로 감성 판정
     if lang == "ko":
         focus_info = f" 분석의 초점은 반드시 '{target_keyword}' 기업(또는 키워드)이며, 기사의 전체 분위기가 아닌 이 기업에 대한 기사 내용과 문맥을 기준으로 감성을 판정해야 합니다." if target_keyword else ""
         role_prompt = (
-            "너는 경제 뉴스 요약/분석 전문가야."
+            "너는 신용평가 전문가이자 금융 뉴스 분석가야."
             " 한 문장 요약에는 반드시 주체, 핵심 사건, 결과를 포함하고,"
             " 감성 분류는 해당 기업에 긍정/부정 영향을 주는지를 판단해야 한다."
             + focus_info +
             " 감성은 '긍정' 또는 '부정' 중 하나만 선택. 중립은 금지."
+            " 또한, 기사의 금융·신용 관련 핵심 시사점을 한두 문장으로 명확히 제시해야 한다."
+            " 응답은 아래 형식에 맞춰 달라."
         )
         main_prompt = f"""
-아래 기사 본문을 분석해 다음 세 가지를 정확히 응답하라.
+[산업군별 신용평가 키워드]
+{industry_keywords}
+
+아래 기사 본문을 분석해 다음 내용을 정확히 응답하라.
 대상 기업/키워드: "{target_keyword or 'N/A'}"
 
 [한 줄 요약]: 대상 기업에 대한 주요 사건과 결과 포함
 [검색 키워드]: 이 기사가 검색에 사용된 키워드를 콤마(,)로 명시
 [감성]: 대상 기업에 긍정 또는 부정 (둘 중 하나만)
+[핵심 시사점]: 신용 및 금융 안정성 관점에서 중요한 이슈를 한두 문장으로 기술
 [주요 키워드]: 인물, 기업, 조직명만 콤마(,)로, 없으면 없음
 
 [기사 본문]
@@ -271,19 +294,26 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
     else:
         focus_info = f" Focus strictly on sentiment toward '{target_keyword}' (the entity), not the overall industry tone." if target_keyword else ""
         role_prompt = (
-            "You are a financial news summarization expert."
-            " Your summary must highlight the entity, key event, and result."
-            " Sentiment classification must reflect the impact on the specific entity of interest."
+            "You are a credit rating expert and financial news analyst."
+            " Your summary must include the subject, key event, and outcome in one sentence,"
+            " and sentiment classification must reflect positive or negative impact on the specific entity."
             + focus_info +
             " Sentiment must be either positive or negative. Neutral is not allowed."
+            " Also, provide a clear one- or two-sentence key implication of the article from a credit and financial stability perspective."
+            " Respond using the format below."
         )
         main_prompt = f"""
-Analyze the following article focusing on this target entity: "{target_keyword or 'N/A'}"
+[Credit rating related keywords by industry (example)]
+{industry_keywords}
 
-[One-line Summary]: Include event and outcome relevant to the target entity
-[Search Keywords]: Keywords that retrieved this article
+Analyze the following article and respond accurately:
+Target entity/keyword: "{target_keyword or 'N/A'}"
+
+[One-line Summary]: Include subject, key event, and outcome relevant to the target entity
+[Search Keywords]: Keywords used to find this article, comma separated
 [Sentiment]: positive or negative (based ONLY on the target entity's context)
-[Key Entities]: Companies/people/org mentioned, comma separated
+[Key Implication]: One or two sentences on key credit/financial stability implications from the article
+[Key Entities]: Companies, people, organizations mentioned, comma separated
 
 [ARTICLE]
 {text}
@@ -300,31 +330,33 @@ Analyze the following article focusing on this target entity: "{target_keyword o
         )
         answer = response.choices[0].message.content.strip()
     except Exception as e:
-        return f"요약 오류: {e}", "", "감성 추출 실패", text
+        return f"요약 오류: {e}", "", "감성 추출 실패", "", text
 
-    # 5. 정규식 파싱 (실패시에도 기본값 반환, None 방지)
     if lang == "ko":
         m1 = re.search(r"\[한 줄 요약\]:\s*([^\n]+)", answer)
         m2 = re.search(r"\[주요 키워드\]:\s*([^\n]+)", answer)
         m3 = re.search(r"\[감성\]:\s*(긍정|부정)", answer)
-        # 추가: 만일 '감성'이 뒤에 나오면
+        m4 = re.search(r"\[핵심 시사점\]:\s*([^\n]+)", answer)
         if not m3:
             m3 = re.search(r"\[감성\]:\s*([^\n]+)", answer)
+        if not m4:
+            m4 = re.search(r"\[핵심 시사점\]:\s*([^\n]+)", answer)
     else:
         m1 = re.search(r"\[One-line Summary\]:\s*([^\n]+)", answer)
         m2 = re.search(r"\[Key Entities\]:\s*([^\n]+)", answer)
         m3 = re.search(r"\[Sentiment\]:\s*(positive|negative)", answer, re.I)
-        # fallback for Sentiment
+        m4 = re.search(r"\[Key Implication\]:\s*([^\n]+)", answer)
         if not m3:
             m3 = re.search(r"\[Sentiment\]:\s*([^\n]+)", answer)
+        if not m4:
+            m4 = re.search(r"\[Key Implication\]:\s*([^\n]+)", answer)
 
-    # 6. 값 추출 & 최종 보정
     one_line = m1.group(1).strip() if (m1 and do_summary) else "요약 추출 실패"
     keywords = m2.group(1).strip() if m2 else ""
-    sentiment = ''
+    sentiment = ""
+    implication = ""
     if m3:
         sentiment = m3.group(1).strip()
-        # 영문 응답을 한글로 통일
         if sentiment.lower() == 'positive':
             sentiment = '긍정'
         elif sentiment.lower() == 'negative':
@@ -333,8 +365,11 @@ Analyze the following article focusing on this target entity: "{target_keyword o
             sentiment = '감성 추출 실패'
     else:
         sentiment = '감성 추출 실패'
+    if m4:
+        implication = m4.group(1).strip()
+    else:
+        implication = "시사점 추출 실패"
 
-    # 7. 누락, 빈값 보정 (오류 메시지 반환 절대 방지)
     if not one_line or one_line.lower() in ["none", ""]:
         one_line = "요약 추출 실패"
     if not sentiment or sentiment.lower() in ["none", "중립", "neutral", ""]:
@@ -342,7 +377,7 @@ Analyze the following article focusing on this target entity: "{target_keyword o
     if not keywords or keywords.lower() in ["none", "없음"]:
         keywords = ""
 
-    return one_line, keywords, sentiment, text
+    return one_line, keywords, sentiment, implication, text
 
 def infer_source_from_url(url):
     domain = urlparse(url).netloc
