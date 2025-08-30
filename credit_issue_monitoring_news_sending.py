@@ -646,26 +646,25 @@ def get_excel_download_with_favorite_and_excel_company_col(
             else:
                 hl_news.append(title or "")
 
-        # ***핵심: 첫번째 row는 중요뉴스1, 두번째 row는 중요뉴스2, 나머지 row는 공란***
-        cnt = len(comp_articles)
-        if cnt == 0:
+        idx_list = comp_articles.index.tolist()
+        total_count = len(search_results.get(company, []))
+        if len(idx_list) == 0:
             result_rows.append({
                 "기업명": company,
                 "표기명": excel_company_name,
-                "건수": 0,
+                "건수": total_count,
                 "중요뉴스1": "",
                 "중요뉴스2": "",
                 "시사점": ""
             })
         else:
-            idx_list = comp_articles.index.tolist()
             for rel_idx, i in enumerate(idx_list):
                 result_rows.append({
                     "기업명": company,
                     "표기명": excel_company_name,
-                    "건수": cnt,
-                    "중요뉴스1": hl_news[0] if rel_idx == 0 and cnt > 0 else "",
-                    "중요뉴스2": hl_news[1] if rel_idx == 1 and cnt > 1 else "",
+                    "건수": total_count,
+                    "중요뉴스1": hl_news[0] if rel_idx == 0 and len(hl_news) > 0 else "",
+                    "중요뉴스2": hl_news[1] if rel_idx == 1 and len(hl_news) > 1 else "",
                     "시사점": ""
                 })
 
@@ -826,7 +825,7 @@ def build_important_excel_format(important_articles, favorite_categories, excel_
     columns = [
         "산업대분류", "산업소분류", "회사명", "감성",
         "제목", "링크", "날짜", "출처",
-        "중요뉴스1", "중요뉴스2", "시사점"
+        "중요뉴스1", "중요뉴스2", "시사점", "건수"
     ]
     for col in columns:
         if col not in df.columns:
@@ -847,7 +846,6 @@ def build_important_excel_format(important_articles, favorite_categories, excel_
         df.at[idx, "산업대분류"] = major_cat
         df.at[idx, "산업소분류"] = sub_cat
 
-    # 첫번째/두번째 행에만 각각 값 삽입, 나머지는 공백
     grouped = df.groupby("회사명")
     for comp, group in grouped:
         sorted_group = group.sort_values(by="날짜", ascending=False)
@@ -860,10 +858,12 @@ def build_important_excel_format(important_articles, favorite_categories, excel_
             else:
                 hl_news.append(title or "")
         idx_list = sorted_group.index.tolist()
+        total_count = len(search_results.get(comp, []))
         for rel_idx, i in enumerate(idx_list):
             df.at[i, "중요뉴스1"] = hl_news[0] if rel_idx == 0 and len(hl_news) > 0 else ""
             df.at[i, "중요뉴스2"] = hl_news[1] if rel_idx == 1 and len(hl_news) > 1 else ""
             df.at[i, "시사점"] = ""
+            df.at[i, "건수"] = total_count
 
     if "날짜" in df.columns:
         try:
