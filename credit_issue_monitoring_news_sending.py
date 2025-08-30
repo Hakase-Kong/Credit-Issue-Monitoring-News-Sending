@@ -1035,11 +1035,9 @@ def render_articles_with_single_summary_and_telegram(
     SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
     col_list, col_summary = st.columns([1, 1])
 
-    # ---------------------------- 뉴스 목록 열 ----------------------------
+    # ---------------------------- 뉴스 목록 열 ---------------------------- #
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
-
-        # favorite_categories 순서대로 대분류/기업 출력
         for category_name, company_list in favorite_categories.items():
             companies_with_results = [c for c in company_list if c in results]
             if not companies_with_results:
@@ -1053,7 +1051,6 @@ def render_articles_with_single_summary_and_telegram(
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
                             key = f"{company}_{idx}_{uid}"
                             all_article_keys.append(key)
-
                         prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
                         select_all = st.checkbox(
                             f"전체 기사 선택/해제 ({company})",
@@ -1094,17 +1091,15 @@ def render_articles_with_single_summary_and_telegram(
                             st.session_state.article_checked_left[key] = checked
                             st.session_state.article_checked[key] = checked
 
-    # ---------------------------- 선택 기사 요약 열 ----------------------------
+    # ---------------------------- 선택 기사 요약/감성분석 열 ---------------------------- #
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
-
             industry_keywords_all = []
             if st.session_state.get("use_industry_filter", False):
                 for sublist in st.session_state.industry_major_sub_map.values():
                     industry_keywords_all.extend(sublist)
 
-            # 선택된 기사 그룹핑
             grouped_selected = {}
             for cat_name, company_list in favorite_categories.items():
                 for company in company_list:
@@ -1117,7 +1112,6 @@ def render_articles_with_single_summary_and_telegram(
                                     (company, idx, article)
                                 )
 
-            # 병렬 요약 처리
             def process_article(item):
                 keyword, idx, art = item
                 cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
@@ -1163,13 +1157,14 @@ def render_articles_with_single_summary_and_telegram(
                                 st.markdown(
                                     f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
                                     f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
-                                    unsafe_allow_html=True,
+                                    unsafe_allow_html=True
                                 )
                                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
                                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
                                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
                                 if enable_summary:
                                     st.markdown(f"- **한 줄 요약:** {art['요약']}")
+                                    st.markdown(f"- **시사점:** {art['시사점'] or '없음'}")  # <---- 이 부분 추가!
                                 st.markdown(f"- **감성분석:** `{art['감성']}`")
                                 st.markdown("---")
 
