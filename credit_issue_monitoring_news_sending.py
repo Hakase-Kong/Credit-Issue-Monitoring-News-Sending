@@ -472,17 +472,16 @@ def summarize_article_from_url(article_url, title, do_summary=True, target_keywo
         return st.session_state[summary_key]
 
     try:
-        # 🔹 fallback_title, fallback_desc 전달
         full_text = extract_article_text(article_url, fallback_desc=description, fallback_title=title)
         if full_text.startswith("본문 추출 오류"):
-            result = (full_text, None, None, None)
+            result = (full_text, None, None, None, None)
         else:
-            one_line, summary, sentiment, _ = summarize_and_sentiment_with_openai(
+            one_line, summary, sentiment, implication, text = summarize_and_sentiment_with_openai(
                 full_text, do_summary=do_summary, target_keyword=target_keyword
             )
-            result = (one_line, summary, sentiment, full_text)
+            result = (one_line, summary, sentiment, implication, text)
     except Exception as e:
-        result = (f"요약 오류: {e}", None, None, None)
+        result = (f"요약 오류: {e}", None, None, None, None)
 
     st.session_state[summary_key] = result
     return result
@@ -1081,7 +1080,7 @@ def render_articles_with_single_summary_and_telegram(
                             with cols[1]:
                                 sentiment = ""
                                 if show_sentiment_badge and cache_key in st.session_state:
-                                    _, _, sentiment, _ = st.session_state[cache_key]
+                                    _, _, sentiment, _, _ = st.session_state[cache_key]
                                 badge_html = (
                                     f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>"
                                     if sentiment else ""
@@ -1123,13 +1122,12 @@ def render_articles_with_single_summary_and_telegram(
                 keyword, idx, art = item
                 cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
                 if cache_key in st.session_state:
-                    one_line, summary, sentiment, full_text = st.session_state[cache_key]
+                    one_line, summary, sentiment, implication, full_text = st.session_state[cache_key]
                 else:
-                    # 🔹 keyword를 target_keyword로 전달
-                    one_line, summary, sentiment, full_text = summarize_article_from_url(
+                    one_line, summary, sentiment, implication, full_text = summarize_article_from_url(
                         art["link"], art["title"], do_summary=enable_summary, target_keyword=keyword
                     )
-                    st.session_state[cache_key] = (one_line, summary, sentiment, full_text)
+                    st.session_state[cache_key] = (one_line, summary, sentiment, implication, full_text)
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
                     ALL_COMMON_FILTER_KEYWORDS,
@@ -1142,6 +1140,7 @@ def render_articles_with_single_summary_and_telegram(
                     "요약": one_line,
                     "요약본": summary,
                     "감성": sentiment,
+                    "시사점": implication,
                     "링크": art["link"],
                     "날짜": art["date"],
                     "출처": art["source"],
@@ -1456,7 +1455,7 @@ def render_important_article_review_and_download():
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
-            sentiment, one_line, summary, full_text = None, "", "", ""
+            one_line, summary, sentiment, implication, full_text = v
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
                     one_line, summary, sentiment, full_text = v
