@@ -597,14 +597,14 @@ def clean_excel_formula_text(text):
     text = text.replace('\r', '')
     return text[:250]  # 안전하게 255자 미만으로 제한
 
-def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories, search_results):
+def get_excel_download_with_favorite_company(summary_data, favorite_categories, excel_company_categories, search_results):
     import pandas as pd
     from io import BytesIO
 
     def clean_text(text):
         if not isinstance(text, str):
             text = str(text)
-        # 엑셀 내 안전처리: 큰따옴표 → 작은따옴표, 줄바꿈 제거, 200자 제한
+        # 엑셀용 텍스트 안전 처리
         text = text.replace('"', "'").replace('\n', ' ').replace('\r', '')
         return text[:200]
 
@@ -614,15 +614,27 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         sector_list.extend(favorite_categories[cat])
     sector_list = list(dict.fromkeys(sector_list))
 
-    # 해당 기업의 엑셀 표기명 리스트
+    # 각 회사에 대응하는 엑셀 표기명 리스트
     excel_sector_list = []
     for cat in excel_company_categories:
         excel_sector_list.extend(excel_company_categories[cat])
     excel_sector_list = list(dict.fromkeys(excel_sector_list))
 
+    # 빈 DataFrame일 경우 대비
+    if summary_data is None or len(summary_data) == 0:
+        # 빈 엑셀 생성
+        df_empty = pd.DataFrame(columns=["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"])
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df_empty.to_excel(writer, index=False, sheet_name='뉴스요약')
+            worksheet = writer.sheets['뉴스요약']
+            worksheet.set_column(0, 5, 30)
+        output.seek(0)
+        return output
+
     df = pd.DataFrame(summary_data)
 
-    # 컬럼명 안전검사: '키워드' 또는 첫 번째 열 사용
+    # 컬럼명 안전 검사 및 지정
     if "키워드" in df.columns:
         keyword_col = "키워드"
     elif "기업명" in df.columns:
@@ -630,26 +642,27 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     elif "회사명" in df.columns:
         keyword_col = "회사명"
     else:
-        keyword_col = df.columns[0]
+        # 기본값 빈칸 방지
+        keyword_col = df.columns[0] if len(df.columns)>0 else "기업명"
 
     rows = []
     for idx, company in enumerate(sector_list):
-        # 1. 건수는 검색 결과에서 중복 제거 후 개수 집계
+        # 건수: 필터 후 고유 기사 링크 개수로 산정
         search_articles = search_results.get(company, [])
         unique_links = set()
         filtered_articles = []
-        for a in search_articles:
-            link_val = a.get("link") or a.get("링크")
+        for article in search_articles:
+            link_val = article.get("link") or article.get("링크")
             if link_val and link_val not in unique_links:
                 unique_links.add(link_val)
-                filtered_articles.append(a)
+                filtered_articles.append(article)
         total_count = len(filtered_articles)
 
-        # 2. 중요 뉴스는 summary_data에서 각 회사 별 최신 2건 추출
-        filtered = df[df[keyword_col] == company].sort_values(by='날짜', ascending=False)
+        # 중요 뉴스: 가장 최근 두 건 제목+링크 추출
+        filtered_df = df[df.get(keyword_col, "") == company].sort_values(by='날짜', ascending=False)
 
         hl_news = ["", ""]
-        for i, art in enumerate(filtered.itertuples()):
+        for i, art in enumerate(filtered_df.itertuples()):
             if i > 1:
                 break
             date_val = getattr(art, "날짜", "") or ""
@@ -658,7 +671,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
             date_str = clean_text(date_val)
             title_str = clean_text(title_val)
             link_str = clean_text(link_val)
-            display_text = f'({date_str}){title_str}'
+            display_text = f"({date_str}){title_str}"
             if title_str and link_str:
                 hl_news[i] = f'=HYPERLINK("{link_str}", "{display_text}")'
             else:
@@ -679,9 +692,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         result_df.to_excel(writer, index=False, sheet_name='뉴스요약')
         worksheet = writer.sheets['뉴스요약']
-        for i, col in enumerate(result_df.columns):
-            worksheet.set_column(i, i, 30)
-
+        worksheet.set_column(0, 5, 30)
     output.seek(0)
     return output
 
