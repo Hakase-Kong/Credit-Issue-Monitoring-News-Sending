@@ -288,8 +288,6 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
 [핵심 시사점]: 신용 및 금융 안정성 관점에서 중요한 이슈를 한두 문장으로 기술
 [주요 키워드]: 인물, 기업, 조직명만 콤마(,)로, 없으면 없음
 
-[기사 본문]
-{text}
 """
     else:
         focus_info = f" Focus strictly on sentiment toward '{target_keyword}' (the entity), not the overall industry tone." if target_keyword else ""
@@ -315,8 +313,6 @@ Target entity/keyword: "{target_keyword or 'N/A'}"
 [Key Implication]: One or two sentences on key credit/financial stability implications from the article
 [Key Entities]: Companies, people, organizations mentioned, comma separated
 
-[ARTICLE]
-{text}
 """
     try:
         response = client.chat.completions.create(
@@ -377,7 +373,7 @@ Target entity/keyword: "{target_keyword or 'N/A'}"
     if not keywords or keywords.lower() in ["none", "없음"]:
         keywords = ""
 
-    return one_line, keywords, sentiment, implication, text
+    return one_line, keywords, sentiment, implication
 
 def infer_source_from_url(url):
     domain = urlparse(url).netloc
