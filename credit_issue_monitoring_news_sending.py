@@ -597,7 +597,7 @@ def clean_excel_formula_text(text):
     text = text.replace('\r', '')
     return text[:250]  # 안전하게 255자 미만으로 제한
 
-def get_excel_download_with_favorite_company_col(summary_data, favorite_categories, excel_company_categories, search_results):
+def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorite_categories, excel_company_categories, search_results):
     import pandas as pd
     from io import BytesIO
 
