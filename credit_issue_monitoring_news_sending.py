@@ -636,38 +636,38 @@ def get_excel_download_with_favorite_and_excel_company_col(
     result_rows = []
     for idx, company in enumerate(company_order):
         excel_company_name = excel_company_order[idx] if idx < len(excel_company_order) else ""
-        # company별 선택/체크된 기사 2건 추출
         comp_articles = df_articles[df_articles["키워드"] == company].sort_values(by="날짜", ascending=False)
-        news_links_titles = []
-        for i in range(min(2, len(comp_articles))):
-            art = comp_articles.iloc[i]
-            title = clean_excel_formula_text(art["기사제목"]) if "기사제목" in art else ""
-            link = clean_excel_formula_text(art["링크"]) if "링크" in art else ""
+        hl_news = []
+        for i, art in enumerate(comp_articles.itertuples()):
+            title = clean_excel_formula_text(getattr(art, "기사제목", ""))
+            link = clean_excel_formula_text(getattr(art, "링크", ""))
             if title and link:
-                news_links_titles.append(f'=HYPERLINK("{link}", "{title}")')
-            elif title:
-                news_links_titles.append(title)
+                hl_news.append(f'=HYPERLINK("{link}", "{title}")')
             else:
-                news_links_titles.append("")
-        # 중요뉴스1, 2 채우기
-        news1_hyperlink = news_links_titles if len(news_links_titles) > 0 else ""
-        news2_hyperlink = news_links_titles[1] if len(news_links_titles) > 1 else ""
-        # 시사점(공란)
-        insight = ""
-        # 기사 전체 건수 (필터 적용)
-        filtered_articles = [
-            a for a in search_results.get(company, [])
-            if ("키워드" not in a or a["키워드"] == company)
-        ]
-        total_count = len(filtered_articles)
-        result_rows.append({
-            "기업명": company,
-            "표기명": excel_company_name,
-            "건수": total_count,
-            "중요뉴스1": news1_hyperlink,
-            "중요뉴스2": news2_hyperlink,
-            "시사점": insight
-        })
+                hl_news.append(title or "")
+
+        # ***핵심: 첫번째 row는 중요뉴스1, 두번째 row는 중요뉴스2, 나머지 row는 공란***
+        cnt = len(comp_articles)
+        if cnt == 0:
+            result_rows.append({
+                "기업명": company,
+                "표기명": excel_company_name,
+                "건수": 0,
+                "중요뉴스1": "",
+                "중요뉴스2": "",
+                "시사점": ""
+            })
+        else:
+            idx_list = comp_articles.index.tolist()
+            for rel_idx, i in enumerate(idx_list):
+                result_rows.append({
+                    "기업명": company,
+                    "표기명": excel_company_name,
+                    "건수": cnt,
+                    "중요뉴스1": hl_news[0] if rel_idx == 0 and cnt > 0 else "",
+                    "중요뉴스2": hl_news[1] if rel_idx == 1 and cnt > 1 else "",
+                    "시사점": ""
+                })
 
     df_result = pd.DataFrame(result_rows)
     output = BytesIO()
@@ -847,24 +847,22 @@ def build_important_excel_format(important_articles, favorite_categories, excel_
         df.at[idx, "산업대분류"] = major_cat
         df.at[idx, "산업소분류"] = sub_cat
 
-    # 회사별로 최신 2개 뉴스 제목 하이퍼링크 작성 후 해당 열에 삽입
+    # 첫번째/두번째 행에만 각각 값 삽입, 나머지는 공백
     grouped = df.groupby("회사명")
     for comp, group in grouped:
         sorted_group = group.sort_values(by="날짜", ascending=False)
         hl_news = []
         for i, item in enumerate(sorted_group.itertuples()):
-            if i >= 2:
-                break
             title = str(getattr(item, "제목", ""))
             link = str(getattr(item, "링크", ""))
             if title and link:
                 hl_news.append(f'=HYPERLINK("{link}","{title}")')
             else:
                 hl_news.append(title or "")
-        idx_list = df[df["회사명"] == comp].index.tolist()
-        for i in idx_list:
-            df.at[i, "중요뉴스1"] = hl_news[0] if len(hl_news) > 0 else ""
-            df.at[i, "중요뉴스2"] = hl_news[1] if len(hl_news) > 1 else ""
+        idx_list = sorted_group.index.tolist()
+        for rel_idx, i in enumerate(idx_list):
+            df.at[i, "중요뉴스1"] = hl_news[0] if rel_idx == 0 and len(hl_news) > 0 else ""
+            df.at[i, "중요뉴스2"] = hl_news[1] if rel_idx == 1 and len(hl_news) > 1 else ""
             df.at[i, "시사점"] = ""
 
     if "날짜" in df.columns:
