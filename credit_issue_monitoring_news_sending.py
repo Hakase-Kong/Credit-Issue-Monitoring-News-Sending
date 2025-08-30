@@ -597,81 +597,76 @@ def clean_excel_formula_text(text):
     text = text.replace('\r', '')
     return text[:250]  # 안전하게 255자 미만으로 제한
 
-def get_excel_download_with_favorite_and_excel_company_col(
+def get_excel_download(
     summary_data, favorite_categories, excel_company_categories, search_results
 ):
     from io import BytesIO
     import pandas as pd
 
-    def clean_excel_formula_text(text):
-        if not isinstance(text, str):  # None이나 숫자이면 문자 변환
+    def clean_text(text):
+        if not isinstance(text, str):
             text = str(text)
-        text = text.replace('"', "'")   # 큰따옴표 → 홑따옴표
-        text = text.replace('\n', ' ')  # 줄바꿈 → 공백
-        text = text.replace('\r', '')
-        return text[:250]  # 안전하게 255자 미만으로 제한
+        text = text.replace('"', "'").replace('\n', ' ').replace('\r', '')
+        return text[:250]
 
     company_order = []
     for cat in [
-        "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
-        "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"
+        "국/공채", "공공기관", "보험사",
+        "5대금융지주", "5대시중은행", "카드사",
+        "캐피탈", "지주사", "에너지",
+        "발전", "자동차", "전기전자",
+        "소비재", "비철철", "석유화학",
+        "건설", "특수채"
     ]:
         company_order.extend(favorite_categories.get(cat, []))
+
     excel_company_order = []
     for cat in [
-        "국/공채", "공공기관", "보험사", "5대금융지주", "5대시중은행", "카드사", "캐피탈",
-        "지주사", "에너지", "발전", "자동차", "전기/전자", "소비재", "비철/철강", "석유화학", "건설", "특수채"
+        "국/공채", "공공기관", "보험사",
+        "5대금융지주", "5대시중은행", "카드사",
+        "캐피탈", "지주사", "에너지",
+        "발전", "자동차", "전기전자",
+        "소비재", "비철철", "석유화학",
+        "건설", "특수채"
     ]:
         excel_company_order.extend(excel_company_categories.get(cat, []))
 
-    df_articles = pd.DataFrame(summary_data)
+    df = pd.DataFrame(summary_data)
 
-    if "키워드" not in df_articles.columns:
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            pd.DataFrame(columns=["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"]).to_excel(writer, index=False)
-        output.seek(0)
-        return output
+    rows = []
 
-    result_rows = []
-    for idx, company in enumerate(company_order):
-        excel_company_name = excel_company_order[idx] if idx < len(excel_company_order) else ""
-        comp_articles = df_articles[df_articles["키워드"] == company].sort_values(by="날짜", ascending=False)
+    for i, company in enumerate(company_order):
+        filtered = df[df["키워드"] == company].sort_values(by="날짜", ascending=False)
+        excel_name = excel_company_order[i] if i < len(excel_company_order) else ""
+
+        count = len(filtered)
+
         hl_news = []
-        for i, art in enumerate(comp_articles.itertuples()):
-            title = clean_excel_formula_text(getattr(art, "기사제목", ""))
-            link = clean_excel_formula_text(getattr(art, "링크", ""))
+        for art in filtered.itertuples():
+            title = clean_text(getattr(art, "기사제목", ""))
+            link = clean_text(getattr(art, "링크", ""))
             if title and link:
                 hl_news.append(f'=HYPERLINK("{link}", "{title}")')
             else:
                 hl_news.append(title or "")
 
-        idx_list = comp_articles.index.tolist()
-        total_count = len(search_results.get(company, []))
-        if len(idx_list) == 0:
-            result_rows.append({
-                "기업명": company,
-                "표기명": excel_company_name,
-                "건수": total_count,
-                "중요뉴스1": "",
-                "중요뉴스2": "",
-                "시사점": ""
-            })
-        else:
-            for rel_idx, i in enumerate(idx_list):
-                result_rows.append({
-                    "기업명": company,
-                    "표기명": excel_company_name,
-                    "건수": total_count,
-                    "중요뉴스1": hl_news[0] if rel_idx == 0 and len(hl_news) > 0 else "",
-                    "중요뉴스2": hl_news[1] if rel_idx == 1 and len(hl_news) > 1 else "",
-                    "시사점": ""
-                })
+        rows.append({
+            "기업명": company,
+            "표기명": excel_name,
+            "건수": count,
+            "중요뉴스1": hl_news[0] if len(hl_news) > 0 else "",
+            "중요뉴스2": hl_news[1] if len(hl_news) > 1 else "",
+            "시사점": ""
+        })
 
-    df_result = pd.DataFrame(result_rows)
+    result_df = pd.DataFrame(rows)
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_result.to_excel(writer, index=False, sheet_name='뉴스요약')
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        result_df.to_excel(writer, index=False, sheet_name="뉴스요약")
+        worksheet = writer.sheets["뉴스요약"]
+        for i, col in enumerate(result_df.columns):
+            worksheet.set_column(i, i, 30)
+
     output.seek(0)
     return output
 
@@ -816,9 +811,12 @@ def extract_keyword_from_link(search_results, article_link):
                 return kw
     return ""
 
-def build_important_excel_format(important_articles, favorite_categories, excel_company_categories, search_results):
+def build_important_excel_format(
+    important_articles, favorite_categories, excel_company_categories, search_results
+):
     import pandas as pd
     from io import BytesIO
+    from collections import defaultdict
 
     df = pd.DataFrame(important_articles)
 
@@ -827,67 +825,68 @@ def build_important_excel_format(important_articles, favorite_categories, excel_
         "제목", "링크", "날짜", "출처",
         "중요뉴스1", "중요뉴스2", "시사점", "건수"
     ]
+
     for col in columns:
         if col not in df.columns:
             df[col] = ""
 
     for idx, row in df.iterrows():
         company = row["회사명"]
-        sub_cat = ""
-        major_cat = ""
-        for cat, comps in favorite_categories.items():
-            if company in comps:
-                sub_cat = cat
+        cat = None
+        major = None
+
+        for c in favorite_categories:
+            if company in favorite_categories[c]:
+                cat = c
                 break
-        for m_cat, sub_cats in excel_company_categories.items():
-            if sub_cat in sub_cats:
-                major_cat = m_cat
+        for m in excel_company_categories:
+            if cat in excel_company_categories[m]:
+                major = m
                 break
-        df.at[idx, "산업대분류"] = major_cat
-        df.at[idx, "산업소분류"] = sub_cat
+
+        df.at[idx, "산업소분류"] = cat or ""
+        df.at[idx, "산업대분류"] = major or ""
 
     grouped = df.groupby("회사명")
-    for comp, group in grouped:
-        sorted_group = group.sort_values(by="날짜", ascending=False)
-        hl_news = []
-        for i, item in enumerate(sorted_group.itertuples()):
-            title = str(getattr(item, "제목", ""))
-            link = str(getattr(item, "링크", ""))
-            if title and link:
-                hl_news.append(f'=HYPERLINK("{link}","{title}")')
-            else:
-                hl_news.append(title or "")
-        idx_list = sorted_group.index.tolist()
-        total_count = len(search_results.get(comp, []))
-        for rel_idx, i in enumerate(idx_list):
-            df.at[i, "중요뉴스1"] = hl_news[0] if rel_idx == 0 and len(hl_news) > 0 else ""
-            df.at[i, "중요뉴스2"] = hl_news[1] if rel_idx == 1 and len(hl_news) > 1 else ""
-            df.at[i, "시사점"] = ""
-            df.at[i, "건수"] = total_count
+    rows = []
 
-    if "날짜" in df.columns:
-        try:
-            df["날짜"] = pd.to_datetime(df["날짜"]).dt.strftime("%Y-%m-%d")
-        except:
-            pass
+    for company, group in grouped:
+        group_sorted = group.sort_values(by="날짜", ascending=False)
 
-    df = df[columns]
+        count = len(group_sorted)
+        row0 = group_sorted.iloc[0]
+        row1 = group_sorted.iloc[1] if count > 1 else None
 
+        hl1 = ""
+        hl2 = ""
+        if row0 is not None:
+            hl1 = f'=HYPERLINK("{row0["링크"]}", "{row0["제목"]}")' if row0["링크"] and row0["제목"] else ""
+        if row1 is not None:
+            hl2 = f'=HYPERLINK("{row1["링크"]}", "{row1["제목"]}")' if row1["링크"] and row1["제목"] else ""
+
+        rows.append({
+            "산업대분류": row0["산업대분류"],
+            "산업소분류": row0["산업소분류"],
+            "회사명": company,
+            "감성": "",  # 필드 비워두거나 필요시 채움
+            "제목": "",
+            "링크": "",
+            "날짜": "",
+            "출처": "",
+            "중요뉴스1": hl1,
+            "중요뉴스2": hl2,
+            "시사점": "",
+            "건수": count,
+        })
+
+    result_df = pd.DataFrame(rows)
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="중요뉴스")
-        workbook = writer.book
-        worksheet = writer.sheets["중요뉴스"]
-        header_format = workbook.add_format({
-            "bold": True,
-            "bg_color": "#DCE6F1",
-            "border": 1,
-            "align": "center",
-            "valign": "vcenter"
-        })
-        for col_num, value in enumerate(df.columns):
-            worksheet.write(0, col_num, value, header_format)
-            worksheet.set_column(col_num, col_num, 25)
+        result_df.to_excel(writer, index=False, sheet_name="뉴스요약")
+        worksheet = writer.sheets["뉴스요약"]
+        for i, col in enumerate(result_df.columns):
+            worksheet.set_column(i, i, 30)
+
     output.seek(0)
     return output
    
