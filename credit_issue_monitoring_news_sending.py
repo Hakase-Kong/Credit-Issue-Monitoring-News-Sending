@@ -683,18 +683,13 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     for idx, company in enumerate(sector_list):
         # 기사 개수 산정
         search_articles = search_results.get(company, [])
-
-        # 필터링된 기사만 추출 (중복 제거 포함하면 좋음)
-        filtered_articles = []
         unique_links = set()
+        filtered_articles = []
         for article in search_articles:
-            if not article_passes_all_filters(article):
-                continue
             link_val = article.get("link") or article.get("링크")
             if link_val and link_val not in unique_links:
                 unique_links.add(link_val)
                 filtered_articles.append(article)
-        
         total_count = len(filtered_articles)
 
         # 중요 뉴스 및 시사점 추출 (최신 2개)
@@ -809,13 +804,14 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
 아래 조건을 엄격히 지켜서 각 기사에 대해 분석하고,  
 대상 기업 신용도에 미치는 영향 측면에서 가장 핵심적인  
-감성 여부와 무관하게 가장 중요한 뉴스 기사 2건을 선정하세요.
+긍정 뉴스 1개와 부정 뉴스 1개를 각각 선정해주세요.
 
 1. 기사 중에서 \"{sector_kw_str}\" 중 하나 이상 포함된 내용이어야 합니다.  
-2. 선정 결과를 아래 포맷으로 응답하세요.
+2. 감성은 긍정 혹은 부정 중 하나만 선택합니다.  
+3. 선정 결과를 아래 포맷으로 응답하세요.
 
-[중요기사1]: 기사 제목
-[중요기사2]: 기사 제목
+[긍정]: 기사 제목  
+[부정]: 기사 제목
 '''
 
             try:
