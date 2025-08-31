@@ -683,18 +683,13 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     for idx, company in enumerate(sector_list):
         # 기사 개수 산정
         search_articles = search_results.get(company, [])
-
-        # 필터링된 기사만 추출 (중복 제거 포함하면 좋음)
-        filtered_articles = []
         unique_links = set()
+        filtered_articles = []
         for article in search_articles:
-            if not article_passes_all_filters(article):
-                continue
             link_val = article.get("link") or article.get("링크")
             if link_val and link_val not in unique_links:
                 unique_links.add(link_val)
                 filtered_articles.append(article)
-
         total_count = len(filtered_articles)
 
         # 중요 뉴스 및 시사점 추출 (최신 2개)
