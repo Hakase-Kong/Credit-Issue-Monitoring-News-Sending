@@ -1202,11 +1202,12 @@ def render_important_article_review_and_download():
                             break
                     if not cache_hit and link:
                         to_summarize.append((major, minor, idx, link, article.get("기사제목", "")))
+
         if to_summarize:
             with st.spinner("중요 기사 요약 생성 중..."):
                 def get_one_line(args):
                     major, minor, idx, link, title = args
-                    one_line, _, _, _ = summarize_article_from_url(link, title, do_summary=True)
+                    one_line, _, _, _, _ = summarize_article_from_url(link, title, do_summary=True)  # ✅ 5개 변수로 수정
                     return (major, minor, idx), one_line
                 with ThreadPoolExecutor(max_workers=10) as executor:
                     for key, one_line in executor.map(get_one_line, to_summarize):
@@ -1383,13 +1384,17 @@ def render_important_article_review_and_download():
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
-            one_line, summary, sentiment, implication, full_text = v
+            
+            # ✅ 여기서도 5개 값으로 받아야 함
+            one_line, summary, sentiment, implication, full_text = None, None, None, None, None
+            
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                    one_line, summary, sentiment, full_text = v
+                    one_line, summary, sentiment, implication, full_text = v  # ✅ 5개 변수
                     break
+                    
             if not sentiment:
-                one_line, summary, sentiment, full_text = summarize_article_from_url(
+                one_line, summary, sentiment, implication, full_text = summarize_article_from_url(  # ✅ 5개 변수
                     link, raw_article.get("기사제목", "")
                 )
             filter_hits = matched_filter_keywords(
