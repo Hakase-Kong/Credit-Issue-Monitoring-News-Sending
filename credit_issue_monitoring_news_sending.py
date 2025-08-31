@@ -801,29 +801,30 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                     temperature=0.3
                 )
                 answer = response.choices[0].message.content.strip()
-                pos_title = re.search(r"\[긍정\]:\s*(.+)", answer)
-                neg_title = re.search(r"\[부정\]:\s*(.+)", answer)
-                pos_title = pos_title.group(1).strip() if pos_title else ""
-                neg_title = neg_title.group(1).strip() if neg_title else ""
-
+                news1_match = re.search(r"\[중요 뉴스 1\]:\s*(.+)", answer)
+                news2_match = re.search(r"\[중요 뉴스 2\]:\s*(.+)", answer)
+                
+                news1_title = news1_match.group(1).strip() if news1_match else ""
+                news2_title = news2_match.group(1).strip() if news2_match else ""
+                
                 for a in target_articles:
-                    if pos_title and pos_title in a["title"]:
+                    if news1_title and news1_title in a["title"]:
                         result.append({
                             "키워드": comp,
-                            "감성": "긍정",
                             "기사제목": a["title"],
                             "링크": a["link"],
                             "날짜": a["date"],
-                            "출처": a["source"]
+                            "출처": a["source"],
+                            "시사점": "",  # 필요시 빈 문자열로 처리
                         })
-                    if neg_title and neg_title in a["title"]:
+                    if news2_title and news2_title in a["title"]:
                         result.append({
                             "키워드": comp,
-                            "감성": "부정",
                             "기사제목": a["title"],
                             "링크": a["link"],
                             "날짜": a["date"],
-                            "출처": a["source"]
+                            "출처": a["source"],
+                            "시사점": "",  # 필요시 빈 문자열로 처리
                         })
             except Exception:
                 continue
