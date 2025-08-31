@@ -744,7 +744,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     # industry_keywords가 dict이면 그대로 쓰고, 문자열이면 기존 split 처리
     if isinstance(industry_keywords, dict):
         industry_keywords_dict = industry_keywords
-    else:
+    elif isinstance(industry_keywords, str):
         industry_keywords_dict = {}
         for line in industry_keywords.strip().split("\n"):
             m = re.match(r"(.+?):\s*(.+)", line.strip())
@@ -752,6 +752,9 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 sector = m.group(1).strip()
                 kws = [k.strip() for k in m.group(2).split(",")]
                 industry_keywords_dict[sector] = kws
+    else:
+        # 리스트 등 다른 타입이면 빈 dict 또는 별도 처리
+        industry_keywords_dict = {}
 
     # 기업 이름 → 대분류(산업군) 반환 함수
     def get_major_for_company(company):
