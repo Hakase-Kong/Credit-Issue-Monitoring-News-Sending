@@ -101,55 +101,22 @@ def extract_reports_and_research(html: str) -> dict:
     return result
 
 def fetch_and_display_reports(companies_map):
+    import streamlit as st
+
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
 
-    def render_download_link(url):
-        if url:
-            return f'<a href="{url}" target="_blank">📥 다운로드</a>'
-        else:
-            return "다운로드 없음"
-
     for company, kiscd in companies_map.items():
-        if not kiscd or not kiscd.strip():
+        if not kiscd or not str(kiscd).strip():
             continue
+
         url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
         with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
-            try:
-                resp = requests.get(url)
-                resp.raise_for_status()
-                data = extract_reports_and_research(resp.text)
-                # 평가리포트가 있을 때
-                if data["평가리포트"]:
-                    with st.expander("평가리포트", expanded=True):
-                        report_df = pd.DataFrame(data["평가리포트"])
-                        if not report_df.empty:
-                            report_df["다운로드"] = report_df["다운로드"].apply(render_download_link)
-                            # 표의 각 행을 마크다운으로 링크 포함해 출력
-                            for idx, row in report_df.iterrows():
-                                st.markdown(
-                                    f"{row['종류']} | {row['리포트']} | {row['일자']} | {row['평가종류']} | {row['다운로드']}",
-                                    unsafe_allow_html=True
-                                )
-                else:
-                    st.write("평가리포트가 없습니다.")
-
-                # 관련리서치가 있을 때
-                if data["관련리서치"]:
-                    with st.expander("관련 리서치", expanded=True):
-                        research_df = pd.DataFrame(data["관련리서치"])
-                        if not research_df.empty:
-                            research_df["다운로드"] = research_df["다운로드"].apply(render_download_link)
-                            for idx, row in research_df.iterrows():
-                                st.markdown(
-                                    f"{row['구분']} | {row['제목']} | {row['일자']} | {row['다운로드']}",
-                                    unsafe_allow_html=True
-                                )
-                else:
-                    st.write("관련 리서치가 없습니다.")
-            except Exception as e:
-                st.error(f"{company} 데이터를 불러오는데 실패하였습니다. 에러: {e}")
-
+            st.markdown(
+                f"- [📄 {company} 공식 평가/리서치 페이지 바로가기]({url})",
+                unsafe_allow_html=True
+            )
+            
 def expand_keywords_with_synonyms(original_keywords):
     expanded_map = {}
     for kw in original_keywords:
