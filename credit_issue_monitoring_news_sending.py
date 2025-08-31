@@ -103,6 +103,13 @@ def extract_reports_and_research(html: str) -> dict:
 def fetch_and_display_reports(companies_map):
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
+
+    def render_download_link(url):
+        if url:
+            return f'<a href="{url}" target="_blank">📥 다운로드</a>'
+        else:
+            return "다운로드 없음"
+
     for company, kiscd in companies_map.items():
         if not kiscd or not kiscd.strip():
             continue
@@ -112,18 +119,18 @@ def fetch_and_display_reports(companies_map):
                 resp = requests.get(url)
                 resp.raise_for_status()
                 data = extract_reports_and_research(resp.text)
-
                 # 평가리포트가 있을 때
                 if data["평가리포트"]:
                     with st.expander("평가리포트", expanded=True):
                         report_df = pd.DataFrame(data["평가리포트"])
-                        # 다운로드 링크를 하이퍼링크 마크다운 형태로 변환
                         if not report_df.empty:
-                            report_df["다운로드"] = report_df["다운로드"].apply(
-                                lambda x: f"[다운로드]({x})" if x else ""
-                            )
-                        st.dataframe(report_df)
-
+                            report_df["다운로드"] = report_df["다운로드"].apply(render_download_link)
+                            # 표의 각 행을 마크다운으로 링크 포함해 출력
+                            for idx, row in report_df.iterrows():
+                                st.markdown(
+                                    f"{row['종류']} | {row['리포트']} | {row['일자']} | {row['평가종류']} | {row['다운로드']}",
+                                    unsafe_allow_html=True
+                                )
                 else:
                     st.write("평가리포트가 없습니다.")
 
@@ -132,10 +139,12 @@ def fetch_and_display_reports(companies_map):
                     with st.expander("관련 리서치", expanded=True):
                         research_df = pd.DataFrame(data["관련리서치"])
                         if not research_df.empty:
-                            research_df["다운로드"] = research_df["다운로드"].apply(
-                                lambda x: f"[다운로드]({x})" if x else ""
-                            )
-                        st.dataframe(research_df)
+                            research_df["다운로드"] = research_df["다운로드"].apply(render_download_link)
+                            for idx, row in research_df.iterrows():
+                                st.markdown(
+                                    f"{row['구분']} | {row['제목']} | {row['일자']} | {row['다운로드']}",
+                                    unsafe_allow_html=True
+                                )
                 else:
                     st.write("관련 리서치가 없습니다.")
             except Exception as e:
@@ -255,8 +264,6 @@ def get_industry_majors_from_favorites(selected_categories):
             majors.add(major)
     return list(majors)
 
-# --- UI 시작 ---
-st.set_page_config(layout="wide")
 col_title, col_option1, col_option2 = st.columns([0.5, 0.2, 0.3])
 with col_title:
     st.markdown(
@@ -1232,7 +1239,7 @@ def render_articles_with_single_summary_and_telegram(
                                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
                                 if enable_summary:
                                     st.markdown(f"- **한 줄 요약:** {art['요약']}")
-                                    st.markdown(f"- **시사점:** {art['시사점'] or '없음'}")  # <---- 이 부분 추가!
+                                    st.markdown(f"- **시사점:** {art['시사점'] or '없음'}")
                                 st.markdown(f"- **감성분석:** `{art['감성']}`")
                                 st.markdown("---")
 
@@ -1593,8 +1600,17 @@ if st.session_state.get("search_results"):
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
-    # 신용평가 보고서 및 관련 리서치 UI 추가
-    fetch_and_display_reports(kiscd_map)
+    # 선택된 산업군 기준으로 회사명 리스트 필터링
+    selected_companies = []
+    for cat in st.session_state.get("cat_multi", []):
+        selected_companies.extend(favorite_categories.get(cat, []))
+    selected_companies = list(set(selected_companies))  # 중복 제거
+
+    # kiscd 맵에서 선택된 회사만 필터링
+    kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
+
+    # 신용평가 보고서 및 관련 리서치 UI 추가 (필터된 회사만)
+    fetch_and_display_reports(kiscd_filtered)
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
