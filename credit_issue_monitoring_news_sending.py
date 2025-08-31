@@ -677,7 +677,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     elif "회사명" in df.columns:
         keyword_col = "회사명"
     else:
-        keyword_col = df.columns if len(df.columns) > 0 else "기업명"
+        keyword_col = df.columns[0] if len(df.columns) > 0 else "기업명"
 
     rows = []
     for idx, company in enumerate(sector_list):
@@ -713,21 +713,21 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
             else:
                 implications[i] = ""
 
-        # 시사점: 두 기사 각각 줄바꿈으로 병합
-        if implications and implications[1]:
-            merged_implication = f"{implications}\n{implications[1]}"
-        elif implications:
-            merged_implication = implications
-        elif implications[1]:
-            merged_implication = implications[1]
-        else:
-            merged_implication = ""
+        # 시사점: 두 기사 각각을 번호매겨 줄바꿈으로 병합
+        merged_implication = ""
+        if implications[0]:
+            merged_implication += f"1. {implications[0]}"
+        if implications[1]:
+            if merged_implication:
+                merged_implication += f"\n2. {implications[1]}"
+            else:
+                merged_implication = f"2. {implications[1]}"
 
         rows.append({
             "기업명": company,
             "표기명": excel_sector_list[idx] if idx < len(excel_sector_list) else "",
             "건수": total_count,
-            "중요뉴스1": hl_news,
+            "중요뉴스1": hl_news[0],  # 🔧 수정: hl_news → hl_news[0]
             "중요뉴스2": hl_news[1],
             "시사점": merged_implication
         })
