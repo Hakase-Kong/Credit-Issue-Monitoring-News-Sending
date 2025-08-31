@@ -109,62 +109,70 @@ def fetch_and_display_reports(companies_map):
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
 
-    for company, kiscd in companies_map.items():
-        if not kiscd or not str(kiscd).strip():
-            continue
+    # favorite_categories 순회로 항상 뉴스검색 UI/순서 일치 보장
+    for cat in favorite_categories:
+        for company in favorite_categories[cat]:
+            kiscd = companies_map.get(company, "")
+            if not kiscd or not str(kiscd).strip():
+                continue
 
-        url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
-        with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
-            st.markdown(
-                f"- [📄 {company} 한국신용평가 평가/리서치 페이지 바로가기]({url})",
-                unsafe_allow_html=True
-            )
-            try:
-                resp = requests.get(url, timeout=7, headers={"User-Agent":"Mozilla/5.0"})
-                if resp.status_code == 200:
-                    html = resp.text
-                    report_data = extract_reports_and_research(html)
+            url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
+            with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
+                st.markdown(
+                    f"- [📄 {company} 한국신용평가 평가/리서치 페이지 바로가기]({url})",
+                    unsafe_allow_html=True
+                )
+                try:
+                    resp = requests.get(url, timeout=7, headers={"User-Agent":"Mozilla/5.0"})
+                    if resp.status_code == 200:
+                        html = resp.text
+                        report_data = extract_reports_and_research(html)
 
-                    # --- 기존 평가리포트 Expander ---
-                    if report_data["평가리포트"]:
-                        with st.expander("평가리포트", expanded=True):
-                            df = pd.DataFrame(report_data["평가리포트"])
-                            df = df.drop(columns=["다운로드"], errors="ignore")
-                            st.dataframe(df)
+                        # 평가리포트
+                        if report_data["평가리포트"]:
+                            with st.expander("평가리포트", expanded=True):
+                                df = pd.DataFrame(report_data["평가리포트"])
+                                df = df.drop(columns=["다운로드"], errors="ignore")
+                                st.dataframe(df)
 
-                    # --- 기존 관련리서치 Expander ---
-                    if report_data["관련리서치"]:
-                        with st.expander("관련리서치", expanded=True):
-                            df2 = pd.DataFrame(report_data["관련리서치"])
-                            df2 = df2.drop(columns=["다운로드"], errors="ignore")
-                            st.dataframe(df2)
+                        # 관련리서치
+                        if report_data["관련리서치"]:
+                            with st.expander("관련리서치", expanded=True):
+                                df2 = pd.DataFrame(report_data["관련리서치"])
+                                df2 = df2.drop(columns=["다운로드"], errors="ignore")
+                                st.dataframe(df2)
 
-                    # --- 평가항목(회사채 등) 테이블 추가 ---
-                    soup = BeautifulSoup(html, 'html.parser')
-                    table = soup.find('table')
-                    if table:
-                        thead = table.find('thead')
-                        columns = [th.text.strip() for th in thead.find_all('th')] if thead else []
-                        tbody = table.find('tbody')
-                        rows = []
-                        if tbody:
-                            for tr in tbody.find_all('tr'):
-                                rows.append([td.text.strip() for td in tr.find_all('td')])
-                        if columns and rows:
-                            bond_df = pd.DataFrame(rows, columns=columns)
-                            with st.expander("평가항목(회사채 등)", expanded=True):
-                                st.dataframe(bond_df)
+                        # 평가항목(회사채 등) ONLY '회사채' caption인 테이블 추출
+                        soup = BeautifulSoup(html, 'html.parser')
+                        bond_table = None
+                        for table in soup.find_all('table'):
+                            caption = table.find('caption')
+                            if caption and "회사채" in caption.text:
+                                bond_table = table
+                                break
+                        if bond_table:
+                            thead = bond_table.find('thead')
+                            columns = [th.text.strip() for th in thead.find_all('th')] if thead else []
+                            tbody = bond_table.find('tbody')
+                            rows = []
+                            if tbody:
+                                for tr in tbody.find_all('tr'):
+                                    rows.append([td.text.strip() for td in tr.find_all('td')])
+                            if columns and rows:
+                                bond_df = pd.DataFrame(rows, columns=columns)
+                                with st.expander("평가항목(회사채 등)", expanded=True):
+                                    st.dataframe(bond_df)
+                            else:
+                                st.info("회사채/평가항목 정보가 없습니다.")
                         else:
                             st.info("회사채/평가항목 정보가 없습니다.")
-                    else:
-                        st.info("회사채/평가항목 정보가 없습니다.")
 
-                    if not (report_data["평가리포트"] or report_data["관련리서치"]):
-                        st.info("평가리포트 및 관련리서치가 없습니다.")
-                else:
-                    st.warning("정보를 불러올 수 없습니다.")
-            except Exception as e:
-                st.warning(f"정보 파싱 오류: {e}")
+                        if not (report_data["평가리포트"] or report_data["관련리서치"]):
+                            st.info("평가리포트 및 관련리서치가 없습니다.")
+                    else:
+                        st.warning("정보를 불러올 수 없습니다.")
+                except Exception as e:
+                    st.warning(f"정보 파싱 오류: {e}")
             
 def expand_keywords_with_synonyms(original_keywords):
     expanded_map = {}
