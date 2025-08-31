@@ -743,111 +743,88 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     return output
 
 def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
-    import re
+    import os
     from openai import OpenAI
+    import re
 
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    client = OpenAI(api_key=OPENAI_API_KEY)
     result = []
 
-    # 산업별 신용평가 키워드 텍스트를 분리해 dict 생성 (대분류명 -> 키워드 리스트)
-    industry_keywords_text = config.get("industry_keywords_text") or get_industry_credit_keywords()
-    sector_keywords_dict = {}
-    for line in industry_keywords_text.strip().split("\n"):
-        m = re.match(r"(.+?):\s*(.+)", line.strip())
-        if m:
-            sector = m.group(1).strip()
-            kws = [k.strip() for k in m.group(2).split(",")]
-            sector_keywords_dict[sector] = kws
+    # 기존 함수 내에 섹터별 키워드 파싱 처리 포함
+    def parse_industry_keywords():
+        raw_text = get_industry_credit_keywords()
+        industry_dict = {}
+        for line in raw_text.strip().split("\n"):
+            if ":" in line:
+                sector, keywords = line.split(":", 1)
+                industry_dict[sector.strip()] = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+        return industry_dict
 
-    # 기업 이름 → 대분류(산업군) 반환 함수
-    def get_major_for_company(company):
-        for cat in favorites:
-            if company in favorites[cat]:
-                majors = get_industry_majors_from_favorites([cat])
-                if majors:
-                    return majors[0]
-        return ""
+    industry_keywords_dict = parse_industry_keywords()
 
-    for cat in favorites:
-        for comp in favorites[cat]:
-            major = get_major_for_company(comp)
-            sector_kws = sector_keywords_dict.get(major, [])
+    for category, companies in favorites.items():
+        # 카테고리명(category)에 해당하는 섹터 키워드 얻기
+        sector_keywords = industry_keywords_dict.get(category, [])
 
-            # 공통 키워드 + 해당 섹터 키워드 결합
-            all_kws = list(set(common_keywords) | set(sector_kws))
+        for comp in companies:
+            articles = search_results.get(comp, [])
 
-            # 해당 섹터 키워드 포함 기사를 후보로 필터링
-            candidate_articles = []
-            if comp in search_results:
-                for art in search_results[comp]:
-                    text_for_check = (art.get("title","") + " " + art.get("description",""))
-                    if any(kw in text_for_check for kw in sector_kws):
-                        candidate_articles.append(art)
-            if not candidate_articles:
+            # 섹터 핵심 키워드가 기사 내 포함된 경우만 필터링
+            target_articles = []
+            for a in articles:
+                text = (a.get("title", "") + " " + a.get("description", "")).lower()
+                if any(kw.lower() in text for kw in sector_keywords):
+                    target_articles.append(a)
+
+            if not target_articles:
                 continue
 
-            # 기사 리스트 텍스트 생성
-            article_list_text = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(candidate_articles)])
+            prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
 
-            # 섹터 키워드 문자열 (길이 제한)
-            sector_kw_str = ", ".join(sector_kws)[:900]
-
-            # 프롬프트 작성(섹터별 키워드 포함)
-            prompt = f'''
-[산업 신용평가 핵심 키워드]
-{sector_kw_str}
-
-[기사 목록]
-{article_list_text}
-
-분석할 기업: {comp}
-
-아래 조건을 엄격히 지켜서 각 기사에 대해 분석하고,  
-대상 기업 신용도에 미치는 영향 측면에서 가장 핵심적인  
-긍정 뉴스 1개와 부정 뉴스 1개를 각각 선정해주세요.
-
-1. 기사 중에서 \"{sector_kw_str}\" 중 하나 이상 포함된 내용이어야 합니다.  
-2. 감성은 긍정 혹은 부정 중 하나만 선택합니다.  
-3. 선정 결과를 아래 포맷으로 응답하세요.
-
-[긍정]: 기사 제목  
-[부정]: 기사 제목
-'''
+            prompt = (
+                f"[기사 목록]\n{prompt_list}\n\n"
+                f"분석의 초점은 반드시 '{comp}' 기업(또는 키워드)이며, "
+                f"'{category}' 산업의 신용평가 핵심 이슈 키워드({', '.join(sector_keywords[:10])}...)가 포함된 뉴스 중\n"
+                "신용 평가 관점에서 중요한 뉴스 2건을 선정해 주세요.\n"
+                "감성 판단은 필요 없으며, 중요도에 따라 자유롭게 선정하면 됩니다.\n\n"
+                "선정한 뉴스를 각각 별도의 행으로 작성하세요.\n\n"
+                "[중요 뉴스 1]: (중요 뉴스 제목)\n"
+                "[중요 뉴스 2]: (중요 뉴스 제목)\n"
+            )
 
             try:
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
-                    messages=[{"role":"user","content":prompt}],
+                    messages=[{"role": "user", "content": prompt}],
                     max_tokens=800,
                     temperature=0.3
                 )
                 answer = response.choices[0].message.content.strip()
-                pos_match = re.search(r"\[긍정\]:\s*(.*)", answer)
-                neg_match = re.search(r"\[부정\]:\s*(.*)", answer)
-                pos_title = pos_match.group(1).strip() if pos_match else ""
-                neg_title = neg_match.group(1).strip() if neg_match else ""
+                pos_title = re.search(r"\[긍정\]:\s*(.+)", answer)
+                neg_title = re.search(r"\[부정\]:\s*(.+)", answer)
+                pos_title = pos_title.group(1).strip() if pos_title else ""
+                neg_title = neg_title.group(1).strip() if neg_title else ""
 
-                # 결과에 부합하는 기사들 추가
-                for art in candidate_articles:
-                    if pos_title and pos_title in art.get("title", ""):
+                for a in target_articles:
+                    if pos_title and pos_title in a["title"]:
                         result.append({
-                            "회사명": comp,
+                            "키워드": comp,
                             "감성": "긍정",
-                            "기사제목": art.get("title", ""),
-                            "링크": art.get("link", ""),
-                            "날짜": art.get("date", ""),
-                            "출처": art.get("source", "")
+                            "기사제목": a["title"],
+                            "링크": a["link"],
+                            "날짜": a["date"],
+                            "출처": a["source"]
                         })
-                    if neg_title and neg_title in art.get("title", ""):
+                    if neg_title and neg_title in a["title"]:
                         result.append({
-                            "회사명": comp,
+                            "키워드": comp,
                             "감성": "부정",
-                            "기사제목": art.get("title", ""),
-                            "링크": art.get("link", ""),
-                            "날짜": art.get("date", ""),
-                            "출처": art.get("source", "")
+                            "기사제목": a["title"],
+                            "링크": a["link"],
+                            "날짜": a["date"],
+                            "출처": a["source"]
                         })
-
             except Exception:
                 continue
 
