@@ -15,6 +15,8 @@ import time
 import html
 import json
 from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
+import pandas as pd
 
 # --- config.json 로드 ---
 with open("config.json", "r", encoding="utf-8") as f:
@@ -27,11 +29,117 @@ excel_company_categories = config["excel_company_categories"]
 common_filter_categories = config["common_filter_categories"] # --- 공통 필터 옵션(대분류/소분류 없이 모두 적용) ---
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
 SYNONYM_MAP = config["synonym_map"]
+kiscd_map = config.get("kiscd_map", {})
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
 for keywords in common_filter_categories.values():
     ALL_COMMON_FILTER_KEYWORDS.extend(keywords)
+
+def extract_file_url(js_href: str) -> str:
+    if not js_href or not js_href.startswith("javascript:fn_file"):
+        return ""
+    m = re.search(r"fn_file\((.*)\)", js_href)
+    if not m:
+        return ""
+    args_str = m.group(1)
+    args = [arg.strip().strip("'\"") for arg in args_str.split(",")]
+    if len(args) < 4:
+        return ""
+    file_name = args[3]
+    return f"https://www.kisrating.com/common/download.do?filename={file_name}"
+
+def extract_reports_and_research(html: str) -> dict:
+    soup = BeautifulSoup(html, 'html.parser')
+    result = {"평가리포트": [], "관련리서치": []}
+    tables = soup.select('div.table_ty1 > table')
+    for table in tables:
+        caption = table.find('caption')
+        if not caption:
+            continue
+        cap_text = caption.text.strip()
+
+        if cap_text == "평가리포트":
+            rows = table.select('tbody > tr')
+            for tr in rows:
+                tds = tr.find_all('td')
+                if len(tds) < 4:
+                    continue
+                report_type = tds[0].text.strip()
+                a_tag = tds[1].find('a')
+                title = a_tag.text.strip() if a_tag else ''
+                href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
+                date = tds[2].text.strip()
+                eval_type = tds[3].text.strip()
+                file_url = extract_file_url(href)
+                result['평가리포트'].append({
+                    "종류": report_type,
+                    "리포트": title,
+                    "일자": date,
+                    "평가종류": eval_type,
+                    "다운로드": file_url
+                })
+
+        elif cap_text == "관련 리서치":
+            rows = table.select('tbody > tr')
+            for tr in rows:
+                tds = tr.find_all('td')
+                if len(tds) < 4:
+                    continue
+                category = tds[0].text.strip()
+                a_tag = tds[1].find('a')
+                title = a_tag.text.strip() if a_tag else ''
+                href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
+                date = tds[2].text.strip()
+                file_url = extract_file_url(href)
+                result['관련리서치'].append({
+                    "구분": category,
+                    "제목": title,
+                    "일자": date,
+                    "다운로드": file_url
+                })
+    return result
+
+def fetch_and_display_reports(companies_map):
+    st.markdown("---")
+    st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
+    for company, kiscd in companies_map.items():
+        if not kiscd or not kiscd.strip():
+            continue
+        url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
+        with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
+            try:
+                resp = requests.get(url)
+                resp.raise_for_status()
+                data = extract_reports_and_research(resp.text)
+
+                # 평가리포트가 있을 때
+                if data["평가리포트"]:
+                    with st.expander("평가리포트", expanded=True):
+                        report_df = pd.DataFrame(data["평가리포트"])
+                        # 다운로드 링크를 하이퍼링크 마크다운 형태로 변환
+                        if not report_df.empty:
+                            report_df["다운로드"] = report_df["다운로드"].apply(
+                                lambda x: f"[다운로드]({x})" if x else ""
+                            )
+                        st.dataframe(report_df)
+
+                else:
+                    st.write("평가리포트가 없습니다.")
+
+                # 관련리서치가 있을 때
+                if data["관련리서치"]:
+                    with st.expander("관련 리서치", expanded=True):
+                        research_df = pd.DataFrame(data["관련리서치"])
+                        if not research_df.empty:
+                            research_df["다운로드"] = research_df["다운로드"].apply(
+                                lambda x: f"[다운로드]({x})" if x else ""
+                            )
+                        st.dataframe(research_df)
+                else:
+                    st.write("관련 리서치가 없습니다.")
+            except Exception as e:
+                st.error(f"{company} 데이터를 불러오는데 실패하였습니다. 에러: {e}")
 
 def expand_keywords_with_synonyms(original_keywords):
     expanded_map = {}
@@ -1465,9 +1573,9 @@ def render_important_article_review_and_download():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-if st.session_state.search_results:
+if st.session_state.get("search_results"):
     filtered_results = {}
-    for keyword, articles in st.session_state.search_results.items():
+    for keyword, articles in st.session_state["search_results"].items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
         
         # --- 중복 기사 제거 처리 ---
@@ -1477,9 +1585,16 @@ if st.session_state.search_results:
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
 
+    # 뉴스검색 결과 렌더링
     render_articles_with_single_summary_and_telegram(
         filtered_results,
         st.session_state.show_limit,
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
+
+    # 신용평가 보고서 및 관련 리서치 UI 추가
+    fetch_and_display_reports(kiscd_map)
+
+else:
+    st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
