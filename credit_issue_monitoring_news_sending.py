@@ -1155,7 +1155,7 @@ def render_important_article_review_and_download():
                     industry_keywords=st.session_state.get("industry_sub", []),
                     favorites=favorite_categories
                 )
-                # key naming 통일
+                # key naming 통일 및 시사점 필드 포함 (시사점은 빈 문자열로 초기화, 필요 시 OpenAI 결과 반영 필요)
                 for i, art in enumerate(important_articles):
                     important_articles[i] = {
                         "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
@@ -1163,7 +1163,8 @@ def render_important_article_review_and_download():
                         "감성": art.get("감성", ""),
                         "링크": art.get("링크") or art.get("link", ""),
                         "날짜": art.get("날짜") or art.get("date", ""),
-                        "출처": art.get("출처") or art.get("source", "")
+                        "출처": art.get("출처") or art.get("source", ""),
+                        "시사점": art.get("시사점", "")  # 시사점 필드 추가 (자동선정 시에 채워질 수 있음)
                     }
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
@@ -1171,8 +1172,8 @@ def render_important_article_review_and_download():
         articles = st.session_state.get("important_articles_preview", [])
         selected_indexes = st.session_state.get("important_selected_index", [])
 
-        # --- 대분류(major)-소분류(minor) 그룹화 ---
-        major_map = defaultdict(lambda: defaultdict(list))  # major_map[대분류][소분류] = [기사...]
+        # 대분류(major) - 소분류(minor) 그룹화
+        major_map = defaultdict(lambda: defaultdict(list))  # major_map[대분류][소분류] = [기사 리스트]
         for art in articles:
             keyword = art.get("키워드") or art.get("회사명") or ""
             found_major = None
@@ -1185,10 +1186,10 @@ def render_important_article_review_and_download():
 
         st.markdown("🎯 **중요 기사 목록 (교체 또는 삭제할 항목을 체크하세요)**")
 
-        # --- 병렬 요약 캐싱
         from concurrent.futures import ThreadPoolExecutor
         one_line_map = {}
         to_summarize = []
+
         for major, minor_map in major_map.items():
             for minor, arts in minor_map.items():
                 for idx, article in enumerate(arts):
@@ -1207,13 +1208,13 @@ def render_important_article_review_and_download():
             with st.spinner("중요 기사 요약 생성 중..."):
                 def get_one_line(args):
                     major, minor, idx, link, title = args
-                    one_line, _, _, _, _ = summarize_article_from_url(link, title, do_summary=True)  # ✅ 5개 변수로 수정
-                    return (major, minor, idx), one_line
-                with ThreadPoolExecutor(max_workers=10) as executor:
-                    for key, one_line in executor.map(get_one_line, to_summarize):
-                        one_line_map[key] = one_line
+                    one_line, summary, sentiment, implication, full_text = summarize_article_from_url(link, title, do_summary=True)
+                    return (major, minor, idx), (one_line, summary, sentiment, implication, full_text)
 
-        # --- UI: 대분류(expanded=True)-소분류(expanded=False) Expander
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for key, data_tuple in executor.map(get_one_line, to_summarize):
+                        one_line_map[key] = data_tuple
+
         new_selection = []
         for major, minor_map in major_map.items():
             with st.expander(f"📊 {major}", expanded=True):
@@ -1226,22 +1227,30 @@ def render_important_article_review_and_download():
                                 key=check_key,
                                 value=(check_key in selected_indexes)
                             )
-                            if (major, minor, idx) in one_line_map and one_line_map[(major, minor, idx)]:
-                                st.markdown(
-                                    f"<span style='color:gray;font-style:italic;'>{one_line_map[(major, minor, idx)]}</span>",
-                                    unsafe_allow_html=True
-                                )
+                            # 시사점 출력 (기존 기울임체 한 줄 요약 대신 시사점 텍스트 표시)
+                            summary_data = one_line_map.get((major, minor, idx))
+                            implication_text = ""
+                            if summary_data and len(summary_data) == 5:
+                                implication_text = summary_data[3] or ""  # 시사점(implication)
+                            else:
+                                implication_text = article.get("시사점", "")
+
+                            st.markdown(
+                                f"<span style='color:gray;font-style:italic;'>{implication_text}</span>",
+                                unsafe_allow_html=True
+                            )
                             st.markdown(
                                 f"<span style='font-size:12px;color:#99a'>{article.get('날짜', '')} | {article.get('출처', '')}</span>",
                                 unsafe_allow_html=True
                             )
                             if checked:
                                 new_selection.append((major, minor, idx))
-                            # 기사 사이 여백/구분선 최소화
                             st.markdown("<div style='margin:0px;padding:0px;height:4px'></div>", unsafe_allow_html=True)
+
         st.session_state["important_selected_index"] = new_selection
 
-        # --- 버튼/엑셀 영역 등 기존 구조 (생략없음, 기존과 동일하게 추가)
+        # 추가 / 삭제 / 교체 버튼 및 해당 기능 (기존 코드 유지)
+
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
         with col_add:
             if st.button("➕ 선택 기사 추가"):
@@ -1277,7 +1286,7 @@ def render_important_article_review_and_download():
                                 sentiment = st.session_state[k][2]
                                 break
                         if not sentiment:
-                            _, _, sentiment, _ = summarize_article_from_url(
+                            _, _, sentiment, _, _ = summarize_article_from_url(
                                 selected_article["link"], selected_article["title"]
                             )
                         new_article = {
@@ -1286,20 +1295,21 @@ def render_important_article_review_and_download():
                             "감성": sentiment or "",
                             "링크": selected_article["link"],
                             "날짜": selected_article["date"],
-                            "출처": selected_article["source"]
+                            "출처": selected_article["source"],
+                            "시사점": ""  # 시사점 필드 초기값 빈 문자열
                         }
                         if not any(a["링크"] == new_article["링크"] for a in important):
                             important.append(new_article)
                             added_count += 1
                         st.session_state.article_checked_left[from_key] = False
                         st.session_state.article_checked[from_key] = False
-
                     st.session_state["important_articles_preview"] = important
                     if added_count > 0:
                         st.success(f"{added_count}건의 기사가 중요 기사 목록에 추가되었습니다.")
                     else:
                         st.info("추가된 새로운 기사가 없습니다.")
                     st.rerun()
+
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
                 important = st.session_state.get("important_articles_preview", [])
@@ -1314,6 +1324,7 @@ def render_important_article_review_and_download():
                 st.session_state["important_articles_preview"] = important
                 st.session_state["important_selected_index"] = []
                 st.rerun()
+
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
                 left_selected_keys = [k for k, v in st.session_state.article_checked_left.items() if v]
@@ -1321,8 +1332,8 @@ def render_important_article_review_and_download():
                 if len(left_selected_keys) != 1 or len(right_selected_indexes) != 1:
                     st.warning("왼쪽 1개, 오른쪽 1개만 선택해주세요.")
                     return
-                from_key = left_selected_keys
-                (target_major, target_minor, target_idx) = right_selected_indexes
+                from_key = left_selected_keys[0]
+                (target_major, target_minor, target_idx) = right_selected_indexes[0]
                 m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
                 if not m:
                     st.warning("기사 식별자 파싱 실패")
@@ -1350,7 +1361,7 @@ def render_important_article_review_and_download():
                         sentiment = st.session_state[k][2]
                         break
                 if not sentiment:
-                    _, _, sentiment, _ = summarize_article_from_url(
+                    _, _, sentiment, _, _ = summarize_article_from_url(
                         selected_article["link"], selected_article["title"]
                     )
                 important = st.session_state.get("important_articles_preview", [])
@@ -1362,7 +1373,8 @@ def render_important_article_review_and_download():
                     "감성": sentiment or "",
                     "링크": selected_article["link"],
                     "날짜": selected_article["date"],
-                    "출처": selected_article["source"]
+                    "출처": selected_article["source"],
+                    "시사점": ""  # 시사점 필드 초기값 빈 문자열
                 }
                 important.append(new_article)
                 st.session_state["important_articles_preview"] = important
@@ -1384,17 +1396,16 @@ def render_important_article_review_and_download():
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
-            
-            # ✅ 여기서도 5개 값으로 받아야 함
+
             one_line, summary, sentiment, implication, full_text = None, None, None, None, None
-            
+
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                    one_line, summary, sentiment, implication, full_text = v  # ✅ 5개 변수
+                    one_line, summary, sentiment, implication, full_text = v
                     break
-                    
+
             if not sentiment:
-                one_line, summary, sentiment, implication, full_text = summarize_article_from_url(  # ✅ 5개 변수
+                one_line, summary, sentiment, implication, full_text = summarize_article_from_url(
                     link, raw_article.get("기사제목", "")
                 )
             filter_hits = matched_filter_keywords(
@@ -1410,6 +1421,7 @@ def render_important_article_review_and_download():
                 "요약": one_line,
                 "요약본": summary,
                 "감성": sentiment,
+                "시사점": implication,
                 "링크": link,
                 "날짜": raw_article.get("날짜", ""),
                 "출처": raw_article.get("출처", ""),
