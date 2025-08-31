@@ -747,7 +747,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     output.seek(0)
     return output
 
-def generate_important_list(search_results, common_keywords, industry_keywords, favorites):
+def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
     import re
     from openai import OpenAI
 
