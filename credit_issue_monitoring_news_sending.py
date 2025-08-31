@@ -50,6 +50,9 @@ def extract_file_url(js_href: str) -> str:
     return f"https://www.kisrating.com/common/download.do?filename={file_name}"
 
 def extract_reports_and_research(html: str) -> dict:
+    from bs4 import BeautifulSoup
+    import re
+
     soup = BeautifulSoup(html, 'html.parser')
     result = {"평가리포트": [], "관련리서치": []}
     tables = soup.select('div.table_ty1 > table')
@@ -71,8 +74,17 @@ def extract_reports_and_research(html: str) -> dict:
                 href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
                 date = tds[2].text.strip()
                 eval_type = tds[3].text.strip()
-                file_url = extract_file_url(href)
-                result['평가리포트'].append({
+
+                file_url = ""
+                if href.startswith("javascript:fn_file"):
+                    m = re.search(r"fn_file\((.*?)\)", href)
+                    if m:
+                        args = m.group(1).split(',')
+                        if len(args) >= 4:
+                            file_name = args[3].strip().strip("'\"")
+                            file_url = f"https://www.kisrating.com/common/download.do?filename={file_name}"
+
+                result["평가리포트"].append({
                     "종류": report_type,
                     "리포트": title,
                     "일자": date,
@@ -91,8 +103,17 @@ def extract_reports_and_research(html: str) -> dict:
                 title = a_tag.text.strip() if a_tag else ''
                 href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
                 date = tds[2].text.strip()
-                file_url = extract_file_url(href)
-                result['관련리서치'].append({
+
+                file_url = ""
+                if href.startswith("javascript:fn_file"):
+                    m = re.search(r"fn_file\((.*?)\)", href)
+                    if m:
+                        args = m.group(1).split(',')
+                        if len(args) >= 4:
+                            file_name = args[3].strip().strip("'\"")
+                            file_url = f"https://www.kisrating.com/common/download.do?filename={file_name}"
+
+                result["관련리서치"].append({
                     "구분": category,
                     "제목": title,
                     "일자": date,
@@ -109,7 +130,6 @@ def fetch_and_display_reports(companies_map):
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
 
-    # favorite_categories 순회로 항상 뉴스검색 UI/순서 일치 보장
     for cat in favorite_categories:
         for company in favorite_categories[cat]:
             kiscd = companies_map.get(company, "")
@@ -128,21 +148,18 @@ def fetch_and_display_reports(companies_map):
                         html = resp.text
                         report_data = extract_reports_and_research(html)
 
-                        # 평가리포트
                         if report_data["평가리포트"]:
                             with st.expander("평가리포트", expanded=True):
                                 df = pd.DataFrame(report_data["평가리포트"])
                                 df = df.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df)
 
-                        # 관련리서치
                         if report_data["관련리서치"]:
                             with st.expander("관련리서치", expanded=True):
                                 df2 = pd.DataFrame(report_data["관련리서치"])
                                 df2 = df2.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df2)
 
-                        # 평가항목(회사채 등) ONLY '회사채' caption인 테이블 추출
                         soup = BeautifulSoup(html, 'html.parser')
                         bond_table = None
                         for table in soup.find_all('table'):
