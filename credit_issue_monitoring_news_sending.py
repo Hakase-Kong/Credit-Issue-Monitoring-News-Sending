@@ -683,13 +683,18 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     for idx, company in enumerate(sector_list):
         # 기사 개수 산정
         search_articles = search_results.get(company, [])
-        unique_links = set()
+
+        # 필터링된 기사만 추출 (중복 제거 포함하면 좋음)
         filtered_articles = []
+        unique_links = set()
         for article in search_articles:
+            if not article_passes_all_filters(article):
+                continue
             link_val = article.get("link") or article.get("링크")
             if link_val and link_val not in unique_links:
                 unique_links.add(link_val)
                 filtered_articles.append(article)
+        
         total_count = len(filtered_articles)
 
         # 중요 뉴스 및 시사점 추출 (최신 2개)
@@ -1187,13 +1192,21 @@ def render_important_article_review_and_download():
                     if filtered_articles:
                         filtered_results_for_important[keyword] = filtered_articles
 
-                important_articles = generate_important_article_list(
-                    search_results=filtered_results_for_important,
-                    common_keywords=ALL_COMMON_FILTER_KEYWORDS,
-                    industry_keywords=st.session_state.get("industry_sub", []),
-                    favorites=favorite_categories
-                )
-                # key naming 통일 및 시사점 필드 포함 (시사점은 빈 문자열로 초기화, 필요 시 OpenAI 결과 반영 필요)
+                important_articles = []
+                try:
+                    important_articles = generate_important_article_list(
+                        search_results=filtered_results_for_important,
+                        common_keywords=ALL_COMMON_FILTER_KEYWORDS,
+                        industry_keywords=st.session_state.get("industry_sub", []),
+                        favorites=favorite_categories
+                    )
+                except Exception as ex:
+                    st.error(f"중요 기사 자동 선정 중 오류 발생: {ex}")
+
+                # 중요 기사 데이터 필드 정리 및 빈 리스트 처리
+                if important_articles is None:
+                    important_articles = []
+
                 for i, art in enumerate(important_articles):
                     important_articles[i] = {
                         "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
@@ -1202,11 +1215,14 @@ def render_important_article_review_and_download():
                         "링크": art.get("링크") or art.get("link", ""),
                         "날짜": art.get("날짜") or art.get("date", ""),
                         "출처": art.get("출처") or art.get("source", ""),
-                        "시사점": art.get("시사점", "")  # 시사점 필드 추가 (자동선정 시에 채워질 수 있음)
+                        "시사점": art.get("시사점", "")  # 자동선정 시에 채워지지 않더라도 빈 문자열 기본값
                     }
+
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
 
+                # UI 강제 갱신
+                st.experimental_rerun()
         articles = st.session_state.get("important_articles_preview", [])
         selected_indexes = st.session_state.get("important_selected_index", [])
 
@@ -1494,4 +1510,3 @@ if st.session_state.search_results:
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
         enable_summary=st.session_state.get("enable_summary", True)
     )
-
