@@ -642,16 +642,19 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         text = text.replace('"', "'").replace('\n', ' ').replace('\r', '')
         return text[:200]
 
+    # 회사 리스트 (중복 제거하며 순서 유지)
     sector_list = []
     for cat in favorite_categories:
         sector_list.extend(favorite_categories[cat])
     sector_list = list(dict.fromkeys(sector_list))
 
+    # 각 회사에 대응하는 엑셀 표기명 리스트
     excel_sector_list = []
     for cat in excel_company_categories:
         excel_sector_list.extend(excel_company_categories[cat])
     excel_sector_list = list(dict.fromkeys(excel_sector_list))
 
+    # 빈 DataFrame일 경우 대비
     if summary_data is None or len(summary_data) == 0:
         df_empty = pd.DataFrame(columns=["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"])
         output = BytesIO()
@@ -663,8 +666,9 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         return output
 
     df = pd.DataFrame(summary_data)
-    # 시사점이 있는 컬럼명 인식 (필드명이 바뀔 수 있으니)
-    implication_col = "시사점" if "시사점" in df.columns else "implication" if "implication" in df.columns else None
+
+    # 시사점 컬럼명 인식 ("시사점" or "implication" 등)
+    implication_col = "시사점" if "시사점" in df.columns else ("implication" if "implication" in df.columns else None)
 
     if "키워드" in df.columns:
         keyword_col = "키워드"
@@ -673,10 +677,11 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     elif "회사명" in df.columns:
         keyword_col = "회사명"
     else:
-        keyword_col = df.columns[0] if len(df.columns)>0 else "기업명"
+        keyword_col = df.columns if len(df.columns) > 0 else "기업명"
 
     rows = []
     for idx, company in enumerate(sector_list):
+        # 기사 개수 산정
         search_articles = search_results.get(company, [])
         unique_links = set()
         filtered_articles = []
@@ -687,7 +692,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
                 filtered_articles.append(article)
         total_count = len(filtered_articles)
 
-        # 중요 뉴스 및 시사점 추출 (가장 최근 2개), 시사점은 첫번째 거에서 추출
+        # 중요 뉴스 및 시사점 추출 (최신 2개)
         filtered_df = df[df.get(keyword_col, "") == company].sort_values(by='날짜', ascending=False)
         hl_news = ["", ""]
         implications = ["", ""]
@@ -702,19 +707,29 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
                 hl_news[i] = f'=HYPERLINK("{clean_text(link_val)}", "{display_text}")'
             else:
                 hl_news[i] = display_text or ""
+            # 두 기사 각각의 시사점 추출
             if implication_col:
                 implications[i] = getattr(art, implication_col, "") or ""
+            else:
+                implications[i] = ""
 
-        # 시사점은 가장 최근 기사 1번째의 시사점 or 공란
-        chosen_implication = implications[0] or ""
+        # 시사점: 두 기사 각각 줄바꿈으로 병합
+        if implications and implications[1]:
+            merged_implication = f"{implications}\n{implications[1]}"
+        elif implications:
+            merged_implication = implications
+        elif implications[1]:
+            merged_implication = implications[1]
+        else:
+            merged_implication = ""
 
         rows.append({
             "기업명": company,
             "표기명": excel_sector_list[idx] if idx < len(excel_sector_list) else "",
             "건수": total_count,
-            "중요뉴스1": hl_news[0],
+            "중요뉴스1": hl_news,
             "중요뉴스2": hl_news[1],
-            "시사점": chosen_implication
+            "시사점": merged_implication
         })
 
     result_df = pd.DataFrame(rows, columns=["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"])
@@ -725,84 +740,6 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         worksheet = writer.sheets['뉴스요약']
         worksheet.set_column(0, 5, 30)
     output.seek(0)
-    return output
-
-def build_important_excel_format(important_articles, favorite_categories, excel_categories, search_results):
-    import pandas as pd
-    from io import BytesIO
-
-    def clean_text(text):
-        if not isinstance(text, str):
-            text = str(text)
-        # 엑셀 내 안전처리: 큰따옴표 → 작은따옴표, 줄바꿈 제거, 200자 제한
-        text = text.replace('"', "'").replace('\n', ' ').replace('\r', '')
-        return text[:200]
-
-    # 회사 리스트 (중복제거하며 순서 유지)
-    sector_list = []
-    for cat in favorite_categories:
-        sector_list.extend(favorite_categories[cat])
-    sector_list = list(dict.fromkeys(sector_list))
-
-    # 해당 기업에 대응하는 엑셀 표기명 리스트
-    excel_sector_list = []
-    for cat in excel_categories:
-        excel_sector_list.extend(excel_categories[cat])
-    excel_sector_list = list(dict.fromkeys(excel_sector_list))
-
-    df = pd.DataFrame(important_articles)
-
-    rows = []
-    for idx, company in enumerate(sector_list):
-        # [1] '건수'는 뉴스 검색 결과 기준 (중복제거 포함)
-        search_articles = search_results.get(company, [])
-        unique_links = set()
-        filtered_articles = []
-        for a in search_articles:
-            link_val = a.get("link") or a.get("링크")
-            if link_val and link_val not in unique_links:
-                unique_links.add(link_val)
-                filtered_articles.append(a)
-        total_count = len(filtered_articles)
-
-        # [2] 중요 뉴스는 선정된 중요기사 기준으로 최근 2건 추출
-        filtered = df[df.get("회사명", "") == company].sort_values(by="날짜", ascending=False)
-
-        hl_news = ["", ""]
-        for i, art in enumerate(filtered.itertuples()):
-            if i > 1:
-                break
-            date_str = getattr(art, "날짜", "") or ""
-            title_str = getattr(art, "제목", "") or getattr(art, "기사제목", "")
-            title_clean = clean_text(title_str)
-            link_str = getattr(art, "링크", "") or getattr(art, "link", "")
-            link_clean = clean_text(link_str)
-            display_text = f'({date_str}){title_clean}'
-            if title_clean and link_clean:
-                hl_news[i] = f'=HYPERLINK("{link_clean}", "{display_text}")'
-            else:
-                hl_news[i] = display_text or ""
-
-        rows.append({
-            "기업명": company,
-            "표기명": excel_sector_list[idx] if idx < len(excel_sector_list) else "",
-            "건수": total_count,
-            "중요뉴스1": hl_news[0],
-            "중요뉴스2": hl_news[1],
-            "시사점": ""
-        })
-
-    # 결과 DataFrame
-    result_df = pd.DataFrame(rows, columns=["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"])
-
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        result_df.to_excel(writer, index=False, sheet_name='뉴스요약')
-        worksheet = writer.sheets['뉴스요약']
-        for i, col in enumerate(result_df.columns):
-            worksheet.set_column(i, i, 30)
-    output.seek(0)
-
     return output
 
 def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
