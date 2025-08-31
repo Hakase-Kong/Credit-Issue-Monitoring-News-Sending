@@ -54,7 +54,7 @@ def extract_reports_and_research(html: str) -> dict:
     import re
 
     soup = BeautifulSoup(html, 'html.parser')
-    result = {"평가리포트": [], "관련리서치": []}
+    result = {"평가리포트": [], "관련리서치": [], "등급평가_전망": []}  # 등급평가_전망 항목 추가
     tables = soup.select('div.table_ty1 > table')
     for table in tables:
         caption = table.find('caption')
@@ -119,6 +119,17 @@ def extract_reports_and_research(html: str) -> dict:
                     "일자": date,
                     "다운로드": file_url
                 })
+
+        elif "등급평가" in cap_text or "전망" in cap_text:
+            rows = table.select('tbody > tr')
+            for tr in rows:
+                cells = tr.find_all('td')
+                if len(cells) < 2:
+                    continue
+                grade_title = cells[0].text.strip()
+                grade_detail = cells[1].text.strip()
+                result["등급평가_전망"].append({"항목": grade_title, "내용": grade_detail})
+
     return result
 
 def fetch_and_display_reports(companies_map):
@@ -148,18 +159,32 @@ def fetch_and_display_reports(companies_map):
                         html = resp.text
                         report_data = extract_reports_and_research(html)
 
-                        if report_data["평가리포트"]:
+                        # 평가리포트 출력
+                        if report_data.get("평가리포트"):
                             with st.expander("평가리포트", expanded=True):
                                 df = pd.DataFrame(report_data["평가리포트"])
                                 df = df.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df)
 
-                        if report_data["관련리서치"]:
+                        # 관련리서치 출력
+                        if report_data.get("관련리서치"):
                             with st.expander("관련리서치", expanded=True):
                                 df2 = pd.DataFrame(report_data["관련리서치"])
                                 df2 = df2.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df2)
 
+                        # 등급평가 및 전망 출력 추가
+                        if report_data.get("등급평가_전망"):
+                            with st.expander("등급평가 및 전망", expanded=True):
+                                grade_items = report_data["등급평가_전망"]
+                                if grade_items:
+                                    # 데이터프레임으로 변환 후 출력
+                                    df_grade = pd.DataFrame(grade_items)
+                                    st.dataframe(df_grade)
+                                else:
+                                    st.info("등급평가 및 전망 정보가 없습니다.")
+
+                        # (기존) 회사채/평가항목 테이블 출력 영역 유지
                         soup = BeautifulSoup(html, 'html.parser')
                         bond_table = None
                         for table in soup.find_all('table'):
@@ -184,7 +209,7 @@ def fetch_and_display_reports(companies_map):
                         else:
                             st.info("회사채/평가항목 정보가 없습니다.")
 
-                        if not (report_data["평가리포트"] or report_data["관련리서치"]):
+                        if not (report_data.get("평가리포트") or report_data.get("관련리서치")):
                             st.info("평가리포트 및 관련리서치가 없습니다.")
                     else:
                         st.warning("정보를 불러올 수 없습니다.")
