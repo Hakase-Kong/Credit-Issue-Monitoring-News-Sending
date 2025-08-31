@@ -54,7 +54,7 @@ def extract_reports_and_research(html: str) -> dict:
     import re
 
     soup = BeautifulSoup(html, 'html.parser')
-    result = {"평가리포트": [], "관련리서치": [], "등급평가_전망": []}  # 기존 구조에 "관련리서치" 추가
+    result = {"평가리포트": [], "관련리서치": [], "등급평가_전망": []}  # 등급평가_전망 항목 추가
     tables = soup.select('div.table_ty1 > table')
     for table in tables:
         caption = table.find('caption')
@@ -62,7 +62,6 @@ def extract_reports_and_research(html: str) -> dict:
             continue
         cap_text = caption.text.strip()
 
-        # 평가리포트 처리
         if cap_text == "평가리포트":
             rows = table.select('tbody > tr')
             for tr in rows:
