@@ -102,6 +102,9 @@ def extract_reports_and_research(html: str) -> dict:
 
 def fetch_and_display_reports(companies_map):
     import streamlit as st
+    import pandas as pd
+    import requests
+    from bs4 import BeautifulSoup
 
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
@@ -116,27 +119,46 @@ def fetch_and_display_reports(companies_map):
                 f"- [📄 {company} 한국신용평가 평가/리서치 페이지 바로가기]({url})",
                 unsafe_allow_html=True
             )
-            # 실제 페이지에서 리포트 정보 파싱 (단, 서버에서 직접 접근해야 정보 읽힘)
             try:
                 resp = requests.get(url, timeout=7, headers={"User-Agent":"Mozilla/5.0"})
                 if resp.status_code == 200:
-                    report_data = extract_reports_and_research(resp.text)
-                    
-                    # 평가리포트 표
+                    html = resp.text
+                    report_data = extract_reports_and_research(html)
+
+                    # --- 기존 평가리포트 Expander ---
                     if report_data["평가리포트"]:
-                        st.markdown("#### 평가리포트")
-                        df = pd.DataFrame(report_data["평가리포트"])
-                        # 다운로드 컬럼을 표시하지 않음 (즉, drop)
-                        df = df.drop(columns=["다운로드"], errors="ignore")
-                        st.dataframe(df)
-                    
-                    # 관련리서치 표
+                        with st.expander("평가리포트", expanded=True):
+                            df = pd.DataFrame(report_data["평가리포트"])
+                            df = df.drop(columns=["다운로드"], errors="ignore")
+                            st.dataframe(df)
+
+                    # --- 기존 관련리서치 Expander ---
                     if report_data["관련리서치"]:
-                        st.markdown("#### 관련리서치")
-                        df2 = pd.DataFrame(report_data["관련리서치"])
-                        df2 = df2.drop(columns=["다운로드"], errors="ignore")
-                        st.dataframe(df2)
-                    
+                        with st.expander("관련리서치", expanded=True):
+                            df2 = pd.DataFrame(report_data["관련리서치"])
+                            df2 = df2.drop(columns=["다운로드"], errors="ignore")
+                            st.dataframe(df2)
+
+                    # --- 평가항목(회사채 등) 테이블 추가 ---
+                    soup = BeautifulSoup(html, 'html.parser')
+                    table = soup.find('table')
+                    if table:
+                        thead = table.find('thead')
+                        columns = [th.text.strip() for th in thead.find_all('th')] if thead else []
+                        tbody = table.find('tbody')
+                        rows = []
+                        if tbody:
+                            for tr in tbody.find_all('tr'):
+                                rows.append([td.text.strip() for td in tr.find_all('td')])
+                        if columns and rows:
+                            bond_df = pd.DataFrame(rows, columns=columns)
+                            with st.expander("평가항목(회사채 등)", expanded=True):
+                                st.dataframe(bond_df)
+                        else:
+                            st.info("회사채/평가항목 정보가 없습니다.")
+                    else:
+                        st.info("회사채/평가항목 정보가 없습니다.")
+
                     if not (report_data["평가리포트"] or report_data["관련리서치"]):
                         st.info("평가리포트 및 관련리서치가 없습니다.")
                 else:
