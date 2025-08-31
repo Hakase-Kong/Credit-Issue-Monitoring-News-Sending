@@ -740,15 +740,18 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     result = []
 
-    # 산업별 신용평가 키워드 텍스트를 분리해 dict 생성 (대분류명 -> 키워드 리스트)
-    industry_keywords_text = config.get("industry_keywords_text") or get_industry_credit_keywords()
-    sector_keywords_dict = {}
-    for line in industry_keywords_text.strip().split("\n"):
-        m = re.match(r"(.+?):\s*(.+)", line.strip())
-        if m:
-            sector = m.group(1).strip()
-            kws = [k.strip() for k in m.group(2).split(",")]
-            sector_keywords_dict[sector] = kws
+    industry_keywords_dict = None
+    # industry_keywords가 dict이면 그대로 쓰고, 문자열이면 기존 split 처리
+    if isinstance(industry_keywords, dict):
+        industry_keywords_dict = industry_keywords
+    else:
+        industry_keywords_dict = {}
+        for line in industry_keywords.strip().split("\n"):
+            m = re.match(r"(.+?):\s*(.+)", line.strip())
+            if m:
+                sector = m.group(1).strip()
+                kws = [k.strip() for k in m.group(2).split(",")]
+                industry_keywords_dict[sector] = kws
 
     # 기업 이름 → 대분류(산업군) 반환 함수
     def get_major_for_company(company):
@@ -762,12 +765,10 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     for cat in favorites:
         for comp in favorites[cat]:
             major = get_major_for_company(comp)
-            sector_kws = sector_keywords_dict.get(major, [])
+            sector_kws = industry_keywords_dict.get(major, [])
 
-            # 공통 키워드 + 해당 섹터 키워드 결합
             all_kws = list(set(common_keywords) | set(sector_kws))
 
-            # 해당 섹터 키워드 포함 기사를 후보로 필터링
             candidate_articles = []
             if comp in search_results:
                 for art in search_results[comp]:
@@ -777,13 +778,10 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
             if not candidate_articles:
                 continue
 
-            # 기사 리스트 텍스트 생성
             article_list_text = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(candidate_articles)])
 
-            # 섹터 키워드 문자열 (길이 제한)
             sector_kw_str = ", ".join(sector_kws)[:900]
 
-            # 프롬프트 작성(섹터별 키워드 포함)
             prompt = f'''
 [산업 신용평가 핵심 키워드]
 {sector_kw_str}
@@ -795,9 +793,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
 아래 조건을 엄격히 지켜서 각 기사에 대해 분석하고,  
 대상 기업 신용도에 미치는 영향 측면에서 가장 핵심적인  
-감성 여부와 무관하게 가장 중요한 뉴스 기사 2건을 선정하세요.
-
-1. 기사 중에서 \"{sector_kw_str}\" 중 하나 이상 포함된 내용이어야 합니다.  
+감성 여부와 무관하게 가장 중요한 뉴스 기사 2건을 선정하세요.... 1. 기사 중에서 \"{sector_kw_str}\" 중 하나 이상 포함된 내용이어야 합니다.  
 2. 선정 결과를 아래 포맷으로 응답하세요.
 
 [중요기사1]: 기사 제목
@@ -817,7 +813,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 pos_title = pos_match.group(1).strip() if pos_match else ""
                 neg_title = neg_match.group(1).strip() if neg_match else ""
 
-                # 결과에 부합하는 기사들 추가
                 for art in candidate_articles:
                     if pos_title and pos_title in art.get("title", ""):
                         result.append({
