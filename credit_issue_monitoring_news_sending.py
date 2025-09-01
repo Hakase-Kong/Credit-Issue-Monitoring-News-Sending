@@ -49,7 +49,7 @@ def extract_file_url(js_href: str) -> str:
     file_name = args[3]
     return f"https://www.kisrating.com/common/download.do?filename={file_name}"
 
-def extract_credit_details(html):
+def extract_reports_and_research(html: str) -> dict:
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, 'html.parser')
     results = []
@@ -137,92 +137,6 @@ def fetch_and_display_reports(companies_map):
                         else:
                             st.info("신용등급 상세정보가 없습니다.")
 
-                    else:
-                        st.warning("정보를 불러올 수 없습니다.")
-                except Exception as e:
-                    st.warning(f"정보 파싱 오류: {e}")
-                    
-def fetch_and_display_reports(companies_map):
-    import streamlit as st
-    import pandas as pd
-    import requests
-    from bs4 import BeautifulSoup
-
-    st.markdown("---")
-    st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
-
-    for cat in favorite_categories:
-        for company in favorite_categories[cat]:
-            kiscd = companies_map.get(company, "")
-            if not kiscd or not str(kiscd).strip():
-                continue
-
-            url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
-            with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
-                st.markdown(
-                    f"- [📄 {company} 한국신용평가 평가/리서치 페이지 바로가기]({url})",
-                    unsafe_allow_html=True
-                )
-                try:
-                    resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
-                    if resp.status_code == 200:
-                        html = resp.text
-                        report_data = extract_reports_and_research(html)
-
-                        # 평가리포트 출력
-                        if report_data.get("평가리포트"):
-                            with st.expander("평가리포트", expanded=True):
-                                df = pd.DataFrame(report_data["평가리포트"])
-                                df = df.drop(columns=["다운로드"], errors="ignore")
-                                st.dataframe(df)
-
-                        # 관련리서치 출력
-                        if report_data.get("관련리서치"):
-                            with st.expander("관련리서치", expanded=True):
-                                df2 = pd.DataFrame(report_data["관련리서치"])
-                                df2 = df2.drop(columns=["다운로드"], errors="ignore")
-                                st.dataframe(df2)
-
-                        # 등급평가 및 전망 출력 추가
-                        if report_data.get("등급평가_전망"):
-                            with st.expander("등급평가 및 전망", expanded=True):
-                                grade_items = report_data["등급평가_전망"]
-                                if grade_items:
-                                    # 데이터프레임으로 변환 후 출력
-                                    df_grade = pd.DataFrame(grade_items)
-                                    st.dataframe(df_grade)
-                                else:
-                                    st.info("등급평가 및 전망 정보가 없습니다.")
-
-                        # (기존) 회사채/평가항목 테이블 출력 영역 유지
-                        soup = BeautifulSoup(html, 'html.parser')
-                        bond_table = None
-                        for table in soup.find_all('table'):
-                            caption = table.find('caption')
-                            # 여기에 모든 관련 키워드 포함
-                            if caption and any(kw in caption.text for kw in ["회사채", "평가항목", "등급평가", "전망"]):
-                                bond_table = table
-                                break  # 여러개면 리스트로 append할 것, 대표 1개면 break
-
-                        if bond_table:
-                            thead = bond_table.find('thead')
-                            columns = [th.text.strip() for th in thead.find_all('th')] if thead else []
-                            tbody = bond_table.find('tbody')
-                            rows = []
-                            if tbody:
-                                for tr in tbody.find_all('tr'):
-                                    rows.append([td.text.strip() for td in tr.find_all('td')])
-                            if columns and rows:
-                                bond_df = pd.DataFrame(rows, columns=columns)
-                                with st.expander("평가항목(회사채/등급전망/평가항목)", expanded=True):
-                                    st.dataframe(bond_df)
-                            else:
-                                st.info("회사채/평가항목 정보가 없습니다.")
-                        else:
-                            st.info("회사채/평가항목 정보가 없습니다.")
-
-                        if not (report_data.get("평가리포트") or report_data.get("관련리서치")):
-                            st.info("평가리포트 및 관련리서치가 없습니다.")
                     else:
                         st.warning("정보를 불러올 수 없습니다.")
                 except Exception as e:
