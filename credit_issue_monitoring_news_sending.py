@@ -148,33 +148,16 @@ def extract_credit_details(html):
 def fetch_and_display_reports(companies_map):
     import streamlit as st
     import requests
-    import pandas as pd
-    from datetime import datetime, timedelta
-
-    def highlight_recent_html(val):
-        try:
-            date_val = datetime.strptime(str(val), "%Y-%m-%d").date()
-            today = datetime.today().date()
-            if today - timedelta(days=7) <= date_val <= today:
-                return f'<span style="color:#339CFF;font-weight:bold;">{val}</span>'
-        except Exception:
-            pass
-        return f"{val}"
-
-    def styled_html_table(df, date_columns):
-        df_html = df.copy()
-        for col in date_columns:
-            if col in df_html.columns:
-                df_html[col] = df_html[col].apply(highlight_recent_html)
-        return df_html.to_html(escape=False, index=False)
 
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
+
     for cat in favorite_categories:
         for company in favorite_categories[cat]:
             kiscd = companies_map.get(company, "")
             if not kiscd or not str(kiscd).strip():
                 continue
+
             url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
             with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
                 st.markdown(
@@ -182,40 +165,34 @@ def fetch_and_display_reports(companies_map):
                     unsafe_allow_html=True
                 )
                 try:
-                    resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                    resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
                     if resp.status_code == 200:
                         html = resp.text
                         report_data = extract_reports_and_research(html)
-                        # 평가리포트
+
+                        # 기존 평가리포트
                         if report_data.get("평가리포트"):
                             with st.expander("평가리포트", expanded=True):
                                 df_report = pd.DataFrame(report_data["평가리포트"])
                                 df_report = df_report.drop(columns=["다운로드"], errors="ignore")
-                                if "일자" in df_report.columns:
-                                    st.markdown(styled_html_table(df_report, ["일자"]), unsafe_allow_html=True)
-                                else:
-                                    st.dataframe(df_report)
-                        # 관련리서치
+                                st.dataframe(df_report)
+
+                        # 기존 관련리서치
                         if report_data.get("관련리서치"):
                             with st.expander("관련리서치", expanded=True):
                                 df_research = pd.DataFrame(report_data["관련리서치"])
                                 df_research = df_research.drop(columns=["다운로드"], errors="ignore")
-                                if "일자" in df_research.columns:
-                                    st.markdown(styled_html_table(df_research, ["일자"]), unsafe_allow_html=True)
-                                else:
-                                    st.dataframe(df_research)
-                        # 신용등급 상세정보
+                                st.dataframe(df_research)
+
+                        # 여기에 신용등급 상세정보 표 추가
                         credit_detail_list = extract_credit_details(html)
                         if credit_detail_list:
                             with st.expander("신용등급 상세정보", expanded=True):
                                 df_credit_detail = pd.DataFrame(credit_detail_list)
-                                # "평가일" 컬럼에도 동일 처리
-                                if "평가일" in df_credit_detail.columns:
-                                    st.markdown(styled_html_table(df_credit_detail, ["평가일"]), unsafe_allow_html=True)
-                                else:
-                                    st.dataframe(df_credit_detail)
+                                st.dataframe(df_credit_detail)
                         else:
                             st.info("신용등급 상세정보가 없습니다.")
+
                     else:
                         st.warning("정보를 불러올 수 없습니다.")
                 except Exception as e:
