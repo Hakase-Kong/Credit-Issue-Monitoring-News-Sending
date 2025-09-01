@@ -69,7 +69,7 @@ def extract_reports_and_research(html: str) -> dict:
                 tds = tr.find_all('td')
                 if len(tds) < 4:
                     continue
-                report_type = tds.text.strip()
+                report_type = tds[0].text.strip()
                 a_tag = tds[1].find('a')
                 title = a_tag.text.strip() if a_tag else ''
                 href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
@@ -101,7 +101,7 @@ def extract_reports_and_research(html: str) -> dict:
                 tds = tr.find_all('td')
                 if len(tds) < 4:
                     continue
-                category = tds.text.strip()
+                category = tds[0].text.strip()
                 a_tag = tds[1].find('a')
                 title = a_tag.text.strip() if a_tag else ''
                 href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
@@ -130,7 +130,7 @@ def extract_reports_and_research(html: str) -> dict:
                 cells = tr.find_all('td')
                 if len(cells) < 2:
                     continue
-                grade_title = cells.text.strip()
+                grade_title = cells[0].text.strip()
                 grade_detail = cells[1].text.strip()
                 result["등급평가_전망"].append({"항목": grade_title, "내용": grade_detail})
 
