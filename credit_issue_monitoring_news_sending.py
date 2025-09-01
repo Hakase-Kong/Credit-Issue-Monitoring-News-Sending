@@ -54,7 +54,7 @@ def extract_reports_and_research(html: str) -> dict:
     import re
 
     soup = BeautifulSoup(html, 'html.parser')
-    result = {"평가리포트": [], "관련리서치": [], "등급평가_전망": []}  # 등급평가_전망 항목 추가
+    result = {"평가리포트": [], "관련리서치": [], "등급평가_전망": []}
     tables = soup.select('div.table_ty1 > table')
     for table in tables:
         caption = table.find('caption')
@@ -62,21 +62,23 @@ def extract_reports_and_research(html: str) -> dict:
             continue
         cap_text = caption.text.strip()
 
+        # 평가리포트
         if cap_text == "평가리포트":
             rows = table.select('tbody > tr')
             for tr in rows:
                 tds = tr.find_all('td')
                 if len(tds) < 4:
                     continue
-                report_type = tds[0].text.strip()
+                report_type = tds.text.strip()
                 a_tag = tds[1].find('a')
                 title = a_tag.text.strip() if a_tag else ''
                 href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
                 date = tds[2].text.strip()
                 eval_type = tds[3].text.strip()
 
+                # 파일 다운로드 링크 추출
                 file_url = ""
-                if href.startswith("javascript:fn_file"):
+                if href and href.startswith("javascript:fn_file"):
                     m = re.search(r"fn_file\((.*?)\)", href)
                     if m:
                         args = m.group(1).split(',')
@@ -92,20 +94,21 @@ def extract_reports_and_research(html: str) -> dict:
                     "다운로드": file_url
                 })
 
+        # 관련리서치
         elif cap_text == "관련 리서치":
             rows = table.select('tbody > tr')
             for tr in rows:
                 tds = tr.find_all('td')
                 if len(tds) < 4:
                     continue
-                category = tds[0].text.strip()
+                category = tds.text.strip()
                 a_tag = tds[1].find('a')
                 title = a_tag.text.strip() if a_tag else ''
                 href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
                 date = tds[2].text.strip()
 
                 file_url = ""
-                if href.startswith("javascript:fn_file"):
+                if href and href.startswith("javascript:fn_file"):
                     m = re.search(r"fn_file\((.*?)\)", href)
                     if m:
                         args = m.group(1).split(',')
@@ -120,13 +123,14 @@ def extract_reports_and_research(html: str) -> dict:
                     "다운로드": file_url
                 })
 
+        # 등급평가 및 전망 (필요시 추가 확장)
         elif "등급평가" in cap_text or "전망" in cap_text:
             rows = table.select('tbody > tr')
             for tr in rows:
                 cells = tr.find_all('td')
                 if len(cells) < 2:
                     continue
-                grade_title = cells[0].text.strip()
+                grade_title = cells.text.strip()
                 grade_detail = cells[1].text.strip()
                 result["등급평가_전망"].append({"항목": grade_title, "내용": grade_detail})
 
@@ -154,7 +158,7 @@ def fetch_and_display_reports(companies_map):
                     unsafe_allow_html=True
                 )
                 try:
-                    resp = requests.get(url, timeout=7, headers={"User-Agent":"Mozilla/5.0"})
+                    resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
                     if resp.status_code == 200:
                         html = resp.text
                         report_data = extract_reports_and_research(html)
@@ -872,15 +876,25 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
 
     rows = []
     for idx, company in enumerate(sector_list):
-        # 기사 개수 산정
+        # 원래처럼 중복 제거 전 모든 기사 리스트에서 중복 제거 및 필터 처리
         search_articles = search_results.get(company, [])
-        unique_links = set()
+
+        # 공통 필터와 산업별 필터 통과한 기사만 필터링
         filtered_articles = []
         for article in search_articles:
-            link_val = article.get("link") or article.get("링크")
-            if link_val and link_val not in unique_links:
-                unique_links.add(link_val)
+            # 공통/산업 필터 통과 검사 함수 or_keyword_filter 활용
+            passes_common = any(kw in (article.get("title", "") + article.get("description", "")) for kw in ALL_COMMON_FILTER_KEYWORDS)
+            passes_industry = True
+            # 산업별 필터 사용 시 조건 추가 (예: st.session_state.get("use_industry_filter") 값에 따라)
+            # 필요하면 산업별 키워드 필터링 코드 추가
+    
+            if passes_common and passes_industry:
                 filtered_articles.append(article)
+    
+        # 중복 제거
+        if st.session_state.get("remove_duplicate_articles", False):
+            filtered_articles = remove_duplicates(filtered_articles)
+
         total_count = len(filtered_articles)
 
         # 중요 뉴스 및 시사점 추출 (최신 2개)
@@ -1091,18 +1105,12 @@ def extract_keyword_from_link(search_results, article_link):
                 return kw
     return ""
 
-def build_important_excel_format(
-    important_articles, favorite_categories, excel_categories, search_results
-):
+def build_important_excel_format(important_articles, favorite_categories, excel_categories, search_results):
     import pandas as pd
-    from io import BytesIO
 
     df = pd.DataFrame(important_articles)
 
-    # 필요한 컬럼 정의
-    columns = ["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"]
-
-    # 섹터 리스트 동적추출
+    # 회사 리스트 (중복 제거하며 순서 유지)
     sector_list = []
     for cat in favorite_categories:
         sector_list.extend(favorite_categories[cat])
@@ -1116,40 +1124,66 @@ def build_important_excel_format(
     rows = []
 
     for idx, company in enumerate(sector_list):
-        filtered = df[df.get("회사명", "") == company].sort_values(by="날짜", ascending=False)
+        # 기사 필터링 및 중복 제거
+        all_articles = search_results.get(company, [])
 
-        excel_name = excel_sector_list[idx] if idx < len(excel_sector_list) else ""
+        filtered_articles = []
+        for art in all_articles:
+            if article_passes_filters(art):  # 또는 article_passes_filters(art) 함수에 맞게 변경
+                filtered_articles.append(art)
 
-        # 변경: 건수 = 필터된 기사수 (중복제거 이후 리스트 기준)
-        count = len(filtered)
+        if 'remove_duplicate_articles' in st.session_state and st.session_state['remove_duplicate_articles']:
+            filtered_articles = remove_duplicates(filtered_articles)
 
-        hl_news = ["", ""]
-        for i, art in enumerate(filtered.itertuples()):
+        total_count = len(filtered_articles)
+
+        # 해당 회사의 선택된 중요기사 요약 데이터(이미 중복 제거, 필터링된)를 가져옴
+        filtered_df = df[df['기업명'] == company].sort_values(by='날짜', ascending=False)
+
+        hl_news = []
+        for i, art in enumerate(filtered_df.itertuples()):
             if i > 1:
                 break
-            title = getattr(art, "제목", "") or ""
-            link = getattr(art, "링크", "") or ""
+            title = getattr(art, '제목', '') or ''
+            link = getattr(art, '링크', '') or ''
             if title and link:
-                hl_news[i] = f'=HYPERLINK("{link}", "{title}")'
+                hl_news.append(f'=HYPERLINK("{link}", "{title}")')
+            else:
+                hl_news.append(title or '')
+        # 2개까지 채우고 부족하면 빈문자열 채움
+        while len(hl_news) < 2:
+            hl_news.append('')
+
+        # 시사점 병합 (최대 2개)
+        implication_col = '시사점' if '시사점' in df.columns else ('implication' if 'implication' in df.columns else None)
+        implications = []
+        for i, art in enumerate(filtered_df.itertuples()):
+            if i > 1:
+                break
+            val = getattr(art, implication_col, '') if implication_col else ''
+            implications.append(val)
+        merged_implication = ''
+        if implications:
+            merged_implication = '\n'.join(f"{idx+1}. {txt}" for idx, txt in enumerate(implications) if txt)
 
         rows.append({
-            "기업명": company,
-            "표기명": excel_name,
-            "건수": count,
-            "중요뉴스1": hl_news[0],
-            "중요뉴스2": hl_news[1],
-            "시사점": ""
+            '기업명': company,
+            '표기명': excel_sector_list[idx] if idx < len(excel_sector_list) else '',
+            '건수': total_count,
+            '중요뉴스1': hl_news[0],
+            '중요뉴스2': hl_news[1],
+            '시사점': merged_implication
         })
 
-    result_df = pd.DataFrame(rows, columns=columns)
+    result_df = pd.DataFrame(rows, columns=['기업명', '표기명', '건수', '중요뉴스1', '중요뉴스2', '시사점'])
 
+    from io import BytesIO
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         result_df.to_excel(writer, index=False, sheet_name='뉴스요약')
         worksheet = writer.sheets['뉴스요약']
         for i, col in enumerate(result_df.columns):
             worksheet.set_column(i, i, 30)
-
     output.seek(0)
     return output
    
