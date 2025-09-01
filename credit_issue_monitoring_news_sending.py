@@ -52,6 +52,62 @@ def extract_file_url(js_href: str) -> str:
 def extract_reports_and_research(html: str) -> dict:
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, 'html.parser')
+    result = {
+        "평가리포트": [],
+        "관련리서치": [],
+        "신용등급상세": []
+    }
+
+    # 평가리포트, 관련리서치 테이블 로직 그대로
+    tables = soup.select('div.table_ty1 > table')
+    for table in tables:
+        caption = table.find('caption')
+        if not caption:
+            continue
+        caption_text = caption.text.strip()
+
+        if caption_text == "평가리포트":
+            rows = table.select('tbody > tr')
+            for tr in rows:
+                tds = tr.find_all('td')
+                if len(tds) < 4:
+                    continue
+                report_type = tds[0].text.strip()
+                a_tag = tds[1].find('a')
+                title = a_tag.text.strip() if a_tag else ''
+                date = tds[2].text.strip()
+                eval_type = tds[3].text.strip()
+                result["평가리포트"].append({
+                    "종류": report_type,
+                    "리포트": title,
+                    "일자": date,
+                    "평가종류": eval_type
+                })
+        elif caption_text == "관련 리서치":
+            rows = table.select('tbody > tr')
+            for tr in rows:
+                tds = tr.find_all('td')
+                if len(tds) < 4:
+                    continue
+                category = tds[0].text.strip()
+                a_tag = tds[1].find('a')
+                title = a_tag.text.strip() if a_tag else ''
+                date = tds[2].text.strip()
+                result["관련리서치"].append({
+                    "구분": category,
+                    "제목": title,
+                    "일자": date
+                })
+
+    # 신용등급상세 추가 (ex. 현대해상 등급 테이블)
+    # 기존 extract_credit_details 코드를 활용하여 리스트를 추가
+    result["신용등급상세"] = extract_credit_details(html)
+
+    return result
+
+# 별도 함수로 신용등급상세 추출
+def extract_credit_details(html):
+    soup = BeautifulSoup(html, 'html.parser')
     results = []
     items = soup.select('div.list li')
     for item in items:
