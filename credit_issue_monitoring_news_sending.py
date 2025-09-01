@@ -49,93 +49,99 @@ def extract_file_url(js_href: str) -> str:
     file_name = args[3]
     return f"https://www.kisrating.com/common/download.do?filename={file_name}"
 
-def extract_reports_and_research(html: str) -> dict:
+def extract_credit_details(html):
     from bs4 import BeautifulSoup
-    import re
-
     soup = BeautifulSoup(html, 'html.parser')
-    result = {"평가리포트": [], "관련리서치": [], "등급평가_전망": []}
-    tables = soup.select('div.table_ty1 > table')
-    for table in tables:
-        caption = table.find('caption')
-        if not caption:
+    results = []
+    items = soup.select('div.list li')
+    for item in items:
+        key_tag = item.find('dt') or item.find('strong')
+        kind = key_tag.get_text(strip=True) if key_tag else None
+        if not kind:
             continue
-        cap_text = caption.text.strip()
+        # 등급
+        grade_tag = item.find('span', string='등급')
+        grade_val = ""
+        if grade_tag:
+            grade_node = grade_tag.find_next(['a', 'strong'])
+            grade_val = grade_node.get_text(strip=True) if grade_node else ""
+        # Outlook/Watchlist
+        outlook_tag = item.find('span', string=lambda s: s and ('Outlook' in s or 'Watchlist' in s))
+        outlook_val = outlook_tag.next_sibling.strip() if outlook_tag and outlook_tag.next_sibling else ""
+        # 평가일
+        eval_date_tag = item.find('span', string='평가일')
+        eval_date_val = eval_date_tag.next_sibling.strip() if eval_date_tag and eval_date_tag.next_sibling else ""
+        # 평가의견
+        eval_opinion_tag = item.find('span', string='평가의견')
+        eval_opinion_val = ""
+        if eval_opinion_tag:
+            next_node = eval_opinion_tag.find_next('a')
+            if next_node:
+                eval_opinion_val = next_node.get_text(strip=True)
+            else:
+                eval_opinion_val = eval_opinion_tag.find_next(string=True).strip()
+        results.append({
+            "종류": kind,
+            "등급": grade_val,
+            "Outlook/Watchlist": outlook_val,
+            "평가일": eval_date_val,
+            "평가의견": eval_opinion_val
+        })
+    return results
 
-        # 평가리포트
-        if cap_text == "평가리포트":
-            rows = table.select('tbody > tr')
-            for tr in rows:
-                tds = tr.find_all('td')
-                if len(tds) < 4:
-                    continue
-                report_type = tds[0].text.strip()
-                a_tag = tds[1].find('a')
-                title = a_tag.text.strip() if a_tag else ''
-                href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
-                date = tds[2].text.strip()
-                eval_type = tds[3].text.strip()
+def fetch_and_display_reports(companies_map):
+    import streamlit as st
+    import requests
 
-                # 파일 다운로드 링크 추출
-                file_url = ""
-                if href and href.startswith("javascript:fn_file"):
-                    m = re.search(r"fn_file\((.*?)\)", href)
-                    if m:
-                        args = m.group(1).split(',')
-                        if len(args) >= 4:
-                            file_name = args[3].strip().strip("'\"")
-                            file_url = f"https://www.kisrating.com/common/download.do?filename={file_name}"
+    st.markdown("---")
+    st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
 
-                result["평가리포트"].append({
-                    "종류": report_type,
-                    "리포트": title,
-                    "일자": date,
-                    "평가종류": eval_type,
-                    "다운로드": file_url
-                })
+    for cat in favorite_categories:
+        for company in favorite_categories[cat]:
+            kiscd = companies_map.get(company, "")
+            if not kiscd or not str(kiscd).strip():
+                continue
 
-        # 관련리서치
-        elif cap_text == "관련 리서치":
-            rows = table.select('tbody > tr')
-            for tr in rows:
-                tds = tr.find_all('td')
-                if len(tds) < 4:
-                    continue
-                category = tds[0].text.strip()
-                a_tag = tds[1].find('a')
-                title = a_tag.text.strip() if a_tag else ''
-                href = a_tag['href'] if a_tag and a_tag.has_attr('href') else ''
-                date = tds[2].text.strip()
+            url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
+            with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
+                st.markdown(
+                    f"- [📄 {company} 한국신용평가 평가/리서치 페이지 바로가기]({url})",
+                    unsafe_allow_html=True
+                )
+                try:
+                    resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
+                    if resp.status_code == 200:
+                        html = resp.text
+                        report_data = extract_reports_and_research(html)
 
-                file_url = ""
-                if href and href.startswith("javascript:fn_file"):
-                    m = re.search(r"fn_file\((.*?)\)", href)
-                    if m:
-                        args = m.group(1).split(',')
-                        if len(args) >= 4:
-                            file_name = args[3].strip().strip("'\"")
-                            file_url = f"https://www.kisrating.com/common/download.do?filename={file_name}"
+                        # 기존 평가리포트
+                        if report_data.get("평가리포트"):
+                            with st.expander("평가리포트", expanded=True):
+                                df_report = pd.DataFrame(report_data["평가리포트"])
+                                df_report = df_report.drop(columns=["다운로드"], errors="ignore")
+                                st.dataframe(df_report)
 
-                result["관련리서치"].append({
-                    "구분": category,
-                    "제목": title,
-                    "일자": date,
-                    "다운로드": file_url
-                })
+                        # 기존 관련리서치
+                        if report_data.get("관련리서치"):
+                            with st.expander("관련리서치", expanded=True):
+                                df_research = pd.DataFrame(report_data["관련리서치"])
+                                df_research = df_research.drop(columns=["다운로드"], errors="ignore")
+                                st.dataframe(df_research)
 
-        # 등급평가 및 전망 (필요시 추가 확장)
-        elif "등급평가" in cap_text or "전망" in cap_text:
-            rows = table.select('tbody > tr')
-            for tr in rows:
-                cells = tr.find_all('td')
-                if len(cells) < 2:
-                    continue
-                grade_title = cells[0].text.strip()
-                grade_detail = cells[1].text.strip()
-                result["등급평가_전망"].append({"항목": grade_title, "내용": grade_detail})
+                        # 여기에 신용등급 상세정보 표 추가
+                        credit_detail_list = extract_credit_details(html)
+                        if credit_detail_list:
+                            with st.expander("신용등급 상세정보", expanded=True):
+                                df_credit_detail = pd.DataFrame(credit_detail_list)
+                                st.dataframe(df_credit_detail)
+                        else:
+                            st.info("신용등급 상세정보가 없습니다.")
 
-    return result
-
+                    else:
+                        st.warning("정보를 불러올 수 없습니다.")
+                except Exception as e:
+                    st.warning(f"정보 파싱 오류: {e}")
+                    
 def fetch_and_display_reports(companies_map):
     import streamlit as st
     import pandas as pd
