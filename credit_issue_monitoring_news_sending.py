@@ -165,7 +165,7 @@ def fetch_and_display_reports(companies_map):
                     unsafe_allow_html=True
                 )
                 try:
-                    resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
+                    resp = requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"})
                     if resp.status_code == 200:
                         html = resp.text
                         report_data = extract_reports_and_research(html)
