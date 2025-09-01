@@ -193,9 +193,11 @@ def fetch_and_display_reports(companies_map):
                         bond_table = None
                         for table in soup.find_all('table'):
                             caption = table.find('caption')
-                            if caption and "회사채" in caption.text:
+                            # 여기에 모든 관련 키워드 포함
+                            if caption and any(kw in caption.text for kw in ["회사채", "평가항목", "등급평가", "전망"]):
                                 bond_table = table
-                                break
+                                break  # 여러개면 리스트로 append할 것, 대표 1개면 break
+
                         if bond_table:
                             thead = bond_table.find('thead')
                             columns = [th.text.strip() for th in thead.find_all('th')] if thead else []
@@ -206,7 +208,7 @@ def fetch_and_display_reports(companies_map):
                                     rows.append([td.text.strip() for td in tr.find_all('td')])
                             if columns and rows:
                                 bond_df = pd.DataFrame(rows, columns=columns)
-                                with st.expander("평가항목(회사채 등)", expanded=True):
+                                with st.expander("평가항목(회사채/등급전망/평가항목)", expanded=True):
                                     st.dataframe(bond_df)
                             else:
                                 st.info("회사채/평가항목 정보가 없습니다.")
