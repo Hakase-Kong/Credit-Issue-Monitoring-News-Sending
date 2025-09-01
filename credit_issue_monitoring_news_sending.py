@@ -148,6 +148,18 @@ def extract_credit_details(html):
 def fetch_and_display_reports(companies_map):
     import streamlit as st
     import requests
+    import pandas as pd
+    from datetime import datetime, timedelta
+
+    def highlight_recent_dates(val):
+        try:
+            date_val = datetime.strptime(val, "%Y-%m-%d").date()
+        except Exception:
+            return ''
+        today = datetime.today().date()
+        if today - timedelta(days=7) <= date_val <= today:
+            return 'color: blue;'
+        return ''
 
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
@@ -165,34 +177,45 @@ def fetch_and_display_reports(companies_map):
                     unsafe_allow_html=True
                 )
                 try:
-                    resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
+                    resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
                     if resp.status_code == 200:
                         html = resp.text
                         report_data = extract_reports_and_research(html)
 
-                        # 기존 평가리포트
+                        # 평가리포트
                         if report_data.get("평가리포트"):
                             with st.expander("평가리포트", expanded=True):
                                 df_report = pd.DataFrame(report_data["평가리포트"])
                                 df_report = df_report.drop(columns=["다운로드"], errors="ignore")
-                                st.dataframe(df_report)
+                                if "일자" in df_report.columns:
+                                    styled_report = df_report.style.applymap(highlight_recent_dates, subset=["일자"])
+                                else:
+                                    styled_report = df_report.style
+                                st.dataframe(styled_report)
 
-                        # 기존 관련리서치
+                        # 관련리서치
                         if report_data.get("관련리서치"):
                             with st.expander("관련리서치", expanded=True):
                                 df_research = pd.DataFrame(report_data["관련리서치"])
                                 df_research = df_research.drop(columns=["다운로드"], errors="ignore")
-                                st.dataframe(df_research)
+                                if "일자" in df_research.columns:
+                                    styled_research = df_research.style.applymap(highlight_recent_dates, subset=["일자"])
+                                else:
+                                    styled_research = df_research.style
+                                st.dataframe(styled_research)
 
-                        # 여기에 신용등급 상세정보 표 추가
+                        # 신용등급 상세정보
                         credit_detail_list = extract_credit_details(html)
                         if credit_detail_list:
                             with st.expander("신용등급 상세정보", expanded=True):
                                 df_credit_detail = pd.DataFrame(credit_detail_list)
-                                st.dataframe(df_credit_detail)
+                                if "평가일" in df_credit_detail.columns:
+                                    styled_credit = df_credit_detail.style.applymap(highlight_recent_dates, subset=["평가일"])
+                                else:
+                                    styled_credit = df_credit_detail.style
+                                st.dataframe(styled_credit)
                         else:
                             st.info("신용등급 상세정보가 없습니다.")
-
                     else:
                         st.warning("정보를 불러올 수 없습니다.")
                 except Exception as e:
