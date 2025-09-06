@@ -1239,31 +1239,35 @@ def render_articles_with_single_summary_and_telegram(
 
             def process_article(item):
                 keyword, idx, art = item
-                cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
+                cache_key = f"{keyword}_{idx}_" + re.sub(r'\W+', '', art["link"])[-16:]
                 if cache_key in st.session_state:
-                    one_line, summary, sentiment, implication, full_text = st.session_state[cache_key]
+                    result_tuple = st.session_state[cache_key]
                 else:
-                    one_line, summary, sentiment, implication, full_text = summarize_article_from_url(
-                        art["link"], art["title"], do_summary=enable_summary, target_keyword=keyword
-                    )
-                    st.session_state[cache_key] = (one_line, summary, sentiment, implication, full_text)
+                    result_tuple = summarize_article_from_url(art["link"], art["title"], do_summary=True, target_keyword=keyword)
+                    st.session_state[cache_key] = result_tuple
+                
+                # unpack 6 values here
+                one_line, core, sentiment, keywords, entities, full_text = result_tuple
+            
                 filter_hits = matched_filter_keywords(
-                    {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
-                    ALL_COMMON_FILTER_KEYWORDS,
-                    industry_keywords_all
+                    {"title": art["title"], "요약본": core, "요약": one_line, "full_text": full_text},
+                    ALL_COMMON_KEYWORDS,
+                    industry_keywords
                 )
+            
                 return {
                     "키워드": keyword,
                     "필터히트": ", ".join(filter_hits),
                     "기사제목": safe_title(art["title"]),
-                    "요약": one_line,
-                    "요약본": summary,
+                    "요약": one_line,         # 한줄시사점
+                    "코어요약": core,         # 핵심시사점
                     "감성": sentiment,
-                    "시사점": implication,
+                    "검색키워드": keywords,
+                    "엔티티": entities,
                     "링크": art["link"],
                     "날짜": art["date"],
                     "출처": art["source"],
-                    "full_text": full_text or "",
+                    "full_text": full_text,
                 }
 
             from concurrent.futures import ThreadPoolExecutor
