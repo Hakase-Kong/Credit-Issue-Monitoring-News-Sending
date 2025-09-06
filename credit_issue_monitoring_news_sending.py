@@ -1206,7 +1206,7 @@ def render_articles_with_single_summary_and_telegram(
                             for k in all_article_keys:
                                 st.session_state.article_checked[k] = select_all
                                 st.session_state.article_checked_left[k] = select_all
-                            st.experimental_rerun()
+                            st.rerun()
 
                         for idx, article in enumerate(articles):
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
