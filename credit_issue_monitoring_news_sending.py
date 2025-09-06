@@ -1174,6 +1174,21 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
     matched_industry = [kw for kw in industry_keywords if kw in text_long]
     return list(set(matched_common + matched_industry))
 
+def process_article(item):
+    keyword, idx, article = item
+    uid = re.sub(r"\W+", "", article["link"])[-16:]
+    cache_key = f"summary_{keyword}_{idx}_{uid}"
+
+    if cache_key in st.session_state:
+        return st.session_state[cache_key] + (article,)  # 기존 요약+원본 기사 반환
+
+    one_line, summary, sentiment, implication, full_text = summarize_article_from_url(
+        article["link"], article["title"], do_summary=st.session_state.get("enable_summary", True), target_keyword=keyword
+    )
+    result = (one_line, summary, sentiment, implication, full_text, article)
+    st.session_state[cache_key] = result
+    return result
+
 def render_articles_with_single_summary_and_telegram(
     results, show_limit, show_sentiment_badge=True, enable_summary=True
 ):
