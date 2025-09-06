@@ -1220,10 +1220,10 @@ def render_articles_with_single_summary_and_telegram(
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
-            industry_keywords_all = []
+            industry_keywords = []
             if st.session_state.get("use_industry_filter", False):
                 for sublist in st.session_state.industry_major_sub_map.values():
-                    industry_keywords_all.extend(sublist)
+                    industry_keywords.extend(sublist)
 
             grouped_selected = {}
             for cat_name, company_list in favorite_categories.items():
@@ -1237,7 +1237,7 @@ def render_articles_with_single_summary_and_telegram(
                                     (company, idx, article)
                                 )
 
-            def process_article(item):
+            def process_article(item, industry_keywords):
                 keyword, idx, art = item
                 cache_key = f"{keyword}_{idx}_" + re.sub(r'\W+', '', art["link"])[-16:]
                 if cache_key in st.session_state:
@@ -1246,7 +1246,6 @@ def render_articles_with_single_summary_and_telegram(
                     result_tuple = summarize_article_from_url(art["link"], art["title"], do_summary=True, target_keyword=keyword)
                     st.session_state[cache_key] = result_tuple
                 
-                # unpack 6 values here
                 one_line, core, sentiment, keywords, entities, full_text = result_tuple
             
                 filter_hits = matched_filter_keywords(
@@ -1274,7 +1273,7 @@ def render_articles_with_single_summary_and_telegram(
             for cat_name, comp_map in grouped_selected.items():
                 for company, items in comp_map.items():
                     with ThreadPoolExecutor(max_workers=10) as executor:
-                        grouped_selected[cat_name][company] = list(executor.map(process_article, items))
+                        grouped_selected[cat_name][company] = list(executor.map(lambda item: process_article(item, industry_keywords), items))
 
             total_selected_count = 0
             for cat_name, comp_map in grouped_selected.items():
