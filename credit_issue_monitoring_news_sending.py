@@ -1180,12 +1180,12 @@ def process_article(item):
     cache_key = f"summary_{keyword}_{idx}_{uid}"
 
     if cache_key in st.session_state:
-        return st.session_state[cache_key] + (article,)  # 기존 요약+원본 기사 반환
+        return st.session_state[cache_key] + (article,)  # 기존 요약+기사 반환
 
-    one_line, summary, sentiment, implication, full_text = summarize_article_from_url(
+    one_line, summary, sentiment, implication, keywords, full_text = summarize_article_from_url(
         article["link"], article["title"], do_summary=st.session_state.get("enable_summary", True), target_keyword=keyword
     )
-    result = (one_line, summary, sentiment, implication, full_text, article)
+    result = (one_line, summary, sentiment, implication, keywords, full_text, article)
     st.session_state[cache_key] = result
     return result
 
