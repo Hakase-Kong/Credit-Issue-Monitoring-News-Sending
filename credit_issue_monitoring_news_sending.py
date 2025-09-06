@@ -663,6 +663,17 @@ def article_contains_exact_keyword(article, keywords):
             return True
     return False
 
+def or_keyword_filter(article, *keyword_lists):
+    """
+    기사 제목, 요약, 본문 등에서 keyword_lists 안에 있는 키워드가 하나라도 있으면 True 반환,
+    없으면 False 반환하는 함수입니다.
+    """
+    text = (article.get("title", "") + " " + article.get("description", "") + " " + article.get("full_text", ""))
+    for keywords in keyword_lists:
+        if any(kw in text for kw in keywords if kw):
+            return True
+    return False
+
 def article_passes_all_filters(article):
     # 제목에 제외 키워드가 포함되면 제외
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
