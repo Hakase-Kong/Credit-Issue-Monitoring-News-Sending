@@ -1251,7 +1251,7 @@ def render_articles_with_single_summary_and_telegram(
             
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": core, "요약": one_line, "full_text": full_text},
-                    ALL_COMMON_KEYWORDS,
+                    ALL_COMMON_FILTER_KEYWORDS,
                     industry_keywords
                 )
             
