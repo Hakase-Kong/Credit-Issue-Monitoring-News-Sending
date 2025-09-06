@@ -1291,8 +1291,7 @@ def render_articles_with_single_summary_and_telegram(
                                 st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
                                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
                                 if enable_summary:
-                                    st.markdown(f"- **한 줄 요약:** {art['요약']}")
-                                    st.markdown(f"- **시사점:** {art['시사점'] or '없음'}")
+                                    st.markdown(f"- **시사점:** {art.get('시사점', '없음')}")
                                 st.markdown(f"- **감성분석:** `{art['감성']}`")
                                 st.markdown("---")
 
