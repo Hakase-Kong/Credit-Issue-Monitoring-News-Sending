@@ -1785,7 +1785,9 @@ if st.session_state.get("search_results"):
     kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
 
     # 신용평가 보고서 및 관련 리서치 UI 추가 (필터된 회사만)
-    fetch_and_display_reports(company_list, kiscd_filtered,cmpCD_map)
+    selected_companies = list(set(selected_companies))
+    fetch_and_display_reports(selected_companies, kis_filtered, cmpCD_map)
+
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
