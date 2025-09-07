@@ -797,9 +797,17 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
 
     df = pd.DataFrame(summary_data)
 
-    # 시사점 컬럼명 인식 ("시사점" or "implication" 등)
-    implication_col = "시사점" if "시사점" in df.columns else ("implication" if "implication" in df.columns else None)
+    # ‘한줄시사점’ 우선, 없으면 ‘시사점’, ‘implication’ 컬럼으로 설정
+    if "한줄시사점" in df.columns:
+        implication_col = "한줄시사점"
+    elif "시사점" in df.columns:
+        implication_col = "시사점"
+    elif "implication" in df.columns:
+        implication_col = "implication"
+    else:
+        implication_col = None
 
+    # 키워드 관련 컬럼명 결정
     if "키워드" in df.columns:
         keyword_col = "키워드"
     elif "기업명" in df.columns:
@@ -811,28 +819,26 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
 
     rows = []
     for idx, company in enumerate(sector_list):
-        # 원래처럼 중복 제거 전 모든 기사 리스트에서 중복 제거 및 필터 처리
+        # 해당 회사 관련 모든 기사 리스트 추출
         search_articles = search_results.get(company, [])
 
-        # 공통 필터와 산업별 필터 통과한 기사만 필터링
+        # 공통 필터와 산업별 필터 통과 기사만 필터링 (필요시 산업별 필터 조건 추가)
         filtered_articles = []
         for article in search_articles:
-            # 공통/산업 필터 통과 검사 함수 or_keyword_filter 활용
             passes_common = any(kw in (article.get("title", "") + article.get("description", "")) for kw in ALL_COMMON_FILTER_KEYWORDS)
             passes_industry = True
-            # 산업별 필터 사용 시 조건 추가 (예: st.session_state.get("use_industry_filter") 값에 따라)
-            # 필요하면 산업별 키워드 필터링 코드 추가
-    
+            # 필요 시 산업별 필터링 로직 추가 가능
+
             if passes_common and passes_industry:
                 filtered_articles.append(article)
-    
-        # 중복 제거
+
+        # 중복 기사 제거 옵션 적용
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
 
         total_count = len(filtered_articles)
 
-        # 중요 뉴스 및 시사점 추출 (최신 2개)
+        # 해당 회사의 요약 데이터(중복 제거, 필터링된) 중 최신 2개 기사 추출
         filtered_df = df[df.get(keyword_col, "") == company].sort_values(by='날짜', ascending=False)
         hl_news = ["", ""]
         implications = ["", ""]
@@ -847,13 +853,13 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
                 hl_news[i] = f'=HYPERLINK("{clean_text(link_val)}", "{display_text}")'
             else:
                 hl_news[i] = display_text or ""
-            # 두 기사 각각의 시사점 추출
+
             if implication_col:
                 implications[i] = getattr(art, implication_col, "") or ""
             else:
                 implications[i] = ""
 
-        # 시사점: 두 기사 각각을 번호매겨 줄바꿈으로 병합
+        # ‘한줄 시사점’을 번호 매겨 줄바꿈으로 병합 (최대 2개)
         merged_implication = ""
         if implications[0]:
             merged_implication += f"1. {implications[0]}"
@@ -867,7 +873,7 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
             "기업명": company,
             "표기명": excel_sector_list[idx] if idx < len(excel_sector_list) else "",
             "건수": total_count,
-            "중요뉴스1": hl_news[0],  # 🔧 수정: hl_news → hl_news[0]
+            "중요뉴스1": hl_news[0],
             "중요뉴스2": hl_news[1],
             "시사점": merged_implication
         })
@@ -878,7 +884,8 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         result_df.to_excel(writer, index=False, sheet_name='뉴스요약')
         worksheet = writer.sheets['뉴스요약']
-        worksheet.set_column(0, 5, 30)
+        for i, col in enumerate(result_df.columns):
+            worksheet.set_column(i, i, 30)
     output.seek(0)
     return output
 
