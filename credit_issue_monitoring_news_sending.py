@@ -230,7 +230,7 @@ def fetch_and_display_reports(companies_map):
             url_nice = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpcd}"
 
             # 한국기업평가 compCD 기반 URL (기존 코리아신용평가 -> 한국기업평가로 변경)
-            comp_cd = config.get("compCD_map", {}).get(company, "") or config.get("cmpCD_map", {}).get(company, "")
+            comp_cd = config.get("compCD_map", {}).get(company, "")
             url_hkangpyo = ""
             if comp_cd:
                 url_hkangpyo = f"https://www.korearatings.com/cms/frDisclosureCon/compView.do?MENU_ID=90&CONTENTS_NO=1&COMP_CD={comp_cd}"
