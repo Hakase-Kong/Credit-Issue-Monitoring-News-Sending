@@ -146,11 +146,6 @@ def extract_credit_details(html):
     return results
 
 def fetch_and_display_reports(companies_map):
-    import pandas as pd
-    import requests
-    import time
-    from bs4 import BeautifulSoup
-
     def extract_table_after_marker(soup, marker_str):
         marker = None
         for tag in soup.find_all(['b', 'strong', 'h2', 'h3', 'span']):
@@ -220,6 +215,7 @@ def fetch_and_display_reports(companies_map):
                 "error": f"나이스 신용평가 데이터 로드 오류: {e}"
             }
 
+    import streamlit as st
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
 
@@ -233,15 +229,23 @@ def fetch_and_display_reports(companies_map):
             url_kis = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
             url_nice = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpcd}"
 
+            # 한국기업평가 compCD 기반 URL (기존 코리아신용평가 -> 한국기업평가로 변경)
+            comp_cd = config.get("compCD_map", {}).get(company, "") or config.get("cmpCD_map", {}).get(company, "")
+            url_hkangpyo = ""
+            if comp_cd:
+                url_hkangpyo = f"https://www.kangr.com/cms/frDisclosureCon/compView.do?MENU_ID=90&CONTENTS_NO=1&COMP_CD={comp_cd}"
+
             with st.expander(
-                f"{company} (KISCD: {kiscd} | cmpCD: {cmpcd})", expanded=False
+                f"{company} (KISCD: {kiscd} | cmpCD: {cmpcd} | compCD: {comp_cd})", expanded=False
             ):
                 st.markdown(
                     f"- [📄 한국신용평가 평가/리서치 페이지 바로가기]({url_kis}) &nbsp;&nbsp;"
-                    f"[📄 나이스신용평가 평가/리서치 페이지 바로가기]({url_nice})",
+                    f"[📄 나이스신용평가 평가/리서치 페이지 바로가기]({url_nice})"
+                    + (f" &nbsp;&nbsp; [📄 한국기업평가 평가/리서치 페이지 바로가기]({url_hkangpyo})" if url_hkangpyo else ""),
                     unsafe_allow_html=True
                 )
                 try:
+                    # 한국신용평가 데이터
                     resp = requests.get(url_kis, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
                     if resp.status_code == 200:
                         html = resp.text
@@ -285,7 +289,6 @@ def fetch_and_display_reports(companies_map):
                                 st.dataframe(df_credit_detail)
                             else:
                                 st.info("신용등급 상세정보가 없습니다.")
-
                             st.markdown("#### 나이스 신용평가 주요 등급내역")
                             nice_data = fetch_nice_rating_data(cmpcd)
                             major_grade_df = nice_data.get("major_grade_df", pd.DataFrame())
@@ -295,11 +298,34 @@ def fetch_and_display_reports(companies_map):
                                 st.info("주요 등급내역 데이터가 없습니다.")
                             if nice_data.get("error"):
                                 st.warning(nice_data["error"])
-
                     else:
                         st.warning("한국신용평가 정보를 불러올 수 없습니다.")
                 except Exception as e:
                     st.warning(f"신용평가 정보 파싱 오류: {e}")
+
+                # 한국기업평가 데이터 로드 및 테이블 출력 (코리아신용평가 부분 대체)
+                if url_hkangpyo:
+                    try:
+                        resp2 = requests.get(url_hkangpyo, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+                        resp2.raise_for_status()
+                        soup_kg = BeautifulSoup(resp2.text, 'html.parser')
+                        tables_kg = soup_kg.find_all('table')
+
+                        if len(tables_kg) > 4:
+                            df_table4 = pd.read_html(str(tables_kg[4]))[0]
+                            with st.expander("한국기업평가 신용등급 상세정보 (테이블 5)", expanded=False):
+                                st.dataframe(df_table4)
+                        else:
+                            st.info("한국기업평가 신용등급 상세정보 테이블이 없습니다.")
+
+                        if len(tables_kg) > 10:
+                            df_table10 = pd.read_html(str(tables_kg[10]))[0]
+                            with st.expander("한국기업평가 관련 리서치 (테이블 11)", expanded=False):
+                                st.dataframe(df_table10)
+                        else:
+                            st.info("한국기업평가 관련 리서치 테이블이 없습니다.")
+                    except Exception as e:
+                        st.warning(f"한국기업평가 데이터 로드 오류: {e}")
 
                 time.sleep(1)
             
