@@ -228,21 +228,20 @@ def fetch_and_display_reports(companies_map):
                                 df_research = df_research.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df_research)
 
-                                # 나이스 신용평가 스페셜 리포트 추가 (수정)
+                                # 나이스 신용평가 스페셜 리포트
                                 nice_data = fetch_nice_rating_data(nice_cmpCd)
                                 special_reports = nice_data.get("special_reports", [])
-                                if special_reports:
-                                    st.markdown("### 나이스 신용평가 스페셜 리포트")
-                                    if len(special_reports) > 1:
-                                        col_len = len(special_reports)
-                                        filtered_rows = [row for row in special_reports[1:] if len(row) == col_len]
-                                        if filtered_rows:
-                                            df_special = pd.DataFrame(filtered_rows, columns=special_reports)
-                                            st.dataframe(df_special)
-                                        else:
-                                            st.info("표 형식이 맞는 데이터가 없습니다.")
+                                st.markdown("### 나이스 신용평가 스페셜 리포트")
+                                if special_reports and len(special_reports) > 1:
+                                    header = special_reports[0]
+                                    filtered_rows = [row for row in special_reports[1:] if len(row) == len(header)]
+                                    if filtered_rows:
+                                        df_special = pd.DataFrame(filtered_rows, columns=header)
+                                        st.dataframe(df_special)
                                     else:
-                                        st.info("스페셜 리포트 데이터가 없습니다.")
+                                        st.info("표 형식이 맞는 데이터가 없습니다. (스페셜 리포트)")
+                                else:
+                                    st.info("스페셜 리포트 데이터가 없습니다.")
                                 if nice_data.get("error"):
                                     st.warning(nice_data["error"])
 
@@ -255,21 +254,20 @@ def fetch_and_display_reports(companies_map):
                         else:
                             st.info("신용등급 상세정보가 없습니다.")
 
-                        # 나이스 신용평가 주요 등급내역 추가 (수정)
+                        # 나이스 신용평가 주요 등급내역
                         nice_data = fetch_nice_rating_data(nice_cmpCd)
                         major_grades = nice_data.get("major_grades", [])
-                        if major_grades:
-                            with st.expander("나이스 신용평가 주요 등급내역", expanded=True):
-                                if len(major_grades) > 1:
-                                    col_len = len(major_grades)
-                                    filtered_rows = [row for row in major_grades[1:] if len(row) == col_len]
-                                    if filtered_rows:
-                                        df_major = pd.DataFrame(filtered_rows, columns=major_grades)
-                                        st.dataframe(df_major)
-                                    else:
-                                        st.info("표 형식이 맞는 데이터가 없습니다.")
-                                else:
-                                    st.info("주요 등급내역 데이터가 없습니다.")
+                        st.markdown("### 나이스 신용평가 주요 등급내역")
+                        if major_grades and len(major_grades) > 1:
+                            header = major_grades[0]
+                            filtered_rows = [row for row in major_grades[1:] if len(row) == len(header)]
+                            if filtered_rows:
+                                df_major = pd.DataFrame(filtered_rows, columns=header)
+                                st.dataframe(df_major)
+                            else:
+                                st.info("표 형식이 맞는 데이터가 없습니다. (주요 등급내역)")
+                        else:
+                            st.info("주요 등급내역 데이터가 없습니다.")
                         if nice_data.get("error"):
                             st.warning(nice_data["error"])
 
