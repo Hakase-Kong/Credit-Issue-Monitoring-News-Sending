@@ -30,8 +30,6 @@ common_filter_categories = config["common_filter_categories"] # --- 공통 필�
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
 SYNONYM_MAP = config["synonym_map"]
 kiscd_map = config.get("kiscd_map", {})
-nice_cmpCd = config.get("cmpCD_map", {}).get(company, "")
-
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
@@ -1821,4 +1819,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
