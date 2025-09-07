@@ -1566,7 +1566,7 @@ def render_important_article_review_and_download():
 
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                    one_line, summary, sentiment, implication, full_text = v
+                    one_line, summary, sentiment, implication, short_implication, full_text = v
                     break
 
             if not sentiment:
