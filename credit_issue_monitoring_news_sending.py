@@ -416,142 +416,92 @@ def get_industry_credit_keywords():
 
 def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=None):
     """
-    본문 요약/감성분석.
+    본문 분석(한 줄 요약 + 시사점 + 한 줄 시사점 추가).
     target_keyword: 감성 판단의 초점을 맞출 기업/키워드
+    반환: (one_line_summary, keywords, sentiment, detailed_implication, short_implication, original_text)
     """
     if not OPENAI_API_KEY:
-        return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", "", text
+        return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", "", "", text
     if not text or "본문 추출 오류" in text:
-        return "기사 본문이 추출 실패", "", "감성 추출 실패", "", text
+        return "기사 본문이 추출 실패", "", "감성 추출 실패", "", "", text
 
     lang = detect_lang(text)
     industry_keywords = get_industry_credit_keywords()
 
     if lang == "ko":
-        focus_info = f" 분석의 초점은 반드시 '{target_keyword}' 기업(또는 키워드)이며, 기사의 전체 분위기가 아닌 이 기업에 대한 기사 내용과 문맥을 기준으로 감성을 판정해야 합니다." if target_keyword else ""
-        role_prompt = (
-            "너는 신용평가 전문가이자 금융 뉴스 분석가야."
-            " 한 문장 요약에는 반드시 주체, 핵심 사건, 결과를 포함하고,"
-            " 감성 분류는 해당 기업에 긍정/부정 영향을 주는지를 판단해야 한다."
-            + focus_info +
-            " 감성은 '긍정' 또는 '부정' 중 하나만 선택. 중립은 금지."
-            " 또한, 기사의 금융·신용 관련 핵심 시사점을 한두 문장으로 명확히 제시해야 한다."
-            " 응답은 아래 형식에 맞춰 달라."
-        )
-        main_prompt = f"""
+        prompt = f"""
 [산업군별 신용평가 키워드]
 {industry_keywords}
 
-아래 기사 본문을 분석해 다음 내용을 정확히 응답하라.
+아래 기사 본문을 분석해 다음 내용을 순서대로 응답하시오.
 대상 기업/키워드: "{target_keyword or 'N/A'}"
 
-아래 기사 본문에 대해, 반드시 아래 두 가지를 구분해서 작성해.
-1. [한 줄 요약]: 해당 뉴스에서 기업명을 중심으로 주체, 핵심 사건, 결과를 간단하게 한 문장으로 압축.
-2. [핵심 시사점]: 단순 요약이 아니라, 신용평가사의 의견서 형식으로 이 뉴스가 해당 기업의 신용등급(상향·하향·유지), 등급 전망, 재무 건전성, 현금흐름, 유동성, 시장·규제 환경, 재무/사업 리스크에 어떤 식으로 영향을 끼칠 수 있는지 구체적으로 분석(2~3문장 이상).
-
-특히 [핵심 시사점]에서는 아래 사항을 필수로 포함:
-- 등급 변동을 유발할 수 있는 직접적/간접적 사건 및 재무 지표 변화
-- 기업의 정책/시장/사업환경 변화에 따른 신용 리스크 요인과 등급 방향성
-- 동종업계나 과거 사례와 비교되는 차별화 지점(있으면 명시)
-- 단순 현상보고(한줄 요약)와 명확히 구분되는 신용평가사의 '심층 의견'을 2~3문장 이상으로 서술
-
-[한 줄 요약]: 대상 기업에 대한 주요 사건과 결과 포함
-[검색 키워드]: 이 기사가 검색에 사용된 키워드를 콤마(,)로 명시
-[감성]: 대상 기업에 긍정 또는 부정 (둘 중 하나만)
-[핵심 시사점]: (신용평가 분석 전문가 관점의 심층적 시사점)
-[주요 키워드]: 인물, 기업, 조직명만 콤마(,)로, 없으면 없음
+1. [심층 시사점]: 뉴스가 대상 기업 신용등급에 미치는 심층적 영향 2~3문장 이내.
+2. [한 줄 시사점]: 위 시사점을 간단히 한 문장으로 요약.
+3. [한 줄 요약]: 주요 사건과 결과를 한 문장으로 간단하게.
+4. [검색 키워드]: 해당 기사 검색에 사용된 키워드, 콤마로 구분.
+5. [감성]: 대상 기업에 대한 긍정 또는 부정 중 하나만.
+6. [주요 키워드]: 인물, 기업, 조직명, 없으면 없음.
 
 [기사 본문]
 {text}
 """
+        role_content = "너는 신용평가 전문가이자 금융 뉴스 분석가이다. 정확하고 명확하게 분석하라."
     else:
-        focus_info = f" Focus strictly on sentiment toward '{target_keyword}' (the entity), not the overall industry tone." if target_keyword else ""
-        role_prompt = (
-            "You are a credit rating expert and financial news analyst."
-            " Your summary must include the subject, key event, and outcome in one sentence,"
-            " and sentiment classification must reflect positive or negative impact on the specific entity."
-            + focus_info +
-            " Sentiment must be either positive or negative. Neutral is not allowed."
-            " Also, provide a clear one- or two-sentence key implication of the article from a credit and financial stability perspective."
-            " Respond using the format below."
-        )
-        main_prompt = f"""
-[Credit rating related keywords by industry (example)]
+        # 영어일 경우 간략히
+        prompt = f"""
+[Credit rating keywords by industry]
 {industry_keywords}
 
-Analyze the following article and respond accurately:
+Analyze the article below and respond in order:
 Target entity/keyword: "{target_keyword or 'N/A'}"
 
-[One-line Summary]: Include subject, key event, and outcome relevant to the target entity
-[Search Keywords]: Keywords used to find this article, comma separated
-[Sentiment]: positive or negative (based ONLY on the target entity's context)
-[Key Implication]: One or two sentences on key credit/financial stability implications from the article
-[Key Entities]: Companies, people, organizations mentioned, comma separated
+1. [Detailed Implication]: Credit impact in 2-3 sentences.
+2. [Short Implication]: One sentence summary of implication.
+3. [One-line Summary]: Key event and result in one sentence.
+4. [Search Keywords]: Keywords used for article search, comma separated.
+5. [Sentiment]: positive or negative (only one).
+6. [Key Entities]: People, companies, organizations or none.
 
-[ARTICLE]
+[Article Text]
 {text}
 """
+        role_content = "You are a credit rating expert and financial news analyst. Provide accuracy and clarity."
 
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": role_prompt},
-                {"role": "user", "content": main_prompt}
+                {"role": "system", "content": role_content},
+                {"role": "user", "content": prompt}
             ],
             max_tokens=900,
             temperature=0
         )
         answer = response.choices[0].message.content.strip()
     except Exception as e:
-        return f"요약 오류: {e}", "", "감성 추출 실패", "", text
+        return f"요약 오류: {e}", "", "감성 추출 실패", "", "", text
 
-    if lang == "ko":
-        m1 = re.search(r"\[한 줄 요약\]:\s*([^\n]+)", answer)
-        m2 = re.search(r"\[주요 키워드\]:\s*([^\n]+)", answer)
-        m3 = re.search(r"\[감성\]:\s*(긍정|부정)", answer)
-        m4 = re.search(r"\[핵심 시사점\]:\s*([^\n]+)", answer)
-        if not m3:
-            m3 = re.search(r"\[감성\]:\s*([^\n]+)", answer)
-        if not m4:
-            m4 = re.search(r"\[핵심 시사점\]:\s*([^\n]+)", answer)
-    else:
-        m1 = re.search(r"\[One-line Summary\]:\s*([^\n]+)", answer)
-        m2 = re.search(r"\[Key Entities\]:\s*([^\n]+)", answer)
-        m3 = re.search(r"\[Sentiment\]:\s*(positive|negative)", answer, re.I)
-        m4 = re.search(r"\[Key Implication\]:\s*([^\n]+)", answer)
-        if not m3:
-            m3 = re.search(r"\[Sentiment\]:\s*([^\n]+)", answer)
-        if not m4:
-            m4 = re.search(r"\[Key Implication\]:\s*([^\n]+)", answer)
+    # 정규식으로 결과 추출
+    def extract_group(tag):
+        pattern = rf"\[{tag}\]:\s*([\s\S]+?)(?=\n\[\w+\]:|\n\d\. \[|$)"
+        m = re.search(pattern, answer)
+        return m.group(1).strip() if m else ""
 
-    one_line = m1.group(1).strip() if (m1 and do_summary) else "요약 추출 실패"
-    keywords = m2.group(1).strip() if m2 else ""
-    sentiment = ""
-    implication = ""
-    if m3:
-        sentiment = m3.group(1).strip()
-        if sentiment.lower() == 'positive':
-            sentiment = '긍정'
-        elif sentiment.lower() == 'negative':
-            sentiment = '부정'
-        elif sentiment not in ['긍정', '부정']:
-            sentiment = '감성 추출 실패'
+    detailed_implication = extract_group("심층 시사점") or extract_group("Detailed Implication") or "시사점 추출 실패"
+    short_implication = extract_group("한 줄 시사점") or extract_group("Short Implication") or "한 줄 시사점 요약 실패"
+    one_line = extract_group("한 줄 요약") or extract_group("One-line Summary") or "요약 추출 실패"
+    keywords = extract_group("검색 키워드") or extract_group("Search Keywords") or ""
+    sentiment = extract_group("감성") or extract_group("Sentiment") or "감성 추출 실패"
+    if sentiment.lower() == "positive" or sentiment == "긍정":
+        sentiment = "긍정"
+    elif sentiment.lower() == "negative" or sentiment == "부정":
+        sentiment = "부정"
     else:
-        sentiment = '감성 추출 실패'
-    if m4:
-        implication = m4.group(1).strip()
-    else:
-        implication = "시사점 추출 실패"
-
-    if not one_line or one_line.lower() in ["none", ""]:
-        one_line = "요약 추출 실패"
-    if not sentiment or sentiment.lower() in ["none", "중립", "neutral", ""]:
         sentiment = "감성 추출 실패"
-    if not keywords or keywords.lower() in ["none", "없음"]:
-        keywords = ""
+    key_entities = extract_group("주요 키워드") or extract_group("Key Entities") or ""
 
-    return one_line, keywords, sentiment, implication, text
+    return one_line, keywords, sentiment, detailed_implication, short_implication, text
 
 def infer_source_from_url(url):
     domain = urlparse(url).netloc
@@ -647,14 +597,14 @@ def summarize_article_from_url(article_url, title, do_summary=True, target_keywo
     try:
         full_text = extract_article_text(article_url, fallback_desc=description, fallback_title=title)
         if full_text.startswith("본문 추출 오류"):
-            result = (full_text, None, None, None, None)
+            result = (full_text, "", "감성 추출 실패", "", "", full_text)  # 6개 요소 맞춤
         else:
-            one_line, summary, sentiment, implication, text = summarize_and_sentiment_with_openai(
+            one_line, summary, sentiment, implication, short_implication, text = summarize_and_sentiment_with_openai(
                 full_text, do_summary=do_summary, target_keyword=target_keyword
             )
-            result = (one_line, summary, sentiment, implication, text)
+            result = (one_line, summary, sentiment, implication, short_implication, text)
     except Exception as e:
-        result = (f"요약 오류: {e}", None, None, None, None)
+        result = (f"요약 오류: {e}", "", "감성 추출 실패", "", "", "")
 
     st.session_state[summary_key] = result
     return result
@@ -1288,6 +1238,7 @@ def render_articles_with_single_summary_and_telegram(
                     "요약본": summary,
                     "감성": sentiment,
                     "시사점": implication,
+                    "한줄시사점": short_implication,  
                     "링크": art["link"],
                     "날짜": art["date"],
                     "출처": art["source"],
@@ -1317,6 +1268,7 @@ def render_articles_with_single_summary_and_telegram(
                                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
                                 if enable_summary:
                                     st.markdown(f"- **한 줄 요약:** {art['요약']}")
+                                    st.markdown(f"- **한 줄 시사점:** {art.get('한줄시사점', '없음')}")
                                     st.markdown(f"- **시사점:** {art['시사점'] or '없음'}")
                                 st.markdown(f"- **감성분석:** `{art['감성']}`")
                                 st.markdown("---")
