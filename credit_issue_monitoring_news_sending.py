@@ -223,7 +223,6 @@ def fetch_and_display_reports(companies_map):
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
 
-    # 1. key loop
     for cat in favorite_categories:
         for company in favorite_categories[cat]:
             kiscd = companies_map.get(company, "")
@@ -237,7 +236,6 @@ def fetch_and_display_reports(companies_map):
             with st.expander(
                 f"{company} (KISCD: {kiscd} | cmpCD: {cmpcd})", expanded=False
             ):
-                # 4. 두 평가사 페이지 하이퍼링크 병렬 표시
                 st.markdown(
                     f"- [📄 한국신용평가 평가/리서치 페이지 바로가기]({url_kis}) &nbsp;&nbsp;"
                     f"[📄 나이스신용평가 평가/리서치 페이지 바로가기]({url_nice})",
@@ -249,26 +247,23 @@ def fetch_and_display_reports(companies_map):
                         html = resp.text
                         report_data = extract_reports_and_research(html)
 
-                        # 2. 평가리포트 표 제목 추가
                         if report_data.get("평가리포트"):
                             with st.expander("평가리포트", expanded=True):
-                                st.markdown("**한국신용평가 평가리포트**")
+                                st.markdown("### 한국신용평가 평가리포트")
                                 df_report = pd.DataFrame(report_data["평가리포트"])
                                 df_report = df_report.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df_report)
 
-                        # 3. 관련리서치 표 제목 추가
                         if report_data.get("관련리서치"):
                             with st.expander("관련리서치", expanded=True):
-                                st.markdown("**한국신용평가 관련 리서치**")
+                                st.markdown("### 한국신용평가 관련 리서치")
                                 df_research = pd.DataFrame(report_data["관련리서치"])
                                 df_research = df_research.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df_research)
 
-                                # 나이스 신용평가 스페셜 리포트
                                 nice_data = fetch_nice_rating_data(cmpcd)
                                 special_reports = nice_data.get("special_reports", [])
-                                st.markdown("### 나이스 신용평가 스페셜 리포트")
+                                st.markdown("#### 나이스 신용평가 스페셜 리포트")
                                 if special_reports and len(special_reports) > 1:
                                     header = special_reports[0]
                                     filtered_rows = [row for row in special_reports[1:] if len(row) == len(header)]
@@ -282,16 +277,15 @@ def fetch_and_display_reports(companies_map):
                                 if nice_data.get("error"):
                                     st.warning(nice_data["error"])
 
-                        # 신용등급 상세정보 및 주요등급내역 → 같은 expander 안에서 [요청1]
                         credit_detail_list = extract_credit_details(html)
                         with st.expander("신용등급 상세정보", expanded=True):
                             if credit_detail_list:
+                                st.markdown("### 한국신용평가 신용등급 상세정보")
                                 df_credit_detail = pd.DataFrame(credit_detail_list)
                                 st.dataframe(df_credit_detail)
                             else:
                                 st.info("신용등급 상세정보가 없습니다.")
 
-                            # 주요 등급내역을 신용등급 상세정보 expander 내부에 배치
                             st.markdown("#### 나이스 신용평가 주요 등급내역")
                             nice_data = fetch_nice_rating_data(cmpcd)
                             major_grade_df = nice_data.get("major_grade_df", pd.DataFrame())
