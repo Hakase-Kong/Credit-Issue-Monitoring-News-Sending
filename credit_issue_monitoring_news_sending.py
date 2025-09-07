@@ -30,6 +30,8 @@ common_filter_categories = config["common_filter_categories"] # --- 공통 필�
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
 SYNONYM_MAP = config["synonym_map"]
 kiscd_map = config.get("kiscd_map", {})
+nice_cmpCd = config.get("cmpCD_map", {}).get(company, "")
+
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
@@ -146,8 +148,50 @@ def extract_credit_details(html):
     return results
 
 def fetch_and_display_reports(companies_map):
-    import streamlit as st
-    import requests
+    def extract_table_after_marker(soup, marker_str):
+        marker = None
+        for tag in soup.find_all(['b', 'strong', 'h2', 'h3']):
+            if marker_str in tag.get_text():
+                marker = tag
+                break
+        if marker:
+            return marker.find_next('table')
+        return None
+
+    def table_to_list(table):
+        rows = []
+        if not table:
+            return rows
+        for row in table.find_all('tr'):
+            cells = [cell.get_text(strip=True) for cell in row.find_all(['th', 'td'])]
+            if cells:
+                rows.append(cells)
+        return rows
+
+    def fetch_nice_rating_data(cmpCd):
+        if not cmpCd:
+            return {"major_grades": [], "special_reports": []}
+        url = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpCd}"
+        try:
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            major_grade_table = extract_table_after_marker(soup, '주요 등급내역')
+            special_report_table = extract_table_after_marker(soup, '스페셜 리포트')
+
+            major_grades = table_to_list(major_grade_table) if major_grade_table else []
+            special_reports = table_to_list(special_report_table) if special_report_table else []
+
+            return {
+                "major_grades": major_grades,
+                "special_reports": special_reports,
+            }
+        except Exception as e:
+            return {
+                "major_grades": [],
+                "special_reports": [],
+                "error": f"나이스 신용평가 데이터 로드 오류: {e}"
+            }
 
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
@@ -157,6 +201,8 @@ def fetch_and_display_reports(companies_map):
             kiscd = companies_map.get(company, "")
             if not kiscd or not str(kiscd).strip():
                 continue
+
+            nice_cmpCd = config.get("cmpCD_map", {}).get(company, "")
 
             url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
             with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
@@ -170,21 +216,31 @@ def fetch_and_display_reports(companies_map):
                         html = resp.text
                         report_data = extract_reports_and_research(html)
 
-                        # 기존 평가리포트
+                        # 한국신용평가 평가리포트
                         if report_data.get("평가리포트"):
                             with st.expander("평가리포트", expanded=True):
                                 df_report = pd.DataFrame(report_data["평가리포트"])
                                 df_report = df_report.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df_report)
 
-                        # 기존 관련리서치
+                        # 한국신용평가 관련리서치
                         if report_data.get("관련리서치"):
                             with st.expander("관련리서치", expanded=True):
                                 df_research = pd.DataFrame(report_data["관련리서치"])
                                 df_research = df_research.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df_research)
 
-                        # 여기에 신용등급 상세정보 표 추가
+                                # 여기에 나이스 신용평가 스페셜 리포트 추가
+                                nice_data = fetch_nice_rating_data(nice_cmpCd)
+                                special_reports = nice_data.get("special_reports", [])
+                                if special_reports:
+                                    st.markdown("### 나이스 신용평가 스페셜 리포트")
+                                    df_special = pd.DataFrame(special_reports[1:], columns=special_reports[0])
+                                    st.dataframe(df_special)
+                                if nice_data.get("error"):
+                                    st.warning(nice_data["error"])
+
+                        # 신용등급 상세정보 (한국신용평가)
                         credit_detail_list = extract_credit_details(html)
                         if credit_detail_list:
                             with st.expander("신용등급 상세정보", expanded=True):
@@ -193,10 +249,23 @@ def fetch_and_display_reports(companies_map):
                         else:
                             st.info("신용등급 상세정보가 없습니다.")
 
+                        # 여기에 나이스 신용평가 주요 등급내역 추가
+                        nice_data = fetch_nice_rating_data(nice_cmpCd)
+                        major_grades = nice_data.get("major_grades", [])
+                        if major_grades:
+                            with st.expander("나이스 신용평가 주요 등급내역", expanded=True):
+                                df_major = pd.DataFrame(major_grades[1:], columns=major_grades[0])
+                                st.dataframe(df_major)
+                        if nice_data.get("error"):
+                            st.warning(nice_data["error"])
+
                     else:
-                        st.warning("정보를 불러올 수 없습니다.")
+                        st.warning("한국신용평가 정보를 불러올 수 없습니다.")
                 except Exception as e:
-                    st.warning(f"정보 파싱 오류: {e}")
+                    st.warning(f"신용평가 정보 파싱 오류: {e}")
+
+                time.sleep(1)
+
             
 def expand_keywords_with_synonyms(original_keywords):
     expanded_map = {}
@@ -1721,15 +1790,13 @@ if st.session_state.get("search_results"):
     filtered_results = {}
     for keyword, articles in st.session_state["search_results"].items():
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-        
-        # --- 중복 기사 제거 처리 ---
+
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
-        
+
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
 
-    # 뉴스검색 결과 렌더링
     render_articles_with_single_summary_and_telegram(
         filtered_results,
         st.session_state.show_limit,
@@ -1737,17 +1804,21 @@ if st.session_state.get("search_results"):
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
-    # 선택된 산업군 기준으로 회사명 리스트 필터링
     selected_companies = []
     for cat in st.session_state.get("cat_multi", []):
         selected_companies.extend(favorite_categories.get(cat, []))
-    selected_companies = list(set(selected_companies))  # 중복 제거
+    selected_companies = list(set(selected_companies))
 
-    # kiscd 맵에서 선택된 회사만 필터링
+    # kiscd_map과 cmpCD_map 모두에서 회사명에 매칭되는 키 값 가져오기
     kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
+    cmpcd_filtered = {c: config.get("cmpCD_map", {}).get(c, "") for c in selected_companies}
 
-    # 신용평가 보고서 및 관련 리서치 UI 추가 (필터된 회사만)
+    # 두 맵을 합치는 함수 (kiscd_filtered 기본에 cmpcd_filtered도 합칠 수 있도록)
+    # fetch_and_display_reports가 kiscd만 받으므로 확장 필요
+    # 여기서는 kiscd_filtered 넘기고, fetch_and_display_reports 내부에서 cmpCD_map 참조 권장
+
     fetch_and_display_reports(kiscd_filtered)
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
