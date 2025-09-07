@@ -1219,12 +1219,12 @@ def render_articles_with_single_summary_and_telegram(
                 keyword, idx, art = item
                 cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
                 if cache_key in st.session_state:
-                    one_line, summary, sentiment, implication, full_text = st.session_state[cache_key]
+                    one_line, summary, sentiment, implication, short_implication, full_text = st.session_state[cache_key]
                 else:
-                    one_line, summary, sentiment, implication, full_text = summarize_article_from_url(
+                    one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
                         art["link"], art["title"], do_summary=enable_summary, target_keyword=keyword
                     )
-                    st.session_state[cache_key] = (one_line, summary, sentiment, implication, full_text)
+                    st.session_state[cache_key] = (one_line, summary, sentiment, implication, short_implication, full_text)
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
                     ALL_COMMON_FILTER_KEYWORDS,
