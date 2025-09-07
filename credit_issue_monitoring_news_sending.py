@@ -145,66 +145,170 @@ def extract_credit_details(html):
         })
     return results
 
-def extract_table_after_marker(soup, marker_str):
-    marker = None
-    for tag in soup.find_all(['b', 'strong', 'h2', 'h3']):
-        if marker_str in tag.get_text():
-            marker = tag
-            break
-    if marker:
-        return marker.find_next('table')
-    return None
-
-def table_html_to_df_multiheader(table_tag):
-    if table_tag is None:
-        return pd.DataFrame()
-    table_html = str(table_tag)
-    try:
-        dfs = pd.read_html(table_html, header=[0, 1])
-        df = dfs[0]
-        # 멀티헤더 컬럼을 보기 좋게 평탄화
-        df.columns = [
-            '_'.join([str(i) for i in col if str(i) != 'nan']).strip()
-            for col in df.columns.values
-        ]
-        return df
-    except Exception as e:
-        return pd.DataFrame()
-
 def fetch_and_display_reports(companies_map):
-    for company, kiscd in companies_map.items():
-        if not kiscd or not str(kiscd).strip():
-            continue
+    import pandas as pd
+    import requests
+    import time
+    from bs4 import BeautifulSoup
 
-        nice_cmpCd = config.get("cmpCD_map", {}).get(company, "")
-        url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
+    def extract_table_after_marker(soup, marker_str):
+        marker = None
+        for tag in soup.find_all(['b', 'strong', 'h2', 'h3', 'span']):
+            if marker_str in tag.get_text():
+                marker = tag
+                break
+        return marker.find_next('table') if marker else None
 
-        with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
-            st.markdown(
-                f"- [📄 {company} 한국신용평가 평가/리서치 페이지 바로가기]({url})",
-                unsafe_allow_html=True
-            )
-            # ----------- 나이스 주요 등급내역 멀티헤더 표 ----------- #
-            st.markdown("### 나이스 신용평가 주요 등급내역")
-            if nice_cmpCd:
-                nice_url = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={nice_cmpCd}"
+    def parse_grade_table_html(table_tag):
+        # 시도1: 멀티헤더(2줄)로 파싱
+        try:
+            dfs = pd.read_html(str(table_tag), header=[0, 1])
+            df = dfs[0]
+            df.columns = [
+                '_'.join([str(level) for level in col if str(level) not in ['nan', 'None']]).strip()
+                for col in df.columns.values
+            ]
+            # Unnamed, None 등의 비정상 컬럼명만 있다면 단일헤더로 시도
+            if all(('Unnamed' in col or col == '' or col.lower() == 'none') for col in df.columns):
+                raise Exception("헤더 파싱 실패 - 단일라인 헤더 시도")
+            return df
+        except Exception:
+            # 시도2: 단일헤더로 파싱
+            try:
+                dfs = pd.read_html(str(table_tag), header=0)
+                df = dfs[0]
+                df.columns = [str(col).strip() for col in df.columns]
+                return df
+            except Exception:
+                # 마지막: td 전체 내용으로 직접 행렬 생성
                 try:
-                    resp = requests.get(nice_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
-                    resp.raise_for_status()
-                    soup = BeautifulSoup(resp.text, 'html.parser')
-                    major_grade_table = extract_table_after_marker(soup, '주요 등급내역')
-                    if major_grade_table:
-                        df_major = table_html_to_df_multiheader(major_grade_table)
-                        if not df_major.empty:
-                            st.dataframe(df_major)
-                        else:
-                            st.info("표 형식이 맞는 데이터가 없습니다. (주요 등급내역)")
-                    else:
-                        st.info("주요 등급내역 데이터가 없습니다.")
-                except Exception as e:
-                    st.warning(f"나이스 주요등급내역 파싱 오류: {e}")
+                    rows = [
+                        [cell.get_text(strip=True) for cell in row.find_all(['th', 'td'])]
+                        for row in table_tag.find_all('tr')
+                    ]
+                    df = pd.DataFrame(rows[1:], columns=rows[0])
+                    return df
+                except Exception:
+                    return pd.DataFrame()
 
-            time.sleep(1) # 크롤링 배려
+    def table_to_list(table):
+        rows = []
+        if not table:
+            return rows
+        for row in table.find_all('tr'):
+            cells = [cell.get_text(strip=True) for cell in row.find_all(['th', 'td'])]
+            if cells:
+                rows.append(cells)
+        return rows
+
+    def fetch_nice_rating_data(cmpCd):
+        if not cmpCd:
+            return {"major_grades": [], "special_reports": []}
+        url = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpCd}"
+        try:
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            major_grade_table_tag = extract_table_after_marker(soup, '주요 등급내역')
+            special_report_table_tag = extract_table_after_marker(soup, '스페셜 리포트')
+
+            # 나이스 주요 등급내역: pandas DataFrame이 실제 표 구조로 자동 변환
+            major_grade_df = parse_grade_table_html(major_grade_table_tag) if major_grade_table_tag else pd.DataFrame()
+            # 나머지 표는 기존대로 list 변환 (필요시 유사하게 df로 통일 가능)
+            special_reports = table_to_list(special_report_table_tag) if special_report_table_tag else []
+
+            return {
+                "major_grade_df": major_grade_df,
+                "special_reports": special_reports,
+            }
+        except Exception as e:
+            return {
+                "major_grade_df": pd.DataFrame(),
+                "special_reports": [],
+                "error": f"나이스 신용평가 데이터 로드 오류: {e}"
+            }
+
+    st.markdown("---")
+    st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
+
+    for cat in favorite_categories:
+        for company in favorite_categories[cat]:
+            kiscd = companies_map.get(company, "")
+            if not kiscd or not str(kiscd).strip():
+                continue
+
+            nice_cmpCd = config.get("cmpCD_map", {}).get(company, "")
+            url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
+
+            with st.expander(f"{company} (KISCD: {kiscd})", expanded=False):
+                st.markdown(
+                    f"- [📄 {company} 한국신용평가 평가/리서치 페이지 바로가기]({url})",
+                    unsafe_allow_html=True
+                )
+                try:
+                    resp = requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"})
+                    if resp.status_code == 200:
+                        html = resp.text
+                        report_data = extract_reports_and_research(html)
+
+                        # 한국신용평가 평가리포트
+                        if report_data.get("평가리포트"):
+                            with st.expander("평가리포트", expanded=True):
+                                df_report = pd.DataFrame(report_data["평가리포트"])
+                                df_report = df_report.drop(columns=["다운로드"], errors="ignore")
+                                st.dataframe(df_report)
+
+                        # 한국신용평가 관련리서치
+                        if report_data.get("관련리서치"):
+                            with st.expander("관련리서치", expanded=True):
+                                df_research = pd.DataFrame(report_data["관련리서치"])
+                                df_research = df_research.drop(columns=["다운로드"], errors="ignore")
+                                st.dataframe(df_research)
+
+                                # 나이스 신용평가 스페셜 리포트 (list형태 그대로 유지)
+                                nice_data = fetch_nice_rating_data(nice_cmpCd)
+                                special_reports = nice_data.get("special_reports", [])
+                                st.markdown("### 나이스 신용평가 스페셜 리포트")
+                                if special_reports and len(special_reports) > 1:
+                                    header = special_reports[0]
+                                    filtered_rows = [row for row in special_reports[1:] if len(row) == len(header)]
+                                    if filtered_rows:
+                                        df_special = pd.DataFrame(filtered_rows, columns=header)
+                                        st.dataframe(df_special)
+                                    else:
+                                        st.info("표 형식이 맞는 데이터가 없습니다. (스페셜 리포트)")
+                                else:
+                                    st.info("스페셜 리포트 데이터가 없습니다.")
+                                if nice_data.get("error"):
+                                    st.warning(nice_data["error"])
+
+                        # 신용등급 상세정보 (한국신용평가)
+                        credit_detail_list = extract_credit_details(html)
+                        if credit_detail_list:
+                            with st.expander("신용등급 상세정보", expanded=True):
+                                df_credit_detail = pd.DataFrame(credit_detail_list)
+                                st.dataframe(df_credit_detail)
+                        else:
+                            st.info("신용등급 상세정보가 없습니다.")
+
+                        # 나이스 신용평가 주요 등급내역 (여기만 df로 멀티헤더/단일헤더 처리)
+                        st.markdown("### 나이스 신용평가 주요 등급내역")
+                        nice_data = fetch_nice_rating_data(nice_cmpCd)
+                        major_grade_df = nice_data.get("major_grade_df", pd.DataFrame())
+                        if not major_grade_df.empty:
+                            st.dataframe(major_grade_df)
+                        else:
+                            st.info("주요 등급내역 데이터가 없습니다.")
+                        if nice_data.get("error"):
+                            st.warning(nice_data["error"])
+
+                    else:
+                        st.warning("한국신용평가 정보를 불러올 수 없습니다.")
+                except Exception as e:
+                    st.warning(f"신용평가 정보 파싱 오류: {e}")
+
+                time.sleep(1)
+
             
 def expand_keywords_with_synonyms(original_keywords):
     expanded_map = {}
