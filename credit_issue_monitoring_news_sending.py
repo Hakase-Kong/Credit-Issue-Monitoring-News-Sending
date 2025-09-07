@@ -1320,7 +1320,7 @@ def render_important_article_review_and_download():
                     industry_keywords=st.session_state.get("industry_sub", []),
                     favorites=favorite_categories
                 )
-                # key naming 통일 및 시사점 필드 포함 (시사점은 빈 문자열로 초기화, 필요 시 OpenAI 결과 반영 필요)
+                # key 명 통일 및 시사점 필드 포함 (시사점은 빈 문자열로 초기화, 필요 시 OpenAI 결과 반영 가능)
                 for i, art in enumerate(important_articles):
                     important_articles[i] = {
                         "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
@@ -1329,7 +1329,7 @@ def render_important_article_review_and_download():
                         "링크": art.get("링크") or art.get("link", ""),
                         "날짜": art.get("날짜") or art.get("date", ""),
                         "출처": art.get("출처") or art.get("source", ""),
-                        "시사점": art.get("시사점", "")  # 시사점 필드 추가 (자동선정 시에 채워질 수 있음)
+                        "시사점": art.get("시사점", "")  # 시사점 필드 추가 (자동선정 시 채워질 수 있음)
                     }
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
@@ -1375,11 +1375,11 @@ def render_important_article_review_and_download():
                     major, minor, idx, link, title = args
                     one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(link, title, do_summary=True)
                     return (major, minor, idx), (one_line, summary, sentiment, implication, short_implication, full_text)
-        
+
                 with ThreadPoolExecutor(max_workers=10) as executor:
                     for key, data_tuple in executor.map(get_one_line, to_summarize):
                         one_line_map[key] = data_tuple
-            
+
         new_selection = []
         for major, minor_map in major_map.items():
             with st.expander(f"📊 {major}", expanded=True):
@@ -1388,34 +1388,45 @@ def render_important_article_review_and_download():
                         for idx, article in enumerate(arts):
                             check_key = f"important_chk_{major}_{minor}_{idx}"
                             checked = st.checkbox(
-                                f"{article.get('감성', '')} | {article.get('기사제목', '')}",
+                                # 체크박스 텍스트에서 감성과 제목 분리, 제목에 하이퍼링크 추가
+                                f"{article.get('감성', '')} | ",
                                 key=check_key,
                                 value=(check_key in selected_indexes)
                             )
-                            # 시사점 출력 (기존 기울임체 한 줄 요약 대신 시사점 텍스트 표시)
-                            summary_data = one_line_map.get((major, minor, idx))
-                            implication_text = ""
-                            if summary_data and len(summary_data) == 6:
-                                implication_text = summary_data[3] or ""  # 시사점(implication)
-                            else:
-                                implication_text = article.get("시사점", "")
-
+                            # 기사 제목 하이퍼링크
                             st.markdown(
-                                f"<span style='color:gray;font-style:italic;'>{implication_text}</span>",
+                                f"<a href='{article.get('링크', '')}' target='_blank'>{article.get('기사제목', '제목없음')}</a>",
                                 unsafe_allow_html=True
                             )
+
+                            # 시사점 및 한줄 시사점 출력
+                            summary_data = one_line_map.get((major, minor, idx))
+                            implication_text = ""
+                            short_implication_text = ""
+                            if summary_data and len(summary_data) == 6:
+                                implication_text = summary_data[3] or ""       # 시사점
+                                short_implication_text = summary_data[4] or ""  # 한줄 시사점
+                            else:
+                                implication_text = article.get("시사점", "") or ""
+                                short_implication_text = article.get("한줄시사점", "") or ""
+
+                            if implication_text:
+                                st.markdown(implication_text)
+                            if short_implication_text:
+                                st.markdown(f"<span style='color:gray;font-style:italic;'>{short_implication_text}</span>", unsafe_allow_html=True)
+
                             st.markdown(
                                 f"<span style='font-size:12px;color:#99a'>{article.get('날짜', '')} | {article.get('출처', '')}</span>",
                                 unsafe_allow_html=True
                             )
                             if checked:
                                 new_selection.append((major, minor, idx))
+
                             st.markdown("<div style='margin:0px;padding:0px;height:4px'></div>", unsafe_allow_html=True)
 
         st.session_state["important_selected_index"] = new_selection
 
         # 추가 / 삭제 / 교체 버튼 및 해당 기능 (기존 코드 유지)
-
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
         with col_add:
             if st.button("➕ 선택 기사 추가"):
@@ -1473,7 +1484,7 @@ def render_important_article_review_and_download():
                         st.success(f"{added_count}건의 기사가 중요 기사 목록에 추가되었습니다.")
                     else:
                         st.info("추가된 새로운 기사가 없습니다.")
-                    st.rerun()
+                    st.experimental_rerun()
 
         with col_del:
             if st.button("🗑 선택 기사 삭제"):
@@ -1488,7 +1499,7 @@ def render_important_article_review_and_download():
                 important = [a for a in important if a.get("링크") not in remove_links]
                 st.session_state["important_articles_preview"] = important
                 st.session_state["important_selected_index"] = []
-                st.rerun()
+                st.experimental_rerun()
 
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
@@ -1547,7 +1558,7 @@ def render_important_article_review_and_download():
                 st.session_state.article_checked[from_key] = False
                 st.session_state["important_selected_index"] = []
                 st.success("중요 기사 교체 완료")
-                st.rerun()
+                st.experimental_rerun()
 
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
@@ -1587,15 +1598,114 @@ def render_important_article_review_and_download():
                 "요약본": summary,
                 "감성": sentiment,
                 "시사점": implication,
+                "한줄시사점": short_implication,   # 한줄 시사점 필드 추가
                 "링크": link,
                 "날짜": raw_article.get("날짜", ""),
                 "출처": raw_article.get("출처", ""),
                 "full_text": full_text or "",
             }
         summary_data = [enrich_article_for_excel(a) for a in articles_source]
-        excel_data = get_excel_download_with_favorite_and_excel_company_col(
-            summary_data, favorite_categories, excel_company_categories, st.session_state.search_results
-        )
+
+        # 여기에서 엑셀 생성 시 한줄시사점 반영하여 통합
+        def get_excel_with_joined_implications(summary_data, favorite_categories, excel_company_categories, search_results):
+            import pandas as pd
+            from io import BytesIO
+
+            if not summary_data or len(summary_data) == 0:
+                df_empty = pd.DataFrame(columns=["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"])
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df_empty.to_excel(writer, index=False, sheet_name='뉴스요약')
+                    worksheet = writer.sheets['뉴스요약']
+                    worksheet.set_column(0, 5, 30)
+                output.seek(0)
+                return output
+
+            df = pd.DataFrame(summary_data)
+
+            # 회사 리스트 (중복 제거 및 순서 유지)
+            sector_list = []
+            for cat in favorite_categories:
+                sector_list.extend(favorite_categories[cat])
+            sector_list = list(dict.fromkeys(sector_list))
+
+            excel_sector_list = []
+            for cat in excel_company_categories:
+                excel_sector_list.extend(excel_company_categories[cat])
+            excel_sector_list = list(dict.fromkeys(excel_sector_list))
+
+            rows = []
+            for idx, company in enumerate(sector_list):
+                search_articles = search_results.get(company, [])
+
+                filtered_articles = []
+                for article in search_articles:
+                    passes_common = any(kw in (article.get("title", "") + article.get("description", "")) for kw in ALL_COMMON_FILTER_KEYWORDS)
+                    passes_industry = True
+                    # 필요 시 산업별 필터링 로직 추가 가능
+
+                    if passes_common and passes_industry:
+                        filtered_articles.append(article)
+
+                if st.session_state.get("remove_duplicate_articles", False):
+                    filtered_articles = remove_duplicates(filtered_articles)
+
+                total_count = len(filtered_articles)
+
+                filtered_df = df[df.get("키워드", "") == company].sort_values(by='날짜', ascending=False)
+
+                hl_news = ["", ""]
+                implications = ["", ""]
+                short_imps = ["", ""]
+
+                for i, art in enumerate(filtered_df.itertuples()):
+                    if i > 1:
+                        break
+                    date_val = getattr(art, "날짜", "") or ""
+                    title_val = getattr(art, "기사제목", "") or getattr(art, "제목", "")
+                    link_val = getattr(art, "링크", "") or getattr(art, "link", "")
+                    short_imp_val = getattr(art, "한줄시사점", "") or ""
+
+                    display_text = f"({clean_excel_formula_text(date_val)}){clean_excel_formula_text(title_val)}"
+                    if title_val and link_val:
+                        hl_news[i] = f'=HYPERLINK("{clean_excel_formula_text(link_val)}", "{display_text}")'
+                    else:
+                        hl_news[i] = display_text or ""
+
+                    implications[i] = getattr(art, "시사점", "") or ""
+                    short_imps[i] = short_imp_val
+
+                # 시사점 및 한줄시사점 번호 붙여서 병합
+                merged_implications = ""
+                for n in range(2):
+                    if implications[n]:
+                        merged_implications += f"{n+1}. {implications[n]}\n"
+                for n in range(2):
+                    if short_imps[n]:
+                        merged_implications += f"{n+1}. {short_imps[n]}\n"
+
+                rows.append({
+                    "기업명": company,
+                    "표기명": excel_sector_list[idx] if idx < len(excel_sector_list) else "",
+                    "건수": total_count,
+                    "중요뉴스1": hl_news[0],
+                    "중요뉴스2": hl_news[1],
+                    "시사점": merged_implications.strip(),
+                })
+
+            result_df = pd.DataFrame(rows, columns=["기업명", "표기명", "건수", "중요뉴스1", "중요뉴스2", "시사점"])
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                result_df.to_excel(writer, index=False, sheet_name='뉴스요약')
+                worksheet = writer.sheets['뉴스요약']
+                for i, col in enumerate(result_df.columns):
+                    worksheet.set_column(i, i, 30)
+            output.seek(0)
+            return output
+
+        excel_data = get_excel_with_joined_implications(summary_data, favorite_categories, excel_company_categories, st.session_state.search_results)
+
         st.download_button(
             label="📥 중요 기사 최종 엑셀 다운로드 (맞춤 양식)",
             data=excel_data.getvalue(),
