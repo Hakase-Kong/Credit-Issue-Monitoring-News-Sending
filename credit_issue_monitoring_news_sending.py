@@ -146,86 +146,127 @@ def extract_credit_details(html):
         })
     return results
 
-def fetch_and_display_reports(companies_map):
+def fetch_and_display_reports(company_names, kiscd_map, cmpCD_map):
     import streamlit as st
     import requests
     import pandas as pd
     from bs4 import BeautifulSoup
 
     st.markdown("---")
-    st.markdown("### 📑 나신평 (NICE) 신용평가 보고서 및 관련 리서치")
+    st.markdown("### 📑 신용평가 보고서 및 관련 리서치 (한신평/나신평 비교)")
 
-    # 실제로 검색된 기업만 표시해야 함
-    for company, cmpCd in companies_map.items():
-        if not cmpCd:
-            continue
-        url = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpCd}"
-        with st.expander(f"{company} (CMP_CD: {cmpCd}) - 나신평", expanded=False):
-            st.markdown(f"- [📄 {company} NICE신용평가 상세 페이지 바로가기]({url})", unsafe_allow_html=True)
-            try:
-                response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, 'html.parser')
+    for company in company_names:
+        kiscd = kiscd_map.get(company, "")
+        cmpCd = cmpCD_map.get(company, "")
 
-                # inline: marker 다음에 table 추출하는 로직
-                def find_table_after_marker(marker_text):
-                    marker = soup.find(string=lambda t: t and marker_text in t)
-                    if marker:
-                        parent = marker.parent if hasattr(marker, "parent") else None
-                        for sib in parent.next_elements if parent else []:
-                            if getattr(sib, "name", None) == "table":
-                                return sib
-                    return None
+        with st.expander(f"{company}", expanded=False):
 
-                # inline: <table>을 2차원 리스트로 변환하는 로직
-                def inline_table_to_list(table):
-                    rows = []
-                    if not table:
-                        return rows
-                    for tr in table.find_all('tr'):
-                        row = [td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
-                        if row:
-                            rows.append(row)
-                    return rows
-
-                # --- 주요 등급내역 ---
-                major_grade_table = find_table_after_marker('주요 등급내역')
-                if major_grade_table:
-                    df_major = pd.DataFrame(inline_table_to_list(major_grade_table))
-                    st.markdown("#### 주요 등급내역")
-                    st.dataframe(df_major)
+            # ----- 한신평 (KIS) -----
+            with st.expander(f"[한신평] {company}", expanded=False):
+                if kiscd:
+                    url = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
+                    st.markdown(
+                        f"- [📄 {company} 한국신용평가 상세 페이지 바로가기]({url})",
+                        unsafe_allow_html=True
+                    )
+                    try:
+                        resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+                        if resp.status_code == 200:
+                            html = resp.text
+                            report_data = extract_reports_and_research(html)
+                            if report_data.get("평가리포트"):
+                                df_report = pd.DataFrame(report_data["평가리포트"])
+                                df_report = df_report.drop(columns=["다운로드"], errors="ignore")
+                                st.markdown("#### 평가리포트")
+                                st.dataframe(df_report)
+                            if report_data.get("관련리서치"):
+                                df_research = pd.DataFrame(report_data["관련리서치"])
+                                df_research = df_research.drop(columns=["다운로드"], errors="ignore")
+                                st.markdown("#### 관련리서치")
+                                st.dataframe(df_research)
+                            # 신용등급상세
+                            if report_data.get("신용등급상세"):
+                                st.markdown("#### 신용등급 상세정보")
+                                df_credit_detail = pd.DataFrame(report_data["신용등급상세"])
+                                st.dataframe(df_credit_detail)
+                            else:
+                                st.info("신용등급 상세정보가 없습니다.")
+                        else:
+                            st.warning("한신평 정보를 불러올 수 없습니다.")
+                    except Exception as e:
+                        st.warning(f"한신평 정보 파싱 오류: {e}")
                 else:
-                    st.info("주요 등급내역 정보가 없습니다.")
+                    st.info("한신평(KIS) 코드가 없습니다.")
 
-                # --- 스페셜 리포트 ---
-                special_report_table = find_table_after_marker('스페셜 리포트')
-                if special_report_table:
-                    df_special = pd.DataFrame(inline_table_to_list(special_report_table))
-                    st.markdown("#### 스페셜 리포트")
-                    st.dataframe(df_special)
+            # ----- 나신평 (NICE) -----
+            with st.expander(f"[나신평] {company}", expanded=False):
+                if cmpCd:
+                    url = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpCd}"
+                    st.markdown(
+                        f"- [📄 {company} NICE신용평가 상세 페이지 바로가기]({url})",
+                        unsafe_allow_html=True
+                    )
+                    try:
+                        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+                        response.raise_for_status()
+                        soup = BeautifulSoup(response.text, 'html.parser')
+
+                        def find_table_after_marker(marker_text):
+                            marker = soup.find(string=lambda t: t and marker_text in t)
+                            if marker:
+                                parent = marker.parent if hasattr(marker, "parent") else None
+                                for sib in parent.next_elements if parent else []:
+                                    if getattr(sib, "name", None) == "table":
+                                        return sib
+                            return None
+                        def inline_table_to_list(table):
+                            rows = []
+                            if not table:
+                                return rows
+                            for tr in table.find_all('tr'):
+                                row = [td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
+                                if row:
+                                    rows.append(row)
+                            return rows
+
+                        # --- 주요 등급내역 ---
+                        major_grade_table = find_table_after_marker('주요 등급내역')
+                        if major_grade_table:
+                            df_major = pd.DataFrame(inline_table_to_list(major_grade_table))
+                            st.markdown("#### 주요 등급내역")
+                            st.dataframe(df_major)
+                        else:
+                            st.info("주요 등급내역 정보가 없습니다.")
+
+                        special_report_table = find_table_after_marker('스페셜 리포트')
+                        if special_report_table:
+                            df_special = pd.DataFrame(inline_table_to_list(special_report_table))
+                            st.markdown("#### 스페셜 리포트")
+                            st.dataframe(df_special)
+                        else:
+                            st.info("스페셜 리포트 정보가 없습니다.")
+
+                        industry_table = find_table_after_marker('산업전망 및 산업점검')
+                        if industry_table:
+                            df_industry = pd.DataFrame(inline_table_to_list(industry_table))
+                            st.markdown("#### 산업전망 및 산업점검")
+                            st.dataframe(df_industry)
+                        else:
+                            st.info("산업전망 및 산업점검 정보가 없습니다.")
+
+                        group_report_table = find_table_after_marker('그룹분석보고서')
+                        if group_report_table:
+                            df_group = pd.DataFrame(inline_table_to_list(group_report_table))
+                            st.markdown("#### 그룹분석보고서")
+                            st.dataframe(df_group)
+                        else:
+                            st.info("그룹분석보고서 정보가 없습니다.")
+
+                    except Exception as e:
+                        st.warning(f"나신평 정보 파싱 오류: {e}")
                 else:
-                    st.info("스페셜 리포트 정보가 없습니다.")
+                    st.info("나신평(NICE) 코드가 없습니다.")
 
-                # --- 산업전망 및 산업점검 ---
-                industry_table = find_table_after_marker('산업전망 및 산업점검')
-                if industry_table:
-                    df_industry = pd.DataFrame(inline_table_to_list(industry_table))
-                    st.markdown("#### 산업전망 및 산업점검")
-                    st.dataframe(df_industry)
-                else:
-                    st.info("산업전망 및 산업점검 정보가 없습니다.")
-
-                # --- 그룹분석보고서 ---
-                group_report_table = find_table_after_marker('그룹분석보고서')
-                if group_report_table:
-                    df_group = pd.DataFrame(inline_table_to_list(group_report_table))
-                    st.markdown("#### 그룹분석보고서")
-                    st.dataframe(df_group)
-                else:
-                    st.info("그룹분석보고서 정보가 없습니다.")
-
-            except Exception as e:
-                st.warning(f"나신평 정보 파싱 오류: {e}")
          
 def expand_keywords_with_synonyms(original_keywords):
     expanded_map = {}
