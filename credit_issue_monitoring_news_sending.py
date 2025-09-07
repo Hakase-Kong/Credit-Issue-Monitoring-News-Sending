@@ -233,7 +233,7 @@ def fetch_and_display_reports(companies_map):
             comp_cd = config.get("compCD_map", {}).get(company, "") or config.get("cmpCD_map", {}).get(company, "")
             url_hkangpyo = ""
             if comp_cd:
-                url_hkangpyo = f"https://www.kangr.com/cms/frDisclosureCon/compView.do?MENU_ID=90&CONTENTS_NO=1&COMP_CD={comp_cd}"
+                url_hkangpyo = f"https://www.korearatings.com/cms/frDisclosureCon/compView.do?MENU_ID=90&CONTENTS_NO=1&COMP_CD={comp_cd}"
 
             with st.expander(
                 f"{company} (KISCD: {kiscd} | cmpCD: {cmpcd} | compCD: {comp_cd})", expanded=False
