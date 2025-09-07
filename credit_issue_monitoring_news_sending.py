@@ -1562,7 +1562,7 @@ def render_important_article_review_and_download():
             keyword = raw_article.get("키워드", "")
             cleaned_id = re.sub(r"\W+", "", link)[-16:]
 
-            one_line, summary, sentiment, implication, full_text = None, None, None, None, None
+            one_line, summary, sentiment, implication, short_implication, full_text = None, None, None, None, None, None
 
             for k, v in st.session_state.items():
                 if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
@@ -1570,7 +1570,7 @@ def render_important_article_review_and_download():
                     break
 
             if not sentiment:
-                one_line, summary, sentiment, implication, full_text = summarize_article_from_url(
+                one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
                     link, raw_article.get("기사제목", "")
                 )
             filter_hits = matched_filter_keywords(
