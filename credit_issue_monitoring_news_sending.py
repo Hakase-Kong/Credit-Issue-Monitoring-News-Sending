@@ -30,6 +30,7 @@ common_filter_categories = config["common_filter_categories"] # --- 공통 필�
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
 SYNONYM_MAP = config["synonym_map"]
 kiscd_map = config.get("kiscd_map", {})
+cmpCD_map = config.get("cmpCD_map", {})
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
