@@ -1373,13 +1373,13 @@ def render_important_article_review_and_download():
             with st.spinner("중요 기사 요약 생성 중..."):
                 def get_one_line(args):
                     major, minor, idx, link, title = args
-                    one_line, summary, sentiment, implication, full_text = summarize_article_from_url(link, title, do_summary=True)
-                    return (major, minor, idx), (one_line, summary, sentiment, implication, full_text)
-
+                    one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(link, title, do_summary=True)
+                    return (major, minor, idx), (one_line, summary, sentiment, implication, short_implication, full_text)
+        
                 with ThreadPoolExecutor(max_workers=10) as executor:
                     for key, data_tuple in executor.map(get_one_line, to_summarize):
                         one_line_map[key] = data_tuple
-
+            
         new_selection = []
         for major, minor_map in major_map.items():
             with st.expander(f"📊 {major}", expanded=True):
@@ -1395,7 +1395,7 @@ def render_important_article_review_and_download():
                             # 시사점 출력 (기존 기울임체 한 줄 요약 대신 시사점 텍스트 표시)
                             summary_data = one_line_map.get((major, minor, idx))
                             implication_text = ""
-                            if summary_data and len(summary_data) == 5:
+                            if summary_data and len(summary_data) == 6:
                                 implication_text = summary_data[3] or ""  # 시사점(implication)
                             else:
                                 implication_text = article.get("시사점", "")
