@@ -1786,7 +1786,7 @@ if st.session_state.get("search_results"):
 
     # 신용평가 보고서 및 관련 리서치 UI 추가 (필터된 회사만)
     selected_companies = list(set(selected_companies))
-    fetch_and_display_reports(selected_companies, kis_filtered, cmpCD_map)
+    fetch_and_display_reports(selected_companies, kiscd_filtered, cmpCD_map)
 
 
 else:
