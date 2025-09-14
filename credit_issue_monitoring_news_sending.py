@@ -1,5 +1,3 @@
-import asyncio
-from playwright.async_api import async_playwright
 import os
 import streamlit as st
 import pandas as pd
@@ -20,7 +18,6 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import pandas as pd
 
-
 # --- config.json 로드 ---
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
@@ -33,7 +30,6 @@ common_filter_categories = config["common_filter_categories"] # --- 공통 필�
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
 SYNONYM_MAP = config["synonym_map"]
 kiscd_map = config.get("kiscd_map", {})
-kr_compcd_map = config.get("kr_COMP_CD_map", {})
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
@@ -149,49 +145,6 @@ def extract_credit_details(html):
         })
     return results
 
-async def kr_fetch_reports_one(comp_cd):
-    url = f'https://www.korearatings.com/cms/frDisclosureCon/compView.do?MENU_ID=90&CONTENTS_NO=1&COMP_CD={comp_cd}'
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(url)
-        await page.wait_for_selector("table")
-        html_content = await page.content()
-        await browser.close()
-        soup = BeautifulSoup(html_content, "html.parser")
-        tables = soup.find_all('table')
-        result = {
-            "recent_full": [],
-            "research": []
-        }
-        # 최근평정내역 및 최근Full보고서 (Table 5)
-        try:
-            table_recent_full = tables[4]
-            table_data = []
-            for row in table_recent_full.find_all('tr'):
-                cells = [cell.get_text(strip=True) for cell in row.find_all(['th', 'td'])]
-                if cells:
-                    table_data.append(cells)
-            result["recent_full"] = table_data
-        except Exception:
-            result["recent_full"] = []
-        # 관련리서치 (Table 11)
-        try:
-            table_research = tables[10]
-            table_data = []
-            for row in table_research.find_all('tr'):
-                cells = [cell.get_text(strip=True) for cell in row.find_all(['th', 'td'])]
-                if cells:
-                    table_data.append(cells)
-            result["research"] = table_data
-        except Exception:
-            result["research"] = []
-        return result
-
-def get_kr_report_and_research(comp_cd):
-    '''콜백 함수 (동기적 호출, 내부적으로 asyncio.run)'''
-    return asyncio.run(kr_fetch_reports_one(comp_cd))
-
 def fetch_and_display_reports(companies_map):
     import pandas as pd
     import requests
@@ -269,30 +222,25 @@ def fetch_and_display_reports(companies_map):
 
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
+
     for cat in favorite_categories:
         for company in favorite_categories[cat]:
             kiscd = companies_map.get(company, "")
             cmpcd = config.get("cmpCD_map", {}).get(company, "")
-            kr_compcd = kr_compcd_map.get(company, "")
+            if not kiscd or not str(kiscd).strip():
+                continue
+
+            url_kis = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
+            url_nice = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpcd}"
 
             with st.expander(
-                f"{company} (KISCD: {kiscd} | cmpCD: {cmpcd} | KR_COMP_CD: {kr_compcd})", expanded=False
+                f"{company} (KISCD: {kiscd} | cmpCD: {cmpcd})", expanded=False
             ):
-                # 평가사별 바로가기 링크
-                url_kis = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
-                url_nice = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpcd}"
-                url_kr = ""
-                if kr_compcd:
-                    url_kr = f"https://www.korearatings.com/cms/frDisclosureCon/compView.do?MENU_ID=90&CONTENTS_NO=1&COMP_CD={kr_compcd}"
-                links = (
-                    f"- [📄 한국신용평가 리포트]({url_kis}) &nbsp;&nbsp;"
-                    f"[📄 나이스신용평가 리포트]({url_nice}) &nbsp;&nbsp;"
+                st.markdown(
+                    f"- [📄 한국신용평가 평가/리서치 페이지 바로가기]({url_kis}) &nbsp;&nbsp;"
+                    f"[📄 나이스신용평가 평가/리서치 페이지 바로가기]({url_nice})",
+                    unsafe_allow_html=True
                 )
-                if url_kr:
-                    links += f"[📄 한국기업평가 리포트]({url_kr})"
-                st.markdown(links, unsafe_allow_html=True)
-
-                # KIS/NICE 기존 정보 - 원본 코드 유지
                 try:
                     resp = requests.get(url_kis, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
                     if resp.status_code == 200:
@@ -352,31 +300,6 @@ def fetch_and_display_reports(companies_map):
                         st.warning("한국신용평가 정보를 불러올 수 없습니다.")
                 except Exception as e:
                     st.warning(f"신용평가 정보 파싱 오류: {e}")
-
-                # --------- [여기부터 한기평 통합] ---------
-                if kr_compcd:
-                    try:
-                        kr_result = get_kr_report_and_research(kr_compcd)
-                        # 1. 최근평정내역 및 최근Full보고서
-                        if kr_result["recent_full"]:
-                            with st.expander("KR 최근평정내역 및 최근Full보고서", expanded=True):
-                                df_kr_recent = pd.DataFrame(kr_result["recent_full"][1:], columns=kr_result["recent_full"][0])
-                                st.markdown("### 한국기업평가 최근평정내역 및 Full보고서")
-                                st.dataframe(df_kr_recent)
-                        else:
-                            st.info("KR 최근평정 또는 Full보고서 데이터 없음.")
-
-                        # 2. 관련리서치
-                        if kr_result["research"]:
-                            with st.expander("KR 관련리서치", expanded=True):
-                                df_kr_research = pd.DataFrame(kr_result["research"][1:], columns=kr_result["research"][0])
-                                st.markdown("### 한국기업평가 관련 리서치")
-                                st.dataframe(df_kr_research)
-                        else:
-                            st.info("KR 관련리서치 데이터 없음.")
-                    except Exception as e:
-                        st.warning(f"KR(한국기업평가) 크롤링 오류: {e}")
-                # --------- [한기평 통합 끝] ---------
 
                 time.sleep(1)
             
