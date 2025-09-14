@@ -7,4 +7,5 @@ telepot
 xlsxwriter
 beautifulsoup4
 lxml_html_clean
-
+playwright
+nest_asyncio
