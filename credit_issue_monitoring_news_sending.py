@@ -234,7 +234,7 @@ def fetch_and_display_reports(companies_map):
 
             url_kis = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
             url_nice = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpcd}"
-            url_kie = f"https://www.kisrating.com/ratingsSearch/corpOverview.do?cpcd={kr_compcd}"
+            url_kie = f"https://www.korearatings.com/cms/frDisclosureCon/compView.do?MENU_ID=90&CONTENTS_NO=1&COMP_CD={kr_compcd}"
             with st.expander(
                 f"{company} (KISCD: {kiscd} | CMP_CD: {cmpcd} | KIE_CD: {kr_compcd})", expanded=False
             ):
