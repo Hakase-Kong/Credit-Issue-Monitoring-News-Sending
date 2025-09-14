@@ -30,6 +30,7 @@ common_filter_categories = config["common_filter_categories"] # --- 공통 필�
 industry_filter_categories = config["industry_filter_categories"] # --- 산업별 필터 옵션 ---
 SYNONYM_MAP = config["synonym_map"]
 kiscd_map = config.get("kiscd_map", {})
+kr_compcd_map = config.get("kr_COMP_CD_map", {})
 
 # 공통 필터 키워드 전체 리스트 생성
 ALL_COMMON_FILTER_KEYWORDS = []
@@ -227,18 +228,20 @@ def fetch_and_display_reports(companies_map):
         for company in favorite_categories[cat]:
             kiscd = companies_map.get(company, "")
             cmpcd = config.get("cmpCD_map", {}).get(company, "")
+            kr_compcd = kr_compcd_map.get(company, "")
             if not kiscd or not str(kiscd).strip():
                 continue
 
             url_kis = f"https://www.kisrating.com/ratingsSearch/corp_overview.do?kiscd={kiscd}"
             url_nice = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpcd}"
-
+            url_kie = f"https://www.kisrating.com/ratingsSearch/corpOverview.do?cpcd={kr_compcd}"
             with st.expander(
-                f"{company} (KISCD: {kiscd} | cmpCD: {cmpcd})", expanded=False
+                f"{company} (KISCD: {kiscd} | CMP_CD: {cmpcd} | KIE_CD: {kr_compcd})", expanded=False
             ):
                 st.markdown(
-                    f"- [📄 한국신용평가 평가/리서치 페이지 바로가기]({url_kis}) &nbsp;&nbsp;"
-                    f"[📄 나이스신용평가 평가/리서치 페이지 바로가기]({url_nice})",
+                    f"- [한국신용평가 (KIS)]({url_kis}) &nbsp;&nbsp; "
+                    f"[나이스신용평가 (NICE)]({url_nice}) &nbsp;&nbsp; "
+                    f"[한국기업평가 (KIE)]({url_kie})",
                     unsafe_allow_html=True
                 )
                 try:
