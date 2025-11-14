@@ -521,79 +521,79 @@ def get_industry_credit_keywords():
 석유화학: 경쟁력, 포트폴리오, 투자, 차입금, 세제, 재무관리, 업황민감도, 차입금비율, 자금조달, 인수합병, 수익성, 현금흐름, 자산유동화, 리스크분산, 시장점유율, 비용, 비핵심자산, 프로젝트관리, 세제혜택
 특수채: 준정부기관, 보증시장, 보증사고, 자본확충, 정부지원, 신용연계, 보증잔액, 리스크, 현금성자산, 단기부채, 미회수채권, 자산건전성, 운영안정성, 보증한도, 재무안정성, 시장지위, 관리체계, 정책, 채권발행, 지급유예, 불확실성
 """
+# --- REPLACE: summarizer with clearer roles (사실 vs 영향) ---
 def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=None):
     """
-    본문 분석(한 줄 요약 + 시사점 + 한 줄 시사점 추가).
-    target_keyword: 감성 판단의 초점을 맞출 기업/키워드
     반환: (one_line_summary, keywords, sentiment, detailed_implication, short_implication, original_text)
+    - 한 줄 요약: '무슨 일이 일어났는가' (사실 중심)
+    - 심층 시사점: 신용평가 코멘트 형식(등급/전망/유동성/현금흐름 등 영향) 3문장 이상
+    - 한 줄 시사점: 영향의 핵심 포인트만 축약
+    - 감성: 긍정/부정/중립
     """
     if not OPENAI_API_KEY:
         return "OpenAI API 키가 설정되지 않았습니다.", "", "감성 추출 실패", "", "", text
     if not text or "본문 추출 오류" in text:
         return "기사 본문이 추출 실패", "", "감성 추출 실패", "", "", text
 
-    lang = detect_lang(text)
     industry_keywords = get_industry_credit_keywords()
 
-    # 한국어 프롬프트만 사용, 영어 프롬프트 제거
     prompt = f"""
-[산업군별 신용평가 키워드]
+[참고: 산업군별 신용평가 키워드(참고용)]
 {industry_keywords}
 
-아래 기사 본문을 분석해 다음 내용을 순서대로 응답하시오.
-대상 기업/키워드: "{target_keyword or 'N/A'}"
+아래 [기사 본문]을 분석해 지정된 형식으로만 응답하시오.
+대상 기업: "{target_keyword or 'N/A'}"
 
-1. [심층 시사점]: 단순 요약이 아니라, 신용평가사의 의견서 형식으로 이 뉴스가 해당 기업의 신용등급(상향·하향·유지), 등급 전망, 재무 건전성, 현금흐름, 유동성, 시장·규제 환경, 재무/사업 리스크에 어떤 식으로 영향을 끼칠 수 있는지 구체적으로 분석(2~3문장 이상).
-2. [한 줄 시사점]: 위 시사점을 한 문장으로 요약하되, 핵심 키워드를 중심으로 해야하며, 단순 요약이 아님.
-3. [한 줄 요약]: 해당 뉴스에서 기업명을 중심으로 주체, 핵심 사건, 결과를 간단하게 한 문장으로 압축.
-4. [검색 키워드]: 해당 기사 검색에 사용된 키워드, 콤마로 구분.
-5. [감성]: 대상 기업에 대한 긍정 또는 부정 중 하나만.
-6. [주요 키워드]: 인물, 기업, 조직명만 콤마(,)로, 없으면 없음
-
-특히 [심층 시사점]에서는 아래 사항을 필수로 포함:
-- 등급 변동을 유발할 수 있는 직접적/간접적 사건 및 재무 지표 변화
-- 기업의 정책/시장/사업환경 변화에 따른 신용 리스크 요인과 등급 방향성
-- 동종업계나 과거 사례와 비교되는 차별화 지점(있으면 명시)
-- 단순 현상보고(한줄 요약)와 명확히 구분되는 신용평가사의 '심층 의견'을 2~3문장 이상으로 서술
-
+요구 형식:
+1. [한 줄 요약]: 사실 중심. 누가/무엇을/언제/어떻게 한 일을 한 문장으로.
+2. [심층 시사점]: 신용평가사의 코멘트 형식으로 등급/전망/재무안정성/현금흐름/유동성/사업·규제 환경 영향 분석(3문장 이상, 과도한 일반화 금지).
+3. [한 줄 시사점]: 영향의 핵심 포인트만 압축(예: '차입 확대로 단기유동성 부담 상승').
+4. [감성]: 긍정/부정/중립 중 하나.
+5. [검색 키워드]: 대상 기업명 또는 주요 엔티티 위주로 콤마 구분.
+6. [주요 키워드]: 인물/기업/기관명 중심으로 콤마 구분. 없으면 '없음'.
 
 [기사 본문]
 {text}
 """
-    role_content = "너는 신용평가 전문가이자 금융 뉴스 분석가이다. 정확하고 명확하게 분석하라."
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",              # 기존 gpt-3.5-turbo → gpt-4o-mini
             messages=[
-                {"role": "system", "content": role_content},
+                {"role": "system", "content": "너는 신용평가사 애널리스트다. 사실 기반으로만 판단하고 과장/추측을 피한다."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=900,
-            temperature=0
+            temperature=0.3                   # 0 → 0.3: 억지스러움 완화, 문장 자연스러움 개선
         )
         answer = response.choices[0].message.content.strip()
     except Exception as e:
         return f"요약 오류: {e}", "", "감성 추출 실패", "", "", text
 
-    # 정규식으로 결과 추출
+    # --- parser ---
     def extract_group(tag):
-        pattern = rf"\[{tag}\]:\s*([\s\S]+?)(?=\n\[\w+\]:|\n\d\. \[|$)"
+        # 태그별 블록 추출
+        pattern = rf"\[{tag}\]:\s*([\s\S]+?)(?=\n\[\w+\]:|\n\d+\. \[|$)"
         m = re.search(pattern, answer)
         return m.group(1).strip() if m else ""
 
+    one_line = extract_group("한 줄 요약") or "요약 추출 실패"
     detailed_implication = extract_group("심층 시사점") or "시사점 추출 실패"
     short_implication = extract_group("한 줄 시사점") or "한 줄 시사점 요약 실패"
-    one_line = extract_group("한 줄 요약") or "요약 추출 실패"
-    keywords = extract_group("검색 키워드") or ""
     sentiment = extract_group("감성") or "감성 추출 실패"
-    if sentiment.lower() == "positive" or sentiment == "긍정":
+    keywords = extract_group("검색 키워드") or ""
+    key_entities = extract_group("주요 키워드") or ""
+
+    # 감성 표준화
+    s = sentiment.strip().lower()
+    if "긍" in s or "positive" in s:
         sentiment = "긍정"
-    elif sentiment.lower() == "negative" or sentiment == "부정":
+    elif "부" in s or "negative" in s:
         sentiment = "부정"
+    elif "중립" in s or "neutral" in s:
+        sentiment = "중립"
     else:
         sentiment = "감성 추출 실패"
-    key_entities = extract_group("주요 키워드") or ""
 
     return one_line, keywords, sentiment, detailed_implication, short_implication, text
 
@@ -681,6 +681,7 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
         if k not in st.session_state.show_limit:
             st.session_state.show_limit[k] = 5
 
+# --- OPTIONAL: keep existing function, just ensure fallback args are passed ---
 def summarize_article_from_url(article_url, title, do_summary=True, target_keyword=None, description=None):
     cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
     summary_key = f"summary_{cache_key_base}"
@@ -691,7 +692,7 @@ def summarize_article_from_url(article_url, title, do_summary=True, target_keywo
     try:
         full_text = extract_article_text(article_url, fallback_desc=description, fallback_title=title)
         if full_text.startswith("본문 추출 오류"):
-            result = (full_text, "", "감성 추출 실패", "", "", full_text)  # 6개 요소 맞춤
+            result = (full_text, "", "감성 추출 실패", "", "", full_text)
         else:
             one_line, summary, sentiment, implication, short_implication, text = summarize_and_sentiment_with_openai(
                 full_text, do_summary=do_summary, target_keyword=target_keyword
@@ -1065,64 +1066,63 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
     return result
 
+# --- REPLACE: robust article text extractor ---
 def extract_article_text(url, fallback_desc=None, fallback_title=None):
     """
-    뉴스 기사 본문을 최대한 정확하게 추출
-    url: 기사 원문 URL
-    fallback_desc, fallback_title: 본문 추출 실패시 사용할 검색 API의 요약/제목
+    우선 newspaper로 시도 → 실패 시 BeautifulSoup <p> 기반 수동 추출 → 그래도 실패하면
+    title/description을 최소 텍스트로 반환하여 요약이 동작하도록 보장.
     """
-    # 포털 뉴스 차단
-    PORTAL_DOMAINS = ["news.naver.com", "n.news.naver.com", "news.daum.net"]
-    if any(domain in url for domain in PORTAL_DOMAINS):
-        return f"본문 추출 오류: 포털 뉴스 중계 URL입니다. originallink 사용 권장."
-
+    # 1) newspaper 1차 시도
     try:
-        # 1차 시도: newspaper3k
-        article = newspaper.Article(url, language='ko')
-        article.download()
-        article.parse()
-        text = article.text.strip()
+        import newspaper
+        art = newspaper.Article(url, language="ko")
+        art.download()
+        art.parse()
+        txt = (art.text or "").strip()
+        if len(txt) >= 300:
+            return txt
+    except Exception:
+        pass
 
-        # 불필요 문구 제거
-        text = re.sub(r"\S+@\S+", "", text)  # 이메일 제거
-        text = re.sub(r"▶.*", "", text)      # '▶'로 시작하는 행 제거
-        text = re.sub(r"(무단전재\s*및\s*재배포\s*금지.*$)", "", text)
+    # 2) BeautifulSoup fallback (<p> 기반)
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=12)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        # 2차: 텍스트 길이 검증 (글자가 너무 짧으면 fallback)
-        if len(text) < 100 and fallback_desc:
-            # 너무 짧으면 설명(description) 붙여서 보완
-            text = text + "\n\n" + fallback_desc
-        
-        return text
+        # 기사 컨테이너 우선 탐색
+        candidates = [
+            "article", ".article", ".news_body", "#articleBodyContents",
+            ".content", ".article-body", ".art_txt", ".article_view"
+        ]
+        blocks = []
+        for sel in candidates:
+            blocks.extend(soup.select(sel))
 
-    except Exception as e:
-        # 2차 시도: 직접 HTML 파싱
-        try:
-            resp = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
-            soup = BeautifulSoup(resp.text, "html.parser")
-            # 대표적인 한국 언론 본문 영역 선택자
-            selectors = [
-                "div#articleBodyContents", 
-                "div.article_body", 
-                "div#newsEndContents",
-                "div[itemprop='articleBody']"
-            ]
-            for sel in selectors:
-                body = soup.select_one(sel)
-                if body:
-                    # 텍스트 정제
-                    text = " ".join(body.get_text(separator=" ").split())
-                    text = re.sub(r"\S+@\S+", "", text)
-                    if len(text) > 200:
-                        return text
-        except Exception:
-            pass
+        paragraphs = []
+        if blocks:
+            for b in blocks:
+                paragraphs.extend(b.select("p"))
+        else:
+            paragraphs = soup.select("p")
 
-        # fallback: 제목 + 설명이라도 제공
-        if fallback_title or fallback_desc:
-            return f"[기사제목] {fallback_title or ''}\n[요약정보] {fallback_desc or ''}"
+        text = " ".join(
+            p.get_text(strip=True)
+            for p in paragraphs
+            if len(p.get_text(strip=True)) >= 30
+        )
+        text = " ".join(text.split())
+        if len(text) >= 200:
+            return text
+    except Exception:
+        pass
 
-        return f"본문 추출 오류: {e}"
+    # 3) 최소 보장 (설명/제목 기반)
+    if fallback_desc or fallback_title:
+        return f"{(fallback_title or '').strip()} {(fallback_desc or '').strip()}".strip()
+
+    return "본문 추출 오류"
     
 def extract_keyword_from_link(search_results, article_link):
     """
@@ -1860,3 +1860,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
