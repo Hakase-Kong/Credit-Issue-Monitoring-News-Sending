@@ -314,69 +314,31 @@ def expand_keywords_with_synonyms(original_keywords):
     return expanded_map
 
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
-    """ 
-    require_keyword_in_title=True 인 경우:
-      1차: 강한 필터(제목/본문에 키워드 포함)로 검색
-      → 결과(중복 제거 후)가 0건이면
-      2차: 같은 키워드 세트로 require_keyword_in_title=False로 재검색
-          이때 가져온 기사에는 relaxed_keyword_match=True 플래그를 달아서,
-          후단 필터(article_passes_all_filters)에서 '강제 키워드 포함' 조건에서 제외한다.
-    """
+    for main_kw, kw_list in favorite_to_expand_map.items():
+        all_articles = []
 
-    def run_search_for_kw_list(kw_list, start_date, end_date, require_flag, relaxed_flag=False):
-        all_articles_local = []
+        # 병렬 처리 시작
         with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
             futures = {
-                executor.submit(
-                    fetch_naver_news,
-                    search_kw,
-                    start_date,
-                    end_date,
-                    require_keyword_in_title=require_flag
-                ): search_kw
+                executor.submit(fetch_naver_news, search_kw, start_date, end_date, 
+                                require_keyword_in_title=require_keyword_in_title): search_kw
                 for search_kw in kw_list
             }
             for future in as_completed(futures):
                 search_kw = futures[future]
                 try:
                     fetched = future.result()
-                    # 각 기사에 검색어/완화 플래그 추가
-                    for a in fetched:
-                        a["검색어"] = search_kw
-                        if relaxed_flag:
-                            a["relaxed_keyword_match"] = True
-                    all_articles_local.extend(fetched)
+                    # 각 기사에 검색어 정보 추가
+                    fetched = [{**a, "검색어": search_kw} for a in fetched]
+                    all_articles.extend(fetched)
                 except Exception as e:
-                    st.warning(f"{search_kw} 검색 실패: {e}")
-        # 중복 제거 옵션
+                    st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
+
+        # 중복 제거 여부
         if st.session_state.get("remove_duplicate_articles", False):
-            all_articles_local = remove_duplicates(all_articles_local)
-        return all_articles_local
+            all_articles = remove_duplicates(all_articles)
 
-    for main_kw, kw_list in favorite_to_expand_map.items():
-        # 1차: 현재 체크박스 값(require_keyword_in_title) 그대로 적용
-        articles = run_search_for_kw_list(
-            kw_list,
-            start_date,
-            end_date,
-            require_flag=require_keyword_in_title,
-            relaxed_flag=False,
-        )
-
-        # 2차 Fallback:
-        # - 강력 필터(require_keyword_in_title=True) 상태이고
-        # - 1차 검색(중복 제거까지 적용 후) 결과가 0건인 경우에만
-        #   → 해당 main_kw에 한해서만 필터를 완화해서 다시 검색
-        if require_keyword_in_title and not articles:
-            articles = run_search_for_kw_list(
-                kw_list,
-                start_date,
-                end_date,
-                require_flag=False,          # 제목/본문 키워드 강제 조건 해제
-                relaxed_flag=True,          # 후단 필터에서 '완화 케이스'로 인식
-            )
-
-        st.session_state.search_results[main_kw] = articles
+        st.session_state.search_results[main_kw] = all_articles
         if main_kw not in st.session_state.show_limit:
             st.session_state.show_limit[main_kw] = 5
 
@@ -759,91 +721,65 @@ def or_keyword_filter(article, *keyword_lists):
     return False
 
 def article_contains_exact_keyword(article, keywords):
-    """제목/본문(요약/본문 캐시 포함)에 키워드가 하나라도 정확히 포함되면 True"""
-    if not keywords:
-        return False
-
-    # 기본 텍스트: 제목 + 네이버 description
-    text_parts = [
-        article.get("title", "") or "",
-        article.get("description", "") or "",
-    ]
-
-    # 요약/본문이 이미 캐시에 있으면 같이 검색에 포함
-    link = article.get("link", "") or ""
-    if link:
-        cache_key_base = re.sub(r"\W+", "", link)[-16:]
-        summary_key = f"summary_{cache_key_base}"
-        cached = st.session_state.get(summary_key)
-        if isinstance(cached, tuple):
-            # (one_line, summary, sentiment, implication, short_implication, full_text)
-            one_line = cached[0] if len(cached) > 0 else ""
-            summary = cached[1] if len(cached) > 1 else ""
-            full_text = cached[5] if len(cached) > 5 else ""
-            text_parts.extend([one_line or "", summary or "", full_text or ""])
-
-    text = " ".join(text_parts)
-
+    title = article.get("title", "")
+    content = ""
+    cache_key = article.get("link", "")
+    summary_cache_key = None
+    for key in st.session_state.keys():
+        if key.startswith("summary_") and cache_key in key:
+            summary_cache_key = key
+            break
+    if summary_cache_key and isinstance(st.session_state[summary_cache_key], tuple):
+        _, _, _, content = st.session_state[summary_cache_key]
     for kw in keywords:
-        if kw and kw in text:
+        if kw and (kw in title or (content and kw in content)):
             return True
     return False
 
 def article_passes_all_filters(article):
-    # 1) 제목에 제외 키워드가 포함되면 무조건 제외
+    # 제목에 제외 키워드가 포함되면 제외
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
 
-    # 2) 날짜 범위 필터링
+    # 날짜 범위 필터링
     try:
         pub_date = datetime.strptime(article['date'], '%Y-%m-%d').date()
         if pub_date < st.session_state.get("start_date") or pub_date > st.session_state.get("end_date"):
             return False
-    except Exception:
+    except:
         return False
 
-    # 3) 키워드 집합 구성: 직접 입력 + 선택 카테고리의 회사 리스트
+    # 키워드 필터: 입력 키워드 및 카테고리 키워드 집합 준비
     all_keywords = []
-    if "keyword_input" in st.session_state and st.session_state["keyword_input"]:
+    if "keyword_input" in st.session_state:
         all_keywords.extend([k.strip() for k in st.session_state["keyword_input"].split(",") if k.strip()])
     if "cat_multi" in st.session_state:
         for cat in st.session_state["cat_multi"]:
             all_keywords.extend(favorite_categories.get(cat, []))
 
-    # 강력 키워드 필터 여부
-    require_kw = st.session_state.get("require_exact_keyword_in_title_or_content", False)
-    # 이 기사가 fallback(필터 완화) 검색으로 가져온 기사인지 여부
-    relaxed = article.get("relaxed_keyword_match", False)
+    # 키워드 필터(입력 및 카테고리 키워드) 통과 여부
+    keyword_passed = article_contains_exact_keyword(article, all_keywords)
 
-    # 4) 키워드 필터 통과 여부
-    #    - 강력필터 ON & fallback 아님 & 키워드 존재 → 제목/본문에 반드시 포함
-    #    - 그 외(체크박스 OFF, 키워드 없음, fallback 기사)는 True 로 완화
-    if require_kw and not relaxed and all_keywords:
-        keyword_passed = article_contains_exact_keyword(article, all_keywords)
-    else:
-        keyword_passed = True
-
-    # 5) 언론사 도메인 필터
+    # 언론사 도메인 필터링 (특정 언론사만 필터링)
     if st.session_state.get("filter_allowed_sources_only", True):
-        source = (article.get('source', '') or '').lower()
+        source = article.get('source', '').lower()
         if source.startswith("www."):
             source = source[4:]
         if source not in ALLOWED_SOURCES:
             return False
 
-    # 6) 공통 필터(항상 AND)
+    # 공통 필터 조건 (AND 조건, 즉 반드시 통과해야 함)
     common_passed = or_keyword_filter(article, ALL_COMMON_FILTER_KEYWORDS)
     if not common_passed:
         return False
 
-    # 7) 산업별 필터 (선택적)
+    # 산업별 필터 조건 (OR 조건)
     industry_passed = True
     if st.session_state.get("use_industry_filter", False):
-        industry_passed = False
-        keyword_for_mapping = article.get("키워드")
+        keyword = article.get("키워드")  # 회사명 또는 키워드 항목명
         matched_major = None
         for cat, companies in favorite_categories.items():
-            if keyword_for_mapping in companies:
+            if keyword in companies:
                 majors = get_industry_majors_from_favorites([cat])
                 if majors:
                     matched_major = majors[0]
@@ -853,20 +789,8 @@ def article_passes_all_filters(article):
             if sub_keyword_filter:
                 industry_passed = or_keyword_filter(article, sub_keyword_filter)
 
-    # 8) 최종 판단
-    #    - 강력 키워드 필터가 ON 인 경우:
-    #        → keyword_passed=False 이면 무조건 제외
-    #        → 산업필터는 추가 조건(체크 시 통과 필요)
-    if require_kw:
-        if not keyword_passed:
-            return False
-        if st.session_state.get("use_industry_filter", False) and not industry_passed:
-            return False
-        return True
-
-    #    - 강력 키워드 필터가 OFF 인 경우:
-    #        → 공통필터는 이미 통과했으므로,
-    #        → 산업필터 또는 키워드필터 중 하나만 통과해도 허용
+    # 최종 필터링: 공통 필터는 반드시 통과하고,
+    # 산업별 필터나 키워드 필터 중 하나라도 통과하면 통과
     if not (industry_passed or keyword_passed):
         return False
 
@@ -2055,4 +1979,3 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
