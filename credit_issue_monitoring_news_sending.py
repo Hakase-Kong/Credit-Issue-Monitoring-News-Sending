@@ -147,11 +147,6 @@ def extract_credit_details(html):
     return results
 
 def fetch_and_display_reports(companies_map):
-    import pandas as pd
-    import requests
-    import time
-    from bs4 import BeautifulSoup
-
     def extract_table_after_marker(soup, marker_str):
         marker = None
         for tag in soup.find_all(['b', 'strong', 'h2', 'h3', 'span']):
@@ -201,25 +196,35 @@ def fetch_and_display_reports(companies_map):
     def fetch_nice_rating_data(cmpCd):
         if not cmpCd:
             return {"major_grade_df": pd.DataFrame(), "special_reports": []}
+
+        # ---- 여기부터 캐시 추가 ----
+        if "nice_rating_cache" not in st.session_state:
+            st.session_state["nice_rating_cache"] = {}
+        cache = st.session_state["nice_rating_cache"]
+        if cmpCd in cache:
+            return cache[cmpCd]
+        # ---------------------------
+
         url = f"https://www.nicerating.com/disclosure/companyGradeInfo.do?cmpCd={cmpCd}"
         try:
             resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, 'html.parser')
-            major_grade_table_tag = extract_table_after_marker(soup, '주요 등급내역')
-            special_report_table_tag = extract_table_after_marker(soup, '스페셜 리포트')
-            major_grade_df = parse_grade_table_html(major_grade_table_tag) if major_grade_table_tag else pd.DataFrame()
-            special_reports = table_to_list(special_report_table_tag) if special_report_table_tag else []
-            return {
+            ...
+            result = {
                 "major_grade_df": major_grade_df,
                 "special_reports": special_reports,
             }
+            cache[cmpCd] = result   # ← 성공 결과 캐시에 저장
+            return result
         except Exception as e:
-            return {
+            result = {
                 "major_grade_df": pd.DataFrame(),
                 "special_reports": [],
                 "error": f"나이스 신용평가 데이터 로드 오류: {e}"
             }
+            cache[cmpCd] = result   # 에러도 캐시에 저장해 반복 호출 방지
+            return result
 
     st.markdown("---")
     st.markdown("### 📑 신용평가 보고서 및 관련 리서치")
@@ -238,69 +243,39 @@ def fetch_and_display_reports(companies_map):
             with st.expander(
                 f"{company} (KISCD: {kiscd} | CMP_CD: {cmpcd} | KIE_CD: {kr_compcd})", expanded=False
             ):
-                st.markdown(
-                    f"- [한국신용평가 (KIS)]({url_kis}) &nbsp;&nbsp; "
-                    f"[나이스신용평가 (NICE)]({url_nice}) &nbsp;&nbsp; "
-                    f"[한국기업평가 (KIE)]({url_kie})",
-                    unsafe_allow_html=True
-                )
+                st.markdown(...)
                 try:
-                    resp = requests.get(url_kis, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-                    if resp.status_code == 200:
-                        html = resp.text
+                    # ---- 캐시 준비 ----
+                    if "kis_rating_cache" not in st.session_state:
+                        st.session_state["kis_rating_cache"] = {}
+                    kis_cache = st.session_state["kis_rating_cache"]
+            
+                    html = None
+                    if url_kis in kis_cache:
+                        html = kis_cache[url_kis]
+                    else:
+                        resp = requests.get(url_kis, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+                        if resp.status_code == 200:
+                            html = resp.text
+                            kis_cache[url_kis] = html   # 성공 시 캐시에 저장
+                        else:
+                            st.warning("한국신용평가 정보를 불러올 수 없습니다.")
+                    # ------------------
+            
+                    if html:
                         report_data = extract_reports_and_research(html)
-
+            
                         if report_data.get("평가리포트"):
                             with st.expander("평가리포트", expanded=True):
-                                st.markdown("### 한국신용평가 평가리포트")
-                                df_report = pd.DataFrame(report_data["평가리포트"])
-                                df_report = df_report.drop(columns=["다운로드"], errors="ignore")
-                                st.dataframe(df_report)
-
+                                ...
                         if report_data.get("관련리서치"):
                             with st.expander("관련리서치", expanded=True):
-                                st.markdown("### 한국신용평가 관련 리서치")
-                                df_research = pd.DataFrame(report_data["관련리서치"])
-                                df_research = df_research.drop(columns=["다운로드"], errors="ignore")
-                                st.dataframe(df_research)
-
-                                nice_data = fetch_nice_rating_data(cmpcd)
-                                special_reports = nice_data.get("special_reports", [])
-                                st.markdown("#### 나이스 신용평가 스페셜 리포트")
-                                if special_reports and len(special_reports) > 1:
-                                    header = special_reports[0]
-                                    filtered_rows = [row for row in special_reports[1:] if len(row) == len(header)]
-                                    if filtered_rows:
-                                        df_special = pd.DataFrame(filtered_rows, columns=header)
-                                        st.dataframe(df_special)
-                                    else:
-                                        st.info("표 형식이 맞는 데이터가 없습니다. (스페셜 리포트)")
-                                else:
-                                    st.info("스페셜 리포트 데이터가 없습니다.")
-                                if nice_data.get("error"):
-                                    st.warning(nice_data["error"])
-
+                                ...
                         credit_detail_list = extract_credit_details(html)
                         with st.expander("신용등급 상세정보", expanded=True):
-                            if credit_detail_list:
-                                st.markdown("### 한국신용평가 신용등급 상세정보")
-                                df_credit_detail = pd.DataFrame(credit_detail_list)
-                                st.dataframe(df_credit_detail)
-                            else:
-                                st.info("신용등급 상세정보가 없습니다.")
-
-                            st.markdown("#### 나이스 신용평가 주요 등급내역")
-                            nice_data = fetch_nice_rating_data(cmpcd)
-                            major_grade_df = nice_data.get("major_grade_df", pd.DataFrame())
-                            if not major_grade_df.empty:
-                                st.dataframe(major_grade_df)
-                            else:
-                                st.info("주요 등급내역 데이터가 없습니다.")
-                            if nice_data.get("error"):
-                                st.warning(nice_data["error"])
-
+                            ...
                     else:
-                        st.warning("한국신용평가 정보를 불러올 수 없습니다.")
+                        st.info("KIS HTML을 가져오지 못했습니다.")
                 except Exception as e:
                     st.warning(f"신용평가 정보 파싱 오류: {e}")
 
@@ -1261,10 +1236,18 @@ def render_articles_with_single_summary_and_telegram(
                             value=prev_value,
                             key=f"{company}_select_all"
                         )
+
+                        # 마스터 체크박스 값이 바뀐 경우 → 개별 기사 체크박스와 상태를 모두 동기화
                         if select_all != prev_value:
                             for k in all_article_keys:
+                                # 내부 상태
                                 st.session_state.article_checked[k] = select_all
                                 st.session_state.article_checked_left[k] = select_all
+
+                                # 실제 체크박스 위젯 상태도 함께 변경
+                                widget_key = f"news_{k}"
+                                st.session_state[widget_key] = select_all
+
                             st.rerun()
 
                         for idx, article in enumerate(articles):
@@ -1852,12 +1835,16 @@ if st.session_state.get("search_results"):
     kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
     cmpcd_filtered = {c: config.get("cmpCD_map", {}).get(c, "") for c in selected_companies}
 
-    # 두 맵을 합치는 함수 (kiscd_filtered 기본에 cmpcd_filtered도 합칠 수 있도록)
-    # fetch_and_display_reports가 kiscd만 받으므로 확장 필요
-    # 여기서는 kiscd_filtered 넘기고, fetch_and_display_reports 내부에서 cmpCD_map 참조 권장
+    # 신용평가 패널 표시 여부 선택
+    show_credit_panel = st.checkbox(
+        "신용평가 보고서/리서치 패널 표시",
+        value=st.session_state.get("show_credit_panel", False),
+        key="show_credit_panel"
+    )
 
-    fetch_and_display_reports(kiscd_filtered)
-
+    if show_credit_panel:
+        fetch_and_display_reports(kiscd_filtered)
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
