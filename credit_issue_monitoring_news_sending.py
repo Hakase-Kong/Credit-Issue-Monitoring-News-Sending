@@ -988,9 +988,9 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
 
 def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
     """
-    OpenAI를 이용해 '신용평가 관점에서 중요한 기사' 2건을 자동 선정.
+    OpenAI를 이용해 '신용평가 관점에서 중요한 기사'를 자동 선정.
     - 각 기사에 대해 신용영향도(1~5점)를 평가하게 하고
-    - 4~5점 기사 우선, 없으면 3점 기사 중에서 상위 2건을 선택하도록 프롬프트를 설계.
+    - 반드시 5점 기사만 자동 선정 대상으로 사용.
     - 결과는 기사 번호 기반으로 파싱하여 원본 기사(dict)를 반환.
     """
     import os
@@ -1008,7 +1008,9 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
         for line in raw_text.strip().split("\n"):
             if ":" in line:
                 sector, keywords = line.split(":", 1)
-                industry_dict[sector.strip()] = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+                industry_dict[sector.strip()] = [
+                    kw.strip() for kw in keywords.split(",") if kw.strip()
+                ]
         return industry_dict
 
     industry_keywords_dict = parse_industry_keywords()
@@ -1040,7 +1042,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 [f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)]
             )
 
-            # --- 프롬프트 튜닝: 신용영향도(1~5점) 평가 + 상위 2건 번호만 반환 ---
+            # --- 프롬프트: 5점 기사만 자동 선정 ---
             guideline = f"""
 당신은 신용평가사 애널리스트입니다.
 
@@ -1057,12 +1059,14 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 분석의 초점은 반드시 "{comp}" 기업(또는 키워드)이며,
 "{category}" 산업의 신용평가 관점에서 각 뉴스가 신용도에 미치는 영향도를 위 기준으로 평가하십시오.
 
-지시사항:
+[지시사항]
 1. 각 기사 번호별로 신용영향도 점수(1~5점)를 한 번씩만 매기십시오.
-2. 4점 또는 5점인 기사 중에서 가장 중요한 2건을 우선적으로 선택하십시오.
-3. 4~5점인 기사가 2건보다 적다면, 부족한 개수만큼 3점 기사 중에서 상대적으로 중요한 기사를 선택하십시오.
-4. 그래도 2건이 안 되면 남은 기사 중에서 그나마 신용 관련성이 높은 것을 채워 넣으십시오.
-5. 최종적으로 선택한 기사 2건의 "번호"만 반환하십시오.
+2. 반드시 **5점인 기사만** '중요 기사 후보'로 간주하십시오.
+3. 5점인 기사 중에서 가장 중요한 기사 최대 2건의 "번호"만 선택하십시오.
+   - 5점 기사 2건 이상이면 그 중에서 상위 2건만 선택하십시오.
+   - 5점 기사 1건이면 그 1건만 선택하십시오.
+   - 5점 기사 0건이면 어떤 기사도 선택하지 마십시오.
+4. 선택된 번호가 없을 수도 있습니다. 이 경우에도 아래 [선정] 형식은 유지하되 '없음'이라고 적으십시오.
 
 출력 형식은 반드시 아래 형식만 사용하십시오. 설명 문장은 넣지 마십시오.
 
@@ -1072,8 +1076,8 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 ...
 
 [선정]
-[중요1]: (기사번호)
-[중요2]: (기사번호)
+[중요1]: (기사번호 또는 없음)
+[중요2]: (기사번호 또는 없음)
 """
 
             try:
@@ -1081,48 +1085,43 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": guideline}],
                     max_tokens=600,
-                    temperature=0
+                    temperature=0,
                 )
                 answer = response.choices[0].message.content.strip()
+
+                # --- [평가]에서 각 기사 점수 파싱 ---
+                score_map = {}
+                for line in answer.splitlines():
+                    m = re.match(r"(\d+)번\s*:\s*([0-9]+)", line.strip())
+                    if m:
+                        no = int(m.group(1))
+                        score = int(m.group(2))
+                        score_map[no] = score
 
                 # --- 선택된 기사 번호 파싱 ---
                 sel1_match = re.search(r"\[중요 ?1\]\s*:\s*(\d+)", answer)
                 sel2_match = re.search(r"\[중요 ?2\]\s*:\s*(\d+)", answer)
 
-                selected_indexes = []
+                raw_selected = []
                 if sel1_match:
-                    try:
-                        idx1 = int(sel1_match.group(1)) - 1
-                        if 0 <= idx1 < len(target_articles):
-                            selected_indexes.append(idx1)
-                    except ValueError:
-                        pass
+                    raw_selected.append(int(sel1_match.group(1)))
                 if sel2_match:
-                    try:
-                        idx2 = int(sel2_match.group(1)) - 1
-                        if 0 <= idx2 < len(target_articles) and idx2 not in selected_indexes:
-                            selected_indexes.append(idx2)
-                    except ValueError:
-                        pass
+                    raw_selected.append(int(sel2_match.group(1)))
 
-                # 파싱에 실패하거나 0건인 경우: 상위 2건(그냥 최근순)으로 fallback
+                selected_indexes = []
+                for no in raw_selected:
+                    idx0 = no - 1
+                    # ✅ 실제 점수가 5점인 것만 유지
+                    if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
+                        if idx0 not in selected_indexes:
+                            selected_indexes.append(idx0)
+
+                # ✅ 5점이 없으면 skip
                 if not selected_indexes:
-                    selected_indexes = list(range(min(2, len(target_articles))))
-
-                # 선택된 기사들을 result에 추가
-                for idx in selected_indexes:
-                    a = target_articles[idx]
-                    result.append({
-                        "키워드": comp,
-                        "기사제목": a.get("title", ""),
-                        "링크": a.get("link", ""),
-                        "날짜": a.get("date", ""),
-                        "출처": a.get("source", ""),
-                        "시사점": ""  # 시사점은 이후 요약 단계에서 채우거나 수동 편집
-                    })
-
+                    continue
+                    
             except Exception:
-                # OpenAI 호출 실패 시 해당 회사는 그냥 건너뜀
+                # 에러 시 이 회사에 대해서는 자동선정 건너뜀
                 continue
 
     return result
@@ -1579,55 +1578,85 @@ def render_important_article_review_and_download():
                         one_line_map[key] = data_tuple
 
         new_selection = []
+        if to_summarize:
+            with st.spinner("중요 기사 요약 생성 중."):
+                def get_one_line(args):
+                    major, minor, idx, link, title = args
+                    one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
+                        link, title, do_summary=True
+                    )
+                    return (major, minor, idx), (one_line, summary, sentiment, implication, short_implication, full_text)
+
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for key, data_tuple in executor.map(get_one_line, to_summarize):
+                        one_line_map[key] = data_tuple
+
+        new_selection = []
+
         for major, minor_map in major_map.items():
             with st.expander(f"📊 {major}", expanded=True):
                 for minor, arts in minor_map.items():
                     with st.expander(f"{minor} ({len(arts)}건)", expanded=False):
                         for idx, article in enumerate(arts):
                             check_key = f"important_chk_{major}_{minor}_{idx}"
+
                             # 한 줄에 체크박스 + 감성 + 기사제목 하이퍼링크 배치
                             cols = st.columns([0.06, 0.94])
+
+                            # ✅ 왼쪽: 체크박스
                             with cols[0]:
                                 checked = st.checkbox(
-                                "",
-                                key=check_key,
-                                value=(check_key in selected_indexes)
-                            )
+                                    "",
+                                    key=check_key,
+                                    value=((major, minor, idx) in selected_indexes),
+                                )
+
+                            # ✅ 오른쪽: 기사 정보 및 시사점
+                            with cols[1]:
+                                st.markdown(
+                                    f"{article.get('감성','')} | "
+                                    f"<a href='{article.get('링크','')}' target='_blank'>"
+                                    f"{article.get('기사제목','제목없음')}</a>",
+                                    unsafe_allow_html=True,
+                                )
+
+                                # 시사점 및 한줄 시사점 출력
+                                summary_data = one_line_map.get((major, minor, idx))
+                                implication_text = ""
+                                short_implication_text = ""
+
+                                if summary_data and len(summary_data) == 6:
+                                    implication_text = summary_data[3] or ""       # 시사점
+                                    short_implication_text = summary_data[4] or ""  # 한줄 시사점
+                                else:
+                                    implication_text = article.get("시사점", "") or ""
+                                    short_implication_text = article.get("한줄시사점", "") or ""
+
+                                if implication_text:
+                                    st.markdown(implication_text)
+                                if short_implication_text:
+                                    st.markdown(
+                                        f"<span style='color:gray;font-style:italic;'>{short_implication_text}</span>",
+                                        unsafe_allow_html=True,
+                                    )
+
+                                st.markdown(
+                                    f"<span style='font-size:12px;color:#99a'>"
+                                    f"{article.get('날짜', '')} | {article.get('출처', '')}</span>",
+                                    unsafe_allow_html=True,
+                                )
+
+                                st.markdown(
+                                    "<div style='margin:0px;padding:0px;height:4px'></div>",
+                                    unsafe_allow_html=True,
+                                )
+
+                            # ✅ 선택 상태 반영
                             if checked:
                                 new_selection.append((major, minor, idx))
-                        with cols[1]:
-                            st.markdown(
-                                f"{article.get('감성','')} | <a href='{article.get('링크','')}' target='_blank'>{article.get('기사제목','제목없음')}</a>",
-                                unsafe_allow_html=True
-                            )
-
-                            # 시사점 및 한줄 시사점 출력
-                            summary_data = one_line_map.get((major, minor, idx))
-                            implication_text = ""
-                            short_implication_text = ""
-                            if summary_data and len(summary_data) == 6:
-                                implication_text = summary_data[3] or ""       # 시사점
-                                short_implication_text = summary_data[4] or ""  # 한줄 시사점
-                            else:
-                                implication_text = article.get("시사점", "") or ""
-                                short_implication_text = article.get("한줄시사점", "") or ""
-
-                            if implication_text:
-                                st.markdown(implication_text)
-                            if short_implication_text:
-                                st.markdown(f"<span style='color:gray;font-style:italic;'>{short_implication_text}</span>", unsafe_allow_html=True)
-
-                            st.markdown(
-                                f"<span style='font-size:12px;color:#99a'>{article.get('날짜', '')} | {article.get('출처', '')}</span>",
-                                unsafe_allow_html=True
-                            )
-                            if checked:
-                                new_selection.append((major, minor, idx))
-
-                            st.markdown("<div style='margin:0px;padding:0px;height:4px'></div>", unsafe_allow_html=True)
 
         st.session_state["important_selected_index"] = new_selection
-
+        
         # 추가 / 삭제 / 교체 버튼 및 해당 기능 (기존 코드 유지)
         col_add, col_del, col_rep = st.columns([0.3, 0.35, 0.35])
         with col_add:
@@ -1950,7 +1979,3 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
-
-
-
