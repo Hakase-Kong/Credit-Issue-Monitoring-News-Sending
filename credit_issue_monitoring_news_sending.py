@@ -1255,17 +1255,25 @@ def render_articles_with_single_summary_and_telegram(
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
                             key = f"{company}_{idx}_{uid}"
                             all_article_keys.append(key)
-                        prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
-                        select_all = st.checkbox(
-                            f"전체 기사 선택/해제 ({company})",
-                            value=prev_value,
-                            key=f"{company}_select_all"
-                        )
-                        if select_all != prev_value:
-                            for k in all_article_keys:
-                                st.session_state.article_checked[k] = select_all
-                                st.session_state.article_checked_left[k] = select_all
-                            st.rerun()
+                            prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
+                            select_all = st.checkbox(
+                                f"전체 기사 선택/해제 ({company})",
+                                value=prev_value,
+                                key=f"{company}_select_all"
+                            )
+                            
+                            # 마스터 체크박스 값이 바뀐 경우 → 개별 기사 체크박스와 상태를 모두 동기화
+                            if select_all != prev_value:
+                                for k in all_article_keys:
+                                    # 내부 상태
+                                    st.session_state.article_checked[k] = select_all
+                                    st.session_state.article_checked_left[k] = select_all
+                            
+                                    # 실제 체크박스 위젯 상태도 함께 변경
+                                    widget_key = f"news_{k}"
+                                    st.session_state[widget_key] = select_all
+                            
+                                st.rerun()
 
                         for idx, article in enumerate(articles):
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
@@ -1860,3 +1868,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
