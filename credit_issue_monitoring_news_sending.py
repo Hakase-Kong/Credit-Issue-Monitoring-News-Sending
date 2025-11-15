@@ -381,7 +381,8 @@ def init_session_state():
         "use_industry_filter": True,
         "show_sentiment_badge": False,
         "enable_summary": True,
-        "keyword_input": ""
+        "keyword_input": "",
+        "credit_companies_map": {}
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -1835,35 +1836,34 @@ if st.session_state.get("search_results"):
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
+    # 🔹 현재 선택된 카테고리 기준으로 기업 목록 및 KISCD 매핑 갱신
     selected_companies = []
     for cat in st.session_state.get("cat_multi", []):
         selected_companies.extend(favorite_categories.get(cat, []))
     selected_companies = list(set(selected_companies))
 
-    # kiscd_map과 cmpCD_map 모두에서 회사명에 매칭되는 키 값 가져오기
     kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
-    cmpcd_filtered = {c: config.get("cmpCD_map", {}).get(c, "") for c in selected_companies}
 
-    # 마지막으로 유효했던 kiscd 맵을 세션에 보관
+    # 이번 런에서 유효한 맵이 있으면 세션에 저장 (항상 같은 키 사용)
     if kiscd_filtered:
-        st.session_state["last_kiscd_filtered"] = kiscd_filtered
-
-    # 신용평가 패널 표시 여부 선택
-    show_credit_panel = st.checkbox(
-        "신용평가 보고서/리서치 패널 표시",
-        key="show_credit_panel"
-    )
-
-    if show_credit_panel:
-        # 현재 계산된 게 비어 있으면, 직전에 썼던 값(검색 결과 있을 때)을 사용
-        companies_map = st.session_state.get("last_kiscd_filtered", kiscd_filtered)
-        if companies_map:
-            fetch_and_display_reports(companies_map)
-        else:
-            st.info("선택된 기업에 매핑된 KISCD가 없습니다.")
+        st.session_state["credit_companies_map"] = kiscd_filtered
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
 
 
+# --- 신용평가 보고서/리서치 패널 (뉴스 검색 결과 여부와 무관하게, 세션 상태 기반으로 표시) ---
+show_credit_panel = st.checkbox(
+    "신용평가 보고서/리서치 패널 표시",
+    key="show_credit_panel"
+)
 
+if show_credit_panel:
+    # 항상 세션에 저장된 최종 확정 기업맵만 사용
+    companies_map = st.session_state.get("credit_companies_map", {})
+
+    if companies_map:
+        fetch_and_display_reports(companies_map)
+    else:
+        st.info("선택된 기업에 매핑된 KISCD가 없습니다. "
+                "상단에서 산업/기업을 선택하고 뉴스 검색을 먼저 실행해 주세요.")
