@@ -347,9 +347,18 @@ st.markdown("""
 <style>
 [data-testid="column"] > div { gap: 0rem !important; }
 .stMultiSelect [data-baseweb="tag"] { background-color: #ff5c5c !important; color: white !important; border: none !important; font-weight: bold; }
-.sentiment-badge { display: inline-block; padding: 0.08em 0.6em; margin-left: 0.2em; border-radius: 0.8em; font-size: 0.85em; font-weight: bold; vertical-align: middle; }
+.sentiment-badge { 
+    display: inline-block; 
+    padding: 0.08em 0.6em; 
+    margin-left: 0.2em; 
+    border-radius: 0.8em; 
+    font-size: 0.85em; 
+    font-weight: bold; 
+    vertical-align: middle; 
+}
 .sentiment-positive { background: #2ecc40; color: #fff; }
 .sentiment-negative { background: #ff4136; color: #fff; }
+.sentiment-neutral  { background: #6c757d; color: #fff; }
 .stBox { background: #fcfcfc; border-radius: 0.7em; border: 1.5px solid #e0e2e6; margin-bottom: 1.2em; padding: 1.1em 1.2em 1.2em 1.2em; box-shadow: 0 2px 8px 0 rgba(0,0,0,0.03); }
 .flex-row-bottom { display: flex; align-items: flex-end; gap: 0.5rem; margin-bottom: 0.5rem; }
 .flex-grow { flex: 1 1 0%; }
@@ -1291,7 +1300,7 @@ def render_articles_with_single_summary_and_telegram(
                                 if show_sentiment_badge and cache_key in st.session_state:
                                     _, _, sentiment, _, _ = st.session_state[cache_key]
                                 badge_html = (
-                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>"
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>{sentiment}</span>"
                                     if sentiment else ""
                                 )
                                 search_word_info = f" | 검색어: {article.get('검색어', '')}" if article.get("검색어") else ""
@@ -1369,7 +1378,7 @@ def render_articles_with_single_summary_and_telegram(
                                 total_selected_count += 1
                                 st.markdown(
                                     f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
-                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-neutral')}'>{art['감성']}</span>",
                                     unsafe_allow_html=True
                                 )
                                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
