@@ -1268,9 +1268,9 @@ def render_articles_with_single_summary_and_telegram(
                             select_all = st.checkbox(
                                 f"전체 기사 선택/해제 ({company})",
                                 value=prev_value,
-                                key=f"{company}_select_all"
+                                key=f"{category_name}_{company}_select_all"
                             )
-                            
+                           
                             # 마스터 체크박스 값이 바뀐 경우 → 개별 기사 체크박스와 상태를 모두 동기화
                             if select_all != prev_value:
                                 for k in all_article_keys:
@@ -1877,4 +1877,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
