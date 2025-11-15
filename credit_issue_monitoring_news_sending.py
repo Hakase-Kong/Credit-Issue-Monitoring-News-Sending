@@ -987,6 +987,12 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     return output
 
 def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
+    """
+    OpenAI를 이용해 '신용평가 관점에서 중요한 기사' 2건을 자동 선정.
+    - 각 기사에 대해 신용영향도(1~5점)를 평가하게 하고
+    - 4~5점 기사 우선, 없으면 3점 기사 중에서 상위 2건을 선택하도록 프롬프트를 설계.
+    - 결과는 기사 번호 기반으로 파싱하여 원본 기사(dict)를 반환.
+    """
     import os
     from openai import OpenAI
     import re
@@ -995,7 +1001,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     client = OpenAI(api_key=OPENAI_API_KEY)
     result = []
 
-    # 기존 함수 내에 섹터별 키워드 파싱 처리 포함
+    # 섹터별 키워드 파싱 (get_industry_credit_keywords() 기반)
     def parse_industry_keywords():
         raw_text = get_industry_credit_keywords()
         industry_dict = {}
@@ -1007,70 +1013,116 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
     industry_keywords_dict = parse_industry_keywords()
 
+    # ---- 각 카테고리(섹터) / 회사별로 중요 기사 선정 ----
     for category, companies in favorites.items():
-        # 카테고리명(category)에 해당하는 섹터 키워드 얻기
         sector_keywords = industry_keywords_dict.get(category, [])
 
         for comp in companies:
             articles = search_results.get(comp, [])
+            if not articles:
+                continue
 
-            # 섹터 핵심 키워드가 기사 내 포함된 경우만 필터링
+            # 섹터 키워드가 제목/설명에 어느 정도 포함된 기사만 1차 필터
             target_articles = []
             for a in articles:
                 text = (a.get("title", "") + " " + a.get("description", "")).lower()
-                if any(kw.lower() in text for kw in sector_keywords):
+                if sector_keywords and any(kw.lower() in text for kw in sector_keywords):
+                    target_articles.append(a)
+                elif not sector_keywords:
+                    # 섹터 키워드가 정의되지 않은 경우에는 전부 후보로 사용
                     target_articles.append(a)
 
             if not target_articles:
                 continue
 
-            prompt_list = "\n".join([f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)])
-
-            prompt = (
-                f"[기사 목록]\n{prompt_list}\n\n"
-                f"분석의 초점은 반드시 '{comp}' 기업(또는 키워드)이며, "
-                f"'{category}' 산업의 신용평가 핵심 이슈 키워드({', '.join(sector_keywords[:10])}...)가 포함된 뉴스 중\n"
-                "신용 평가 관점에서 중요한 뉴스 2건을 선정해 주세요.\n"
-                "감성 판단은 필요 없으며, 중요도에 따라 자유롭게 선정하면 됩니다.\n\n"
-                "선정한 뉴스를 각각 별도의 행으로 작성하세요.\n\n"
-                "[중요 뉴스 1]: (중요 뉴스 제목)\n"
-                "[중요 뉴스 2]: (중요 뉴스 제목)\n"
+            # 기사 목록을 "번호. 제목 - 링크" 형태로 구성
+            prompt_list = "\n".join(
+                [f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)]
             )
+
+            # --- 프롬프트 튜닝: 신용영향도(1~5점) 평가 + 상위 2건 번호만 반환 ---
+            guideline = f"""
+당신은 신용평가사 애널리스트입니다.
+
+[신용영향도 판단 기준]
+5점: 신용등급/전망 변화 가능성, 대규모 자본확충·차입, 유동성 위기, 부도·법정관리·회생 신청, 중대한 규제·제재·소송 등
+4점: 대규모 투자·M&A·지분매각, 실적 급변(큰 폭의 흑자/적자 변화), 레버리지 급증, 계열사의 신용위험이 본사에 중대한 영향을 줄 가능성
+3점: 일반적인 실적 개선/악화, 중간 규모의 자금조달, 사업 포트폴리오 조정(비핵심자산 매각 등)
+2점: 신제품 출시, 마케팅/프로모션, 제휴·MOU, 일반적인 사업 계획 등 신용도에 미치는 영향이 제한적인 뉴스
+1점: 사회공헌/행사/ESG 홍보, 단순 이미지 제고, 연예·문화·스포츠 등 신용과 거의 무관한 내용
+
+[기사 목록]
+{prompt_list}
+
+분석의 초점은 반드시 "{comp}" 기업(또는 키워드)이며,
+"{category}" 산업의 신용평가 관점에서 각 뉴스가 신용도에 미치는 영향도를 위 기준으로 평가하십시오.
+
+지시사항:
+1. 각 기사 번호별로 신용영향도 점수(1~5점)를 한 번씩만 매기십시오.
+2. 4점 또는 5점인 기사 중에서 가장 중요한 2건을 우선적으로 선택하십시오.
+3. 4~5점인 기사가 2건보다 적다면, 부족한 개수만큼 3점 기사 중에서 상대적으로 중요한 기사를 선택하십시오.
+4. 그래도 2건이 안 되면 남은 기사 중에서 그나마 신용 관련성이 높은 것을 채워 넣으십시오.
+5. 최종적으로 선택한 기사 2건의 "번호"만 반환하십시오.
+
+출력 형식은 반드시 아래 형식만 사용하십시오. 설명 문장은 넣지 마십시오.
+
+[평가]
+1번: (점수)
+2번: (점수)
+...
+
+[선정]
+[중요1]: (기사번호)
+[중요2]: (기사번호)
+"""
 
             try:
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=900,
+                    messages=[{"role": "user", "content": guideline}],
+                    max_tokens=600,
                     temperature=0
                 )
                 answer = response.choices[0].message.content.strip()
-                news1_match = re.search(r"\[중요 뉴스 1\]:\s*(.+)", answer)
-                news2_match = re.search(r"\[중요 뉴스 2\]:\s*(.+)", answer)
-                
-                news1_title = news1_match.group(1).strip() if news1_match else ""
-                news2_title = news2_match.group(1).strip() if news2_match else ""
-                
-                for a in target_articles:
-                    if news1_title and news1_title in a["title"]:
-                        result.append({
-                            "키워드": comp,
-                            "기사제목": a["title"],
-                            "링크": a["link"],
-                            "날짜": a["date"],
-                            "출처": a["source"],
-                            "시사점": "",  # 필요시 빈 문자열로 처리
-                        })
-                    if news2_title and news2_title in a["title"]:
-                        result.append({
-                            "키워드": comp,
-                            "기사제목": a["title"],
-                            "링크": a["link"],
-                            "날짜": a["date"],
-                            "출처": a["source"],
-                            "시사점": "",  # 필요시 빈 문자열로 처리
-                        })
+
+                # --- 선택된 기사 번호 파싱 ---
+                sel1_match = re.search(r"\[중요 ?1\]\s*:\s*(\d+)", answer)
+                sel2_match = re.search(r"\[중요 ?2\]\s*:\s*(\d+)", answer)
+
+                selected_indexes = []
+                if sel1_match:
+                    try:
+                        idx1 = int(sel1_match.group(1)) - 1
+                        if 0 <= idx1 < len(target_articles):
+                            selected_indexes.append(idx1)
+                    except ValueError:
+                        pass
+                if sel2_match:
+                    try:
+                        idx2 = int(sel2_match.group(1)) - 1
+                        if 0 <= idx2 < len(target_articles) and idx2 not in selected_indexes:
+                            selected_indexes.append(idx2)
+                    except ValueError:
+                        pass
+
+                # 파싱에 실패하거나 0건인 경우: 상위 2건(그냥 최근순)으로 fallback
+                if not selected_indexes:
+                    selected_indexes = list(range(min(2, len(target_articles))))
+
+                # 선택된 기사들을 result에 추가
+                for idx in selected_indexes:
+                    a = target_articles[idx]
+                    result.append({
+                        "키워드": comp,
+                        "기사제목": a.get("title", ""),
+                        "링크": a.get("link", ""),
+                        "날짜": a.get("date", ""),
+                        "출처": a.get("source", ""),
+                        "시사점": ""  # 시사점은 이후 요약 단계에서 채우거나 수동 편집
+                    })
+
             except Exception:
+                # OpenAI 호출 실패 시 해당 회사는 그냥 건너뜀
                 continue
 
     return result
@@ -1898,6 +1950,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
