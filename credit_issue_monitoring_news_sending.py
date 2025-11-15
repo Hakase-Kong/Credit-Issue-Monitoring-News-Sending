@@ -1255,39 +1255,49 @@ def render_articles_with_single_summary_and_telegram(
             companies_with_results = [c for c in company_list if c in results]
             if not companies_with_results:
                 continue
+
             with st.expander(f"📂 {category_name}", expanded=True):
                 for company in companies_with_results:
                     articles = results[company]
+
                     with st.expander(f"[{company}] ({len(articles)}건)", expanded=False):
+                        # 이 회사에 속한 모든 기사 key 수집
                         all_article_keys = []
                         for idx, article in enumerate(articles):
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
                             key = f"{company}_{idx}_{uid}"
                             all_article_keys.append(key)
-                            prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
-                            select_all = st.checkbox(
-                                f"전체 기사 선택/해제 ({company})",
-                                value=prev_value,
-                                key=f"{category_name}_{company}_select_all"
-                            )
-                           
-                            # 마스터 체크박스 값이 바뀐 경우 → 개별 기사 체크박스와 상태를 모두 동기화
-                            if select_all != prev_value:
-                                for k in all_article_keys:
-                                    # 내부 상태
-                                    st.session_state.article_checked[k] = select_all
-                                    st.session_state.article_checked_left[k] = select_all
-                            
-                                    # 실제 체크박스 위젯 상태도 함께 변경
-                                    widget_key = f"news_{k}"
-                                    st.session_state[widget_key] = select_all
-                            
-                                st.rerun()
 
+                        # ✅ 마스터 체크박스 key 를 완전히 유일하게 생성 (카테고리+회사 기반)
+                        slug = re.sub(r"\W+", "", f"{category_name}_{company}")
+                        master_key = f"left_master_{slug}_select_all"
+
+                        prev_value = all(
+                            st.session_state.article_checked.get(k, False)
+                            for k in all_article_keys
+                        )
+
+                        select_all = st.checkbox(
+                            f"전체 기사 선택/해제 ({company})",
+                            value=prev_value,
+                            key=master_key,
+                        )
+
+                        # 마스터 체크박스 값이 바뀐 경우 → 개별 체크박스 & 상태 동기화
+                        if select_all != prev_value:
+                            for k in all_article_keys:
+                                st.session_state.article_checked[k] = select_all
+                                st.session_state.article_checked_left[k] = select_all
+                                # 실제 개별 기사 체크박스 위젯 상태도 같이 변경
+                                st.session_state[f"news_{k}"] = select_all
+                            st.rerun()
+
+                        # 개별 기사 표시
                         for idx, article in enumerate(articles):
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
                             key = f"{company}_{idx}_{uid}"
                             cache_key = f"summary_{key}"
+
                             cols = st.columns([0.04, 0.96])
                             with cols[0]:
                                 checked = st.checkbox(
@@ -1295,22 +1305,33 @@ def render_articles_with_single_summary_and_telegram(
                                     value=st.session_state.article_checked.get(key, False),
                                     key=f"news_{key}",
                                 )
+
                             with cols[1]:
                                 sentiment = ""
                                 if show_sentiment_badge and cache_key in st.session_state:
                                     _, _, sentiment, _, _ = st.session_state[cache_key]
+
                                 badge_html = (
-                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>{sentiment}</span>"
+                                    f"<span class='sentiment-badge "
+                                    f"{SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>{sentiment}</span>"
                                     if sentiment else ""
                                 )
-                                search_word_info = f" | 검색어: {article.get('검색어', '')}" if article.get("검색어") else ""
+                                search_word_info = (
+                                    f" | 검색어: {article.get('검색어', '')}"
+                                    if article.get("검색어") else ""
+                                )
+
                                 st.markdown(
-                                    f"<span class='news-title'><a href='{article['link']}' target='_blank'>{article['title']}</a></span> "
+                                    f"<span class='news-title'><a href='{article['link']}' "
+                                    f"target='_blank'>{article['title']}</a></span> "
                                     f"{badge_html} {article['date']} | {article['source']}{search_word_info}",
                                     unsafe_allow_html=True,
                                 )
+
+                            # 세션 상태 갱신
                             st.session_state.article_checked_left[key] = checked
                             st.session_state.article_checked[key] = checked
+
 
     # ---------------------------- 선택 기사 요약/감성분석 열 ---------------------------- #
     with col_summary:
@@ -1877,5 +1898,6 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
