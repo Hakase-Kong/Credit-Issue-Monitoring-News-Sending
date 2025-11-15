@@ -1029,11 +1029,17 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     output.seek(0)
     return output
 
-def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
+def generate_important_article_list(
+    search_results,
+    common_keywords,
+    industry_keywords,
+    favorites,
+    min_score_for_selection: int = 5,   # ✅ 추가: 최소 점수 선택(기본 5점)
+):
     """
     OpenAI를 이용해 '신용평가 관점에서 중요한 기사'를 자동 선정.
     - 각 기사에 대해 신용영향도(1~5점)를 평가하게 하고
-    - 반드시 5점 기사만 자동 선정 대상으로 사용.
+    - 선택한 최소 점수(min_score_for_selection) 이상인 기사만 자동 선정 대상으로 사용.
     - 결과는 기사 번호 기반으로 파싱하여 원본 기사(dict)를 반환.
     """
     import os
@@ -1085,7 +1091,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 [f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)]
             )
 
-            # --- 프롬프트: 5점 기사만 자동 선정 ---
+            # --- 프롬프트: 선택한 최소 점수 이상 기사 자동 선정 ---
             guideline = f"""
 당신은 신용평가사 애널리스트입니다.
 
@@ -1104,11 +1110,11 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
 [지시사항]
 1. 각 기사 번호별로 신용영향도 점수(1~5점)를 한 번씩만 매기십시오.
-2. 반드시 **5점인 기사만** '중요 기사 후보'로 간주하십시오.
-3. 5점인 기사 중에서 가장 중요한 기사 최대 2건의 "번호"만 선택하십시오.
-   - 5점 기사 2건 이상이면 그 중에서 상위 2건만 선택하십시오.
-   - 5점 기사 1건이면 그 1건만 선택하십시오.
-   - 5점 기사 0건이면 어떤 기사도 선택하지 마십시오.
+2. 반드시 **{min_score_for_selection}점 이상인 기사만** '중요 기사 후보'로 간주하십시오.
+3. {min_score_for_selection}점 이상인 기사 중에서 가장 중요한 기사 최대 2건의 "번호"만 선택하십시오.
+   - {min_score_for_selection}점 이상 기사 2건 이상이면 그 중에서 상위 2건만 선택하십시오.
+   - {min_score_for_selection}점 이상 기사 1건이면 그 1건만 선택하십시오.
+   - {min_score_for_selection}점 이상 기사 0건이면 어떤 기사도 선택하지 마십시오.
 4. 선택된 번호가 없을 수도 있습니다. 이 경우에도 아래 [선정] 형식은 유지하되 '없음'이라고 적으십시오.
 
 출력 형식은 반드시 아래 형식만 사용하십시오. 설명 문장은 넣지 마십시오.
@@ -1154,17 +1160,28 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 selected_indexes = []
                 for no in raw_selected:
                     idx0 = no - 1
-                    # ✅ 실제 점수가 5점인 것만 유지
-                    if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
+                    score = score_map.get(no)
+
+                    # ✅ 실제 점수가 선택 기준 이상(≥ min_score_for_selection)인 것만 유지
+                    if (
+                        score is not None
+                        and score >= min_score_for_selection
+                        and 0 <= idx0 < len(target_articles)
+                    ):
                         if idx0 not in selected_indexes:
                             selected_indexes.append(idx0)
 
-                # ✅ 5점이 없으면 skip
-                if not selected_indexes:
-                    continue
-                    
-            except Exception:
-                # 에러 시 이 회사에 대해서는 자동선정 건너뜀
+                # 선택된 기사들을 result에 추가
+                for idx0 in selected_indexes:
+                    art = target_articles[idx0].copy()
+                    art["회사명"] = comp
+                    art["카테고리"] = category
+                    art["신용영향도점수"] = score_map.get(idx0 + 1, None)
+                    result.append(art)
+
+            except Exception as e:
+                # 오류가 나더라도 전체 프로세스를 막지 않도록 패스
+                print(f"[generate_important_article_list] {comp} 처리 중 오류: {e}")
                 continue
 
     return result
@@ -2022,4 +2039,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
