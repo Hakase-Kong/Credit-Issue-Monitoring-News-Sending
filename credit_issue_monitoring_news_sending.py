@@ -322,18 +322,9 @@ st.markdown("""
 <style>
 [data-testid="column"] > div { gap: 0rem !important; }
 .stMultiSelect [data-baseweb="tag"] { background-color: #ff5c5c !important; color: white !important; border: none !important; font-weight: bold; }
-.sentiment-badge { 
-    display: inline-block; 
-    padding: 0.08em 0.6em; 
-    margin-left: 0.2em; 
-    border-radius: 0.8em; 
-    font-size: 0.85em; 
-    font-weight: bold; 
-    vertical-align: middle; 
-}
+.sentiment-badge { display: inline-block; padding: 0.08em 0.6em; margin-left: 0.2em; border-radius: 0.8em; font-size: 0.85em; font-weight: bold; vertical-align: middle; }
 .sentiment-positive { background: #2ecc40; color: #fff; }
 .sentiment-negative { background: #ff4136; color: #fff; }
-.sentiment-neutral  { background: #6c757d; color: #fff; } 
 .stBox { background: #fcfcfc; border-radius: 0.7em; border: 1.5px solid #e0e2e6; margin-bottom: 1.2em; padding: 1.1em 1.2em 1.2em 1.2em; box-shadow: 0 2px 8px 0 rgba(0,0,0,0.03); }
 .flex-row-bottom { display: flex; align-items: flex-end; gap: 0.5rem; margin-bottom: 0.5rem; }
 .flex-grow { flex: 1 1 0%; }
@@ -381,8 +372,7 @@ def init_session_state():
         "use_industry_filter": True,
         "show_sentiment_badge": False,
         "enable_summary": True,
-        "keyword_input": "",
-        "credit_companies_map": {}
+        "keyword_input": ""
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -1221,7 +1211,7 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
 def render_articles_with_single_summary_and_telegram(
     results, show_limit, show_sentiment_badge=True, enable_summary=True
 ):
-    SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative", "중립": "sentiment-neutral"}
+    SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
     col_list, col_summary = st.columns([1, 1])
 
     # ---------------------------- 뉴스 목록 열 ---------------------------- #
@@ -1276,7 +1266,7 @@ def render_articles_with_single_summary_and_telegram(
                                 if show_sentiment_badge and cache_key in st.session_state:
                                     _, _, sentiment, _, _ = st.session_state[cache_key]
                                 badge_html = (
-                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>{sentiment}</span>"
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment, 'sentiment-negative')}'>{sentiment}</span>"
                                     if sentiment else ""
                                 )
                                 search_word_info = f" | 검색어: {article.get('검색어', '')}" if article.get("검색어") else ""
@@ -1354,7 +1344,7 @@ def render_articles_with_single_summary_and_telegram(
                                 total_selected_count += 1
                                 st.markdown(
                                     f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
-                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-neutral')}'>{art['감성']}</span>",
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-negative')}'>{art['감성']}</span>",
                                     unsafe_allow_html=True
                                 )
                                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
@@ -1836,34 +1826,24 @@ if st.session_state.get("search_results"):
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
-    # 🔹 현재 선택된 카테고리 기준으로 기업 목록 및 KISCD 매핑 갱신
     selected_companies = []
     for cat in st.session_state.get("cat_multi", []):
         selected_companies.extend(favorite_categories.get(cat, []))
     selected_companies = list(set(selected_companies))
 
+    # kiscd_map과 cmpCD_map 모두에서 회사명에 매칭되는 키 값 가져오기
     kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
+    cmpcd_filtered = {c: config.get("cmpCD_map", {}).get(c, "") for c in selected_companies}
 
-    # 이번 런에서 유효한 맵이 있으면 세션에 저장 (항상 같은 키 사용)
-    if kiscd_filtered:
-        st.session_state["credit_companies_map"] = kiscd_filtered
+    # 신용평가 패널 표시 여부 선택
+    show_credit_panel = st.checkbox(
+        "신용평가 보고서/리서치 패널 표시",
+        value=st.session_state.get("show_credit_panel", False),
+        key="show_credit_panel"
+    )
 
+    if show_credit_panel:
+        fetch_and_display_reports(kiscd_filtered)
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
 
-
-# --- 신용평가 보고서/리서치 패널 (뉴스 검색 결과 여부와 무관하게, 세션 상태 기반으로 표시) ---
-show_credit_panel = st.checkbox(
-    "신용평가 보고서/리서치 패널 표시",
-    key="show_credit_panel"
-)
-
-if show_credit_panel:
-    # 항상 세션에 저장된 최종 확정 기업맵만 사용
-    companies_map = st.session_state.get("credit_companies_map", {})
-
-    if companies_map:
-        fetch_and_display_reports(companies_map)
-    else:
-        st.info("선택된 기업에 매핑된 KISCD가 없습니다. "
-                "상단에서 산업/기업을 선택하고 뉴스 검색을 먼저 실행해 주세요.")
