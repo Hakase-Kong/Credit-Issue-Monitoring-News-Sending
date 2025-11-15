@@ -1570,39 +1570,53 @@ def render_important_article_review_and_download():
             format_func=lambda x: f"{x}점 이상"
         )
 
-        auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
-        if auto_btn:
-            with st.spinner("OpenAI로 중요 뉴스 선정 중."):
-                filtered_results_for_important = {}
-                for keyword, articles in st.session_state.search_results.items():
-                    filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-                    if st.session_state.get("remove_duplicate_articles", False):
-                        filtered_articles = remove_duplicates(filtered_articles)
-                    if filtered_articles:
-                        filtered_results_for_important[keyword] = filtered_articles
+auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
+if auto_btn:
+    with st.spinner("OpenAI로 중요 뉴스 선정 중."):
+        # ✅ 1) 중요 기사 자동선정은 'favorite_categories'에 있는 회사들만 대상으로 삼는다.
+        filtered_results_for_important = {}
 
-                # ✅ 선택한 최소 점수를 OpenAI 선정 함수에 전달
-                important_articles = generate_important_article_list(
-                    search_results=filtered_results_for_important,
-                    common_keywords=ALL_COMMON_FILTER_KEYWORDS,
-                    industry_keywords=st.session_state.get("industry_sub", []),
-                    favorites=favorite_categories,
-                    min_score_for_selection=min_score_for_selection,  # ★ 추가
-                )
+        for category, companies in favorite_categories.items():
+            for comp in companies:
+                # search_results 안에서 해당 회사명 키로만 기사 가져오기
+                articles = st.session_state.search_results.get(comp, [])
+                if not articles:
+                    continue
 
-                # 이하 기존 코드 유지
-                for i, art in enumerate(important_articles):
-                    important_articles[i] = {
-                        "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
-                        "기사제목": art.get("기사제목") or art.get("제목") or art.get("title") or "",
-                        "감성": art.get("감성", ""),
-                        "링크": art.get("링크") or art.get("link", ""),
-                        "날짜": art.get("날짜") or art.get("date", ""),
-                        "출처": art.get("출처") or art.get("source", ""),
-                        "시사점": art.get("시사점", ""),
-                    }
-                st.session_state["important_articles_preview"] = important_articles
-                st.session_state["important_selected_index"] = []
+                # 공통/산업/언론사 필터 등 기존 필터 모두 통과한 기사만 사용
+                filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+                if st.session_state.get("remove_duplicate_articles", False):
+                    filtered_articles = remove_duplicates(filtered_articles)
+
+                if filtered_articles:
+                    filtered_results_for_important[comp] = filtered_articles
+
+        if not filtered_results_for_important:
+            st.warning("자동선정 대상이 될 기업별 뉴스가 없습니다. (카테고리 검색이 실행되었는지 확인해 주세요.)")
+            return
+
+        # ✅ 선택한 최소 점수를 OpenAI 선정 함수에 전달
+        important_articles = generate_important_article_list(
+            search_results=filtered_results_for_important,
+            common_keywords=ALL_COMMON_FILTER_KEYWORDS,
+            industry_keywords=[],  # 함수 내부에서 별도 파싱하므로 사실상 사용 안 함
+            favorites=favorite_categories,
+            min_score_for_selection=min_score_for_selection,
+        )
+
+        # 이하 기존 코드 유지
+        for i, art in enumerate(important_articles):
+            important_articles[i] = {
+                "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
+                "기사제목": art.get("기사제목") or art.get("제목") or art.get("title") or "",
+                "감성": art.get("감성", ""),
+                "링크": art.get("링크") or art.get("link", ""),
+                "날짜": art.get("날짜") or art.get("date", ""),
+                "출처": art.get("출처") or art.get("source", ""),
+                "시사점": art.get("시사점", ""),
+            }
+        st.session_state["important_articles_preview"] = important_articles
+        st.session_state["important_selected_index"] = []
 
         articles = st.session_state.get("important_articles_preview", [])
         selected_indexes = st.session_state.get("important_selected_index", [])
@@ -2052,6 +2066,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
