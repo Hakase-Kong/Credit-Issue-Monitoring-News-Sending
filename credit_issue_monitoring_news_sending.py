@@ -1560,9 +1560,19 @@ def render_important_article_review_and_download():
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
+        # ✅ 자동 선정 기준 점수 선택 (5 / 4 / 3점 이상)
+        min_score_for_selection = st.radio(
+            "자동 선정 최소 점수",
+            options=[5, 4, 3],
+            index=0,  # 기본 5점
+            horizontal=True,
+            key="auto_select_min_score",
+            format_func=lambda x: f"{x}점 이상"
+        )
+
         auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
         if auto_btn:
-            with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
+            with st.spinner("OpenAI로 중요 뉴스 선정 중."):
                 filtered_results_for_important = {}
                 for keyword, articles in st.session_state.search_results.items():
                     filtered_articles = [a for a in articles if article_passes_all_filters(a)]
@@ -1571,13 +1581,16 @@ def render_important_article_review_and_download():
                     if filtered_articles:
                         filtered_results_for_important[keyword] = filtered_articles
 
+                # ✅ 선택한 최소 점수를 OpenAI 선정 함수에 전달
                 important_articles = generate_important_article_list(
                     search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
                     industry_keywords=st.session_state.get("industry_sub", []),
-                    favorites=favorite_categories
+                    favorites=favorite_categories,
+                    min_score_for_selection=min_score_for_selection,  # ★ 추가
                 )
-                # key 명 통일 및 시사점 필드 포함 (시사점은 빈 문자열로 초기화, 필요 시 OpenAI 결과 반영 가능)
+
+                # 이하 기존 코드 유지
                 for i, art in enumerate(important_articles):
                     important_articles[i] = {
                         "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
@@ -1586,7 +1599,7 @@ def render_important_article_review_and_download():
                         "링크": art.get("링크") or art.get("link", ""),
                         "날짜": art.get("날짜") or art.get("date", ""),
                         "출처": art.get("출처") or art.get("source", ""),
-                        "시사점": art.get("시사점", "")  # 시사점 필드 추가 (자동선정 시 채워질 수 있음)
+                        "시사점": art.get("시사점", ""),
                     }
                 st.session_state["important_articles_preview"] = important_articles
                 st.session_state["important_selected_index"] = []
@@ -2039,5 +2052,6 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
