@@ -1029,17 +1029,11 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
     output.seek(0)
     return output
 
-def generate_important_article_list(
-    search_results,
-    common_keywords,
-    industry_keywords,
-    favorites,
-    min_score_for_selection: int = 5,   # ✅ 추가: 최소 점수 선택(기본 5점)
-):
+def generate_important_article_list(search_results, common_keywords, industry_keywords, favorites):
     """
     OpenAI를 이용해 '신용평가 관점에서 중요한 기사'를 자동 선정.
     - 각 기사에 대해 신용영향도(1~5점)를 평가하게 하고
-    - 선택한 최소 점수(min_score_for_selection) 이상인 기사만 자동 선정 대상으로 사용.
+    - 반드시 5점 기사만 자동 선정 대상으로 사용.
     - 결과는 기사 번호 기반으로 파싱하여 원본 기사(dict)를 반환.
     """
     import os
@@ -1091,7 +1085,7 @@ def generate_important_article_list(
                 [f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)]
             )
 
-            # --- 프롬프트: 선택한 최소 점수 이상 기사 자동 선정 ---
+            # --- 프롬프트: 5점 기사만 자동 선정 ---
             guideline = f"""
 당신은 신용평가사 애널리스트입니다.
 
@@ -1110,11 +1104,11 @@ def generate_important_article_list(
 
 [지시사항]
 1. 각 기사 번호별로 신용영향도 점수(1~5점)를 한 번씩만 매기십시오.
-2. 반드시 **{min_score_for_selection}점 이상인 기사만** '중요 기사 후보'로 간주하십시오.
-3. {min_score_for_selection}점 이상인 기사 중에서 가장 중요한 기사 최대 2건의 "번호"만 선택하십시오.
-   - {min_score_for_selection}점 이상 기사 2건 이상이면 그 중에서 상위 2건만 선택하십시오.
-   - {min_score_for_selection}점 이상 기사 1건이면 그 1건만 선택하십시오.
-   - {min_score_for_selection}점 이상 기사 0건이면 어떤 기사도 선택하지 마십시오.
+2. 반드시 **5점인 기사만** '중요 기사 후보'로 간주하십시오.
+3. 5점인 기사 중에서 가장 중요한 기사 최대 2건의 "번호"만 선택하십시오.
+   - 5점 기사 2건 이상이면 그 중에서 상위 2건만 선택하십시오.
+   - 5점 기사 1건이면 그 1건만 선택하십시오.
+   - 5점 기사 0건이면 어떤 기사도 선택하지 마십시오.
 4. 선택된 번호가 없을 수도 있습니다. 이 경우에도 아래 [선정] 형식은 유지하되 '없음'이라고 적으십시오.
 
 출력 형식은 반드시 아래 형식만 사용하십시오. 설명 문장은 넣지 마십시오.
@@ -1160,28 +1154,17 @@ def generate_important_article_list(
                 selected_indexes = []
                 for no in raw_selected:
                     idx0 = no - 1
-                    score = score_map.get(no)
-
-                    # ✅ 실제 점수가 선택 기준 이상(≥ min_score_for_selection)인 것만 유지
-                    if (
-                        score is not None
-                        and score >= min_score_for_selection
-                        and 0 <= idx0 < len(target_articles)
-                    ):
+                    # ✅ 실제 점수가 5점인 것만 유지
+                    if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
                         if idx0 not in selected_indexes:
                             selected_indexes.append(idx0)
 
-                # 선택된 기사들을 result에 추가
-                for idx0 in selected_indexes:
-                    art = target_articles[idx0].copy()
-                    art["회사명"] = comp
-                    art["카테고리"] = category
-                    art["신용영향도점수"] = score_map.get(idx0 + 1, None)
-                    result.append(art)
-
-            except Exception as e:
-                # 오류가 나더라도 전체 프로세스를 막지 않도록 패스
-                print(f"[generate_important_article_list] {comp} 처리 중 오류: {e}")
+                # ✅ 5점이 없으면 skip
+                if not selected_indexes:
+                    continue
+                    
+            except Exception:
+                # 에러 시 이 회사에 대해서는 자동선정 건너뜀
                 continue
 
     return result
@@ -1560,64 +1543,36 @@ def render_important_article_review_and_download():
     with st.container(border=True):
         st.markdown("### ⭐ 중요 기사 리뷰 및 편집")
 
-        # ✅ 자동 선정 기준 점수 선택 (5 / 4 / 3점 이상)
-        min_score_for_selection = st.radio(
-            "자동 선정 최소 점수",
-            options=[5, 4, 3],
-            index=0,  # 기본 5점
-            horizontal=True,
-            key="auto_select_min_score",
-            format_func=lambda x: f"{x}점 이상"
-        )
-
-        # 🔽🔽🔽  여기에부터 원래 전역에 있던 코드를 전부 들여쓰기 해서 넣습니다.
         auto_btn = st.button("🚀 OpenAI 기반 중요 기사 자동 선정")
         if auto_btn:
-            with st.spinner("OpenAI로 중요 뉴스 선정 중."):
-                # ✅ 1) 중요 기사 자동선정은 'favorite_categories'에 있는 회사들만 대상으로 삼는다.
+            with st.spinner("OpenAI로 중요 뉴스 선정 중..."):
                 filtered_results_for_important = {}
+                for keyword, articles in st.session_state.search_results.items():
+                    filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+                    if st.session_state.get("remove_duplicate_articles", False):
+                        filtered_articles = remove_duplicates(filtered_articles)
+                    if filtered_articles:
+                        filtered_results_for_important[keyword] = filtered_articles
 
-                for category, companies in favorite_categories.items():
-                    for comp in companies:
-                        # search_results 안에서 해당 회사명 키로만 기사 가져오기
-                        articles = st.session_state.search_results.get(comp, [])
-                        if not articles:
-                            continue
-
-                        # 공통/산업/언론사 필터 등 기존 필터 모두 통과한 기사만 사용
-                        filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-                        if st.session_state.get("remove_duplicate_articles", False):
-                            filtered_articles = remove_duplicates(filtered_articles)
-
-                        if filtered_articles:
-                            filtered_results_for_important[comp] = filtered_articles
-
-                if not filtered_results_for_important:
-                    st.warning("자동선정 대상이 될 기업별 뉴스가 없습니다. (카테고리 검색이 실행되었는지 확인해 주세요.)")
-                    return  # ✅ 이제는 함수 안이므로 사용 가능
-
-                # ✅ 선택한 최소 점수를 OpenAI 선정 함수에 전달
                 important_articles = generate_important_article_list(
                     search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
-                    industry_keywords=[],  # 함수 내부에서 별도 파싱하므로 사실상 사용 안 함
-                    favorites=favorite_categories,
-                    min_score_for_selection=min_score_for_selection,
+                    industry_keywords=st.session_state.get("industry_sub", []),
+                    favorites=favorite_categories
                 )
-                
-        # 이하 기존 코드 유지
-        for i, art in enumerate(important_articles):
-            important_articles[i] = {
-                "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
-                "기사제목": art.get("기사제목") or art.get("제목") or art.get("title") or "",
-                "감성": art.get("감성", ""),
-                "링크": art.get("링크") or art.get("link", ""),
-                "날짜": art.get("날짜") or art.get("date", ""),
-                "출처": art.get("출처") or art.get("source", ""),
-                "시사점": art.get("시사점", ""),
-            }
-        st.session_state["important_articles_preview"] = important_articles
-        st.session_state["important_selected_index"] = []
+                # key 명 통일 및 시사점 필드 포함 (시사점은 빈 문자열로 초기화, 필요 시 OpenAI 결과 반영 가능)
+                for i, art in enumerate(important_articles):
+                    important_articles[i] = {
+                        "키워드": art.get("키워드") or art.get("회사명") or art.get("keyword") or "",
+                        "기사제목": art.get("기사제목") or art.get("제목") or art.get("title") or "",
+                        "감성": art.get("감성", ""),
+                        "링크": art.get("링크") or art.get("link", ""),
+                        "날짜": art.get("날짜") or art.get("date", ""),
+                        "출처": art.get("출처") or art.get("source", ""),
+                        "시사점": art.get("시사점", "")  # 시사점 필드 추가 (자동선정 시 채워질 수 있음)
+                    }
+                st.session_state["important_articles_preview"] = important_articles
+                st.session_state["important_selected_index"] = []
 
         articles = st.session_state.get("important_articles_preview", [])
         selected_indexes = st.session_state.get("important_selected_index", [])
@@ -2067,8 +2022,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
-
-
-
 
