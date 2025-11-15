@@ -314,14 +314,24 @@ def expand_keywords_with_synonyms(original_keywords):
     return expanded_map
 
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
+    """
+    1차: require_keyword_in_title 플래그(체크박스 설정)에 따라 강한 필터로 검색
+    2차: 기업(main_kw)별 결과가 0건인 경우에만
+         -> 해당 기업에 한해 '제목/본문 키워드 포함' 조건을 해제하고 재검색(Fallback)
+    """
     for main_kw, kw_list in favorite_to_expand_map.items():
         all_articles = []
 
-        # 병렬 처리 시작
+        # 🔹 1차 검색: 현재 설정(require_keyword_in_title)을 그대로 적용
         with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
             futures = {
-                executor.submit(fetch_naver_news, search_kw, start_date, end_date, 
-                                require_keyword_in_title=require_keyword_in_title): search_kw
+                executor.submit(
+                    fetch_naver_news,
+                    search_kw,
+                    start_date,
+                    end_date,
+                    require_keyword_in_title=require_keyword_in_title
+                ): search_kw
                 for search_kw in kw_list
             }
             for future in as_completed(futures):
@@ -334,10 +344,43 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                 except Exception as e:
                     st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
 
-        # 중복 제거 여부
+        # 🔸 Fallback 조건:
+        #  - 1차 검색 결과가 0건이고
+        #  - 전역 체크박스(키워드가 제목 또는 본문에 포함…)가 켜져 있을 때만
+        if (
+            len(all_articles) == 0
+            and st.session_state.get("require_exact_keyword_in_title_or_content", False)
+        ):
+            fallback_articles = []
+
+            # 2차 검색: 이 main_kw(기업)에 한해서만 제목/본문 키워드 필터 해제
+            with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
+                futures = {
+                    executor.submit(
+                        fetch_naver_news,
+                        search_kw,
+                        start_date,
+                        end_date,
+                        require_keyword_in_title=False   # ★ 필터 해제
+                    ): search_kw
+                    for search_kw in kw_list
+                }
+                for future in as_completed(futures):
+                    search_kw = futures[future]
+                    try:
+                        fetched = future.result()
+                        fetched = [{**a, "검색어": search_kw} for a in fetched]
+                        fallback_articles.extend(fetched)
+                    except Exception as e:
+                        st.warning(f"[Fallback] {main_kw} - '{search_kw}' 검색 실패: {e}")
+
+            all_articles = fallback_articles
+
+        # 🔹 중복 기사 제거 옵션 적용
         if st.session_state.get("remove_duplicate_articles", False):
             all_articles = remove_duplicates(all_articles)
 
+        # 🔹 최종 결과 저장
         st.session_state.search_results[main_kw] = all_articles
         if main_kw not in st.session_state.show_limit:
             st.session_state.show_limit[main_kw] = 5
@@ -1979,3 +2022,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
