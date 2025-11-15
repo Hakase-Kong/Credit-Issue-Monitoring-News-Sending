@@ -314,14 +314,24 @@ def expand_keywords_with_synonyms(original_keywords):
     return expanded_map
 
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
-    for main_kw, kw_list in favorite_to_expand_map.items():
-        all_articles = []
-
-        # 병렬 처리 시작
+    """
+    require_keyword_in_title=True 인 경우:
+      1차: 강한 필터(제목/본문에 키워드 포함)로 검색
+      → 결과(중복 제거 후)가 0건이면
+      2차: 같은 키워드 세트로 require_keyword_in_title=False로 재검색 (해당 메인 키워드에 한정해서만 완화)
+    """
+    def run_search_for_kw_list(kw_list, start_date, end_date, require_flag):
+        all_articles_local = []
         with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
             futures = {
-                executor.submit(fetch_naver_news, search_kw, start_date, end_date, 
-                                require_keyword_in_title=require_keyword_in_title): search_kw
+                executor.submit(
+                    fetch_naver_news,
+                    search_kw,
+                    start_date,
+                    end_date,
+                    # limit은 기본값 1000 사용
+                    require_keyword_in_title=require_flag
+                ): search_kw
                 for search_kw in kw_list
             }
             for future in as_completed(futures):
@@ -330,15 +340,37 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                     fetched = future.result()
                     # 각 기사에 검색어 정보 추가
                     fetched = [{**a, "검색어": search_kw} for a in fetched]
-                    all_articles.extend(fetched)
+                    all_articles_local.extend(fetched)
                 except Exception as e:
-                    st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
-
-        # 중복 제거 여부
+                    st.warning(f"{search_kw} 검색 실패: {e}")
+        # 중복 제거 옵션
         if st.session_state.get("remove_duplicate_articles", False):
-            all_articles = remove_duplicates(all_articles)
+            all_articles_local = remove_duplicates(all_articles_local)
+        return all_articles_local
 
-        st.session_state.search_results[main_kw] = all_articles
+    for main_kw, kw_list in favorite_to_expand_map.items():
+        # 1차: 현재 체크박스 값(require_keyword_in_title) 그대로 적용
+        articles = run_search_for_kw_list(
+            kw_list,
+            start_date,
+            end_date,
+            require_flag=require_keyword_in_title,
+        )
+
+        # 2차 Fallback:
+        # - 강력 필터(require_keyword_in_title=True) 상태이고
+        # - 1차 검색(중복 제거까지 적용 후) 결과가 0건인 경우에만
+        #   → 해당 main_kw에 한해서만 필터를 완화해서 다시 검색
+        if require_keyword_in_title and not articles:
+            fallback_articles = run_search_for_kw_list(
+                kw_list,
+                start_date,
+                end_date,
+                require_flag=False,   # 제목/본문 키워드 강제 조건 해제
+            )
+            articles = fallback_articles
+
+        st.session_state.search_results[main_kw] = articles
         if main_kw not in st.session_state.show_limit:
             st.session_state.show_limit[main_kw] = 5
 
@@ -625,8 +657,13 @@ class Telegram:
         self.bot.sendMessage(self.chat_id, message, parse_mode="Markdown", disable_web_page_preview=True)
         
 def filter_by_issues(title, desc, selected_keywords, require_keyword_in_title=False):
+    """
+    require_keyword_in_title=True 인 경우
+    - 제목 또는 본문(요약)에 키워드가 하나도 없으면 제외
+    """
     if require_keyword_in_title and selected_keywords:
-        if not any(kw.lower() in title.lower() for kw in selected_keywords):
+        combined = f"{title} {desc}".lower()
+        if not any(kw.lower() in combined for kw in selected_keywords):
             return False
     return True
 
@@ -1979,3 +2016,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
