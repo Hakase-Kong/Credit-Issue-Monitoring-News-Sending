@@ -59,23 +59,13 @@ def extract_reports_and_research(html: str) -> dict:
         "신용등급상세": []
     }
 
-    # 평가리포트, 관련리서치 테이블 로직
+    # 평가리포트, 관련리서치 테이블 로직 그대로
     tables = soup.select('div.table_ty1 > table')
     for table in tables:
         caption = table.find('caption')
         if not caption:
             continue
         caption_text = caption.text.strip()
-
-        # 공통: 행 단위에서 fn_file(...)이 들어간 a 태그를 찾아 다운로드 URL 생성
-        def get_download_url(tr):
-            # 1) 우선 td 안의 a 태그를 모두 탐색
-            for a in tr.find_all('a'):
-                js_href = (a.get("href") or "") or (a.get("onclick") or "")
-                url = extract_file_url(js_href)
-                if url:
-                    return url
-            return ""
 
         if caption_text == "평가리포트":
             rows = table.select('tbody > tr')
@@ -84,23 +74,16 @@ def extract_reports_and_research(html: str) -> dict:
                 if len(tds) < 4:
                     continue
                 report_type = tds[0].text.strip()
-
                 a_tag = tds[1].find('a')
                 title = a_tag.text.strip() if a_tag else ''
-
                 date = tds[2].text.strip()
                 eval_type = tds[3].text.strip()
-
-                download_url = get_download_url(tr)
-
                 result["평가리포트"].append({
                     "종류": report_type,
                     "리포트": title,
                     "일자": date,
-                    "평가종류": eval_type,
-                    "다운로드": download_url  # 🔹 다운로드 링크 추가
+                    "평가종류": eval_type
                 })
-
         elif caption_text == "관련 리서치":
             rows = table.select('tbody > tr')
             for tr in rows:
@@ -108,22 +91,17 @@ def extract_reports_and_research(html: str) -> dict:
                 if len(tds) < 4:
                     continue
                 category = tds[0].text.strip()
-
                 a_tag = tds[1].find('a')
                 title = a_tag.text.strip() if a_tag else ''
-
                 date = tds[2].text.strip()
-
-                download_url = get_download_url(tr)
-
                 result["관련리서치"].append({
                     "구분": category,
                     "제목": title,
-                    "일자": date,
-                    "다운로드": download_url  # 🔹 다운로드 링크 추가
+                    "일자": date
                 })
 
-    # 신용등급상세 추가
+    # 신용등급상세 추가 (ex. 현대해상 등급 테이블)
+    # 기존 extract_credit_details 코드를 활용하여 리스트를 추가
     result["신용등급상세"] = extract_credit_details(html)
 
     return result
@@ -276,7 +254,7 @@ def fetch_and_display_reports(companies_map):
                             with st.expander("평가리포트", expanded=True):
                                 st.markdown("### 한국신용평가 평가리포트")
                                 df_report = pd.DataFrame(report_data["평가리포트"])
-                                # df_report = df_report.drop(columns=["다운로드"], errors="ignore")
+                                df_report = df_report.drop(columns=["다운로드"], errors="ignore")
                                 st.dataframe(df_report)
 
                         if report_data.get("관련리서치"):
@@ -2044,5 +2022,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
 
