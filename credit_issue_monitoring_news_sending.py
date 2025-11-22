@@ -17,6 +17,7 @@ import json
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import pandas as pd
+import hashlib
 
 # --- config.json 로드 ---
 with open("config.json", "r", encoding="utf-8") as f:
@@ -49,6 +50,11 @@ def extract_file_url(js_href: str) -> str:
         return ""
     file_name = args[3]
     return f"https://www.kisrating.com/common/download.do?filename={file_name}"
+
+def make_uid(url: str, length: int = 16) -> str:
+    if not url:
+        return "no_url"
+    return hashlib.md5(url.encode("utf-8")).hexdigest()[:length]
 
 def extract_reports_and_research(html: str) -> dict:
     from bs4 import BeautifulSoup
@@ -892,14 +898,14 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
 
 # --- OPTIONAL: keep existing function, just ensure fallback args are passed ---
 def summarize_article_from_url(article_url, title, do_summary=True, target_keyword=None, description=None):
-    # URL 기반 uid(16자리)
-    uid = re.sub(r"\W+", "", article_url)[-16:]
+    # ✅ URL 전체 기반 md5 uid (충돌 방지)
+    uid = make_uid(article_url)
 
     # ✅ 캐시 키를 target_keyword(회사/메인키워드) 포함 형태로 통일
     if target_keyword and str(target_keyword).strip():
         summary_key = f"summary_{target_keyword}_{uid}"
     else:
-        summary_key = f"summary_{uid}"  # target_keyword 없을 때만 fallback
+        summary_key = f"summary_{uid}"
 
     if summary_key in st.session_state:
         return st.session_state[summary_key]
@@ -935,7 +941,7 @@ def or_keyword_filter(article, *keyword_lists):
     return False
 
 def get_summary_key_from_url(article_url: str, target_keyword: str = None) -> str:
-    uid = re.sub(r"\W+", "", article_url)[-16:]
+    uid = make_uid(article_url)
     if target_keyword and str(target_keyword).strip():
         return f"summary_{target_keyword}_{uid}"
     return f"summary_{uid}"
@@ -1547,13 +1553,13 @@ def render_articles_with_single_summary_and_telegram(
                     articles = results[company]
 
                     with st.expander(f"[{company}] ({len(articles)}건)", expanded=False):
-                        # 이 회사에 속한 모든 기사 key 수집
+                        # ✅ 이 회사에 속한 모든 기사 key 수집 (uid=md5)
                         all_article_keys = []
-                        for idx, article in enumerate(articles):
-                            uid = re.sub(r"\W+", "", article["link"])[-16:]
-                            key = f"{company}_{uid}"   # ✅ idx 제거 (안정적 키)
+                        for article in articles:
+                            uid = make_uid(article["link"])
+                            key = f"{company}_{uid}"
                             all_article_keys.append(key)
-                    
+
                         # ✅ 현재 렌더링 목록에 없는 과거 체크 상태(stale) 제거
                         current_key_set = set(all_article_keys)
                         for k in list(st.session_state.article_checked.keys()):
@@ -1562,9 +1568,9 @@ def render_articles_with_single_summary_and_telegram(
                         for k in list(st.session_state.article_checked_left.keys()):
                             if k.startswith(f"{company}_") and k not in current_key_set:
                                 st.session_state.article_checked_left[k] = False
-                                st.session_state.pop(f"news_{k}", None)  # 개별 위젯 상태도 제거
+                                st.session_state.pop(f"news_{k}", None)
 
-                        # ✅ 마스터 체크박스 key 를 완전히 유일하게 생성 (카테고리+회사 기반)
+                        # ✅ 마스터 체크박스 key 유일화
                         slug = re.sub(r"\W+", "", f"{category_name}_{company}")
                         master_key = f"left_master_{slug}_select_all"
 
@@ -1579,19 +1585,18 @@ def render_articles_with_single_summary_and_telegram(
                             key=master_key,
                         )
 
-                        # 마스터 체크박스 값이 바뀐 경우 → 개별 체크박스 & 상태 동기화
+                        # 마스터 체크박스 값 변동 시
                         if select_all != prev_value:
                             for k in all_article_keys:
                                 st.session_state.article_checked[k] = select_all
                                 st.session_state.article_checked_left[k] = select_all
-                                # 실제 개별 기사 체크박스 위젯 상태도 같이 변경
                                 st.session_state[f"news_{k}"] = select_all
                             st.rerun()
 
                         # 개별 기사 표시
-                        for idx, article in enumerate(articles):
-                            uid = re.sub(r"\W+", "", article["link"])[-16:]
-                            key = f"{company}_{uid}"   # ✅ 위와 동일
+                        for article in articles:
+                            uid = make_uid(article["link"])
+                            key = f"{company}_{uid}"
                             cache_key = f"summary_{key}"
 
                             cols = st.columns([0.04, 0.96])
@@ -1616,10 +1621,10 @@ def render_articles_with_single_summary_and_telegram(
                                     f" | 검색어: {article.get('검색어', '')}"
                                     if article.get("검색어") else ""
                                 )
-                                # ✅ LLM 점수 표시(있는 경우만)
                                 llm_score_info = ""
                                 if article.get("llm_score") is not None:
                                     llm_score_info = f" | LLM점수: {article.get('llm_score')}점"
+
                                 st.markdown(
                                     f"<span class='news-title'><a href='{article['link']}' "
                                     f"target='_blank'>{article['title']}</a></span> "
@@ -1627,7 +1632,6 @@ def render_articles_with_single_summary_and_telegram(
                                     unsafe_allow_html=True,
                                 )
 
-                            # 세션 상태 갱신
                             st.session_state.article_checked_left[key] = checked
                             st.session_state.article_checked[key] = checked
 
@@ -1645,27 +1649,28 @@ def render_articles_with_single_summary_and_telegram(
             for cat_name, company_list in favorite_categories.items():
                 for company in company_list:
                     if company in results:
-                        for idx, article in enumerate(results[company]):
-                            uid = re.sub(r"\W+", "", article["link"])[-16:]
+                        for article in results[company]:
+                            uid = make_uid(article["link"])
                             key = f"{company}_{uid}"
                             if st.session_state.article_checked.get(key, False):
                                 grouped_selected.setdefault(cat_name, {}).setdefault(company, []).append(
-                                    (company, uid, article)   # idx 대신 uid를 넘기는 편이 안전
+                                    (company, uid, article)
                                 )
 
             def process_article(item):
                 keyword, uid, art = item
                 key = f"{keyword}_{uid}"
                 cache_key = f"summary_{key}"
-            
+
                 if cache_key in st.session_state:
                     one_line, summary, sentiment, implication, short_implication, full_text = st.session_state[cache_key]
                 else:
                     one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
-                        art["link"], art["title"], do_summary=enable_summary, target_keyword=keyword,
-                        description=art.get("description")
+                        art["link"], art["title"], do_summary=enable_summary,
+                        target_keyword=keyword, description=art.get("description")
                     )
                     st.session_state[cache_key] = (one_line, summary, sentiment, implication, short_implication, full_text)
+
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
                     ALL_COMMON_FILTER_KEYWORDS,
@@ -1679,7 +1684,7 @@ def render_articles_with_single_summary_and_telegram(
                     "요약본": summary,
                     "감성": sentiment,
                     "시사점": implication,
-                    "한줄시사점": short_implication,  
+                    "한줄시사점": short_implication,
                     "링크": art["link"],
                     "날짜": art["date"],
                     "출처": art["source"],
@@ -1719,7 +1724,6 @@ def render_articles_with_single_summary_and_telegram(
             ]
             st.write(f"선택된 기사 개수: {total_selected_count}")
 
-            # 다운로드 / 전체 해제
             col_dl1, col_dl2 = st.columns([0.55, 0.45])
             with col_dl1:
                 st.download_button(
@@ -1807,7 +1811,7 @@ def render_important_article_review_and_download():
             for minor, arts in minor_map.items():
                 for idx, article in enumerate(arts):
                     link = article.get("링크", "")
-                    cleaned_id = re.sub(r"\W+", "", link)[-16:] if link else ""
+                    cleaned_id = make_uid(link) if link else ""
                     cache_hit = False
                     for k, v in st.session_state.items():
                         if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
@@ -1835,7 +1839,8 @@ def render_important_article_review_and_download():
                 for minor, arts in minor_map.items():
                     with st.expander(f"{minor} ({len(arts)}건)", expanded=False):
                         for idx, article in enumerate(arts):
-                            check_key = f"important_chk_{major}_{minor}_{idx}"
+                            uid = make_uid(article.get("링크",""))
+                            check_key = f"important_chk_{major}_{minor}_{uid}"
 
                             # 한 줄에 체크박스 + 감성 + 기사제목 하이퍼링크 배치
                             cols = st.columns([0.06, 0.94])
@@ -1923,7 +1928,7 @@ def render_important_article_review_and_download():
                             continue
 
                         keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
-                        cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
+                        cleaned_id = make_uid(selected_article['link'])
                         sentiment = None
                         for k in st.session_state.keys():
                             if k.startswith("summary_") and cleaned_id in k:
@@ -1998,7 +2003,7 @@ def render_important_article_review_and_download():
                     return
 
                 keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
-                cleaned_id = re.sub(r'\W+', '', selected_article['link'])[-16:]
+                cleaned_id = make_uid(link) if link else ""
                 sentiment = None
                 for k in st.session_state.keys():
                     if k.startswith("summary_") and cleaned_id in k:
@@ -2039,7 +2044,7 @@ def render_important_article_review_and_download():
         def enrich_article_for_excel(raw_article):
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
-            cleaned_id = re.sub(r"\W+", "", link)[-16:]
+            cleaned_id = make_uid(link) if link else ""
 
             one_line, summary, sentiment, implication, short_implication, full_text = None, None, None, None, None, None
 
@@ -2186,18 +2191,6 @@ if st.session_state.get("search_results"):
     for keyword, articles in list(st.session_state["search_results"].items()):
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
-        if (
-            len(filtered_articles) == 0
-            and st.session_state.get("require_exact_keyword_in_title_or_content", False)
-        ):
-            expanded_map = expand_keywords_with_synonyms([keyword])
-            process_keywords_with_synonyms(
-                expanded_map,
-                st.session_state["start_date"],
-                st.session_state["end_date"],
-                require_keyword_in_title=False
-            )
-
             articles = st.session_state["search_results"].get(keyword, [])
 
             # ✅ 추가: 최종 0건 fallback 기업이면 LLM 정제
@@ -2236,4 +2229,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
