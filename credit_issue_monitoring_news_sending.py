@@ -2188,48 +2188,54 @@ def render_important_article_review_and_download():
 
 if st.session_state.get("search_results"):
     filtered_results = {}
-
     for keyword, articles in list(st.session_state["search_results"].items()):
+        filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
-        # 1차: 기본 필터 통과 기사
-        base_articles = [a for a in articles if article_passes_all_filters(a)]
+        if (
+            len(filtered_articles) == 0
+            and st.session_state.get("require_exact_keyword_in_title_or_content", False)
+        ):
+            expanded_map = expand_keywords_with_synonyms([keyword])
+            process_keywords_with_synonyms(
+                expanded_map,
+                st.session_state["start_date"],
+                st.session_state["end_date"],
+                require_keyword_in_title=False
+            )
 
-        # 2차: LLM 필터 적용 (fallback 기업만)
-        if st.session_state.get("use_llm_filter", False):
+            articles = st.session_state["search_results"].get(keyword, [])
 
-            # 강력 필터 적용 + base_articles 0건인 경우만 LLM 수행
-            if len(base_articles) == 0:
+            # ✅ 추가: 최종 0건 fallback 기업이면 LLM 정제
+            if st.session_state.get("use_llm_filter", False):
                 articles = llm_filter_and_rank_articles(keyword, articles)
-            else:
-                articles = base_articles
-        else:
-            articles = base_articles
 
-        # 3차: 최종 필터 적용
-        final_articles = [a for a in articles if article_passes_all_filters(a)]
+            filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
-        # 4차: 중복 제거
         if st.session_state.get("remove_duplicate_articles", False):
-            final_articles = remove_duplicates(final_articles)
+            filtered_articles = remove_duplicates(filtered_articles)
 
-        if final_articles:
-            filtered_results[keyword] = final_articles
+        if filtered_articles:
+            filtered_results[keyword] = filtered_articles
 
-    # ---- 렌더링 ----
     render_articles_with_single_summary_and_telegram(
         filtered_results,
         st.session_state.show_limit,
         show_sentiment_badge=st.session_state.get("show_sentiment_badge", False),
-        enable_summary=st.session_state.get("enable_summary", True),
+        enable_summary=st.session_state.get("enable_summary", True)
     )
 
-    # ---- 신용평가 보고서 표시 ----
     selected_companies = []
     for cat in st.session_state.get("cat_multi", []):
         selected_companies.extend(favorite_categories.get(cat, []))
     selected_companies = list(set(selected_companies))
 
+    # kiscd_map과 cmpCD_map 모두에서 회사명에 매칭되는 키 값 가져오기
     kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
+    cmpcd_filtered = {c: config.get("cmpCD_map", {}).get(c, "") for c in selected_companies}
+
+    # 두 맵을 합치는 함수 (kiscd_filtered 기본에 cmpcd_filtered도 합칠 수 있도록)
+    # fetch_and_display_reports가 kiscd만 받으므로 확장 필요
+    # 여기서는 kiscd_filtered 넘기고, fetch_and_display_reports 내부에서 cmpCD_map 참조 권장
 
     fetch_and_display_reports(kiscd_filtered)
 
