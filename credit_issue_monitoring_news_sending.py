@@ -1537,12 +1537,18 @@ def matched_filter_keywords(article, common_keywords, industry_keywords):
 def render_articles_with_single_summary_and_telegram(
     results, show_limit, show_sentiment_badge=True, enable_summary=True
 ):
-    SENTIMENT_CLASS = {"긍정": "sentiment-positive", "부정": "sentiment-negative"}
+    SENTIMENT_CLASS = {
+        "긍정": "sentiment-positive",
+        "부정": "sentiment-negative",
+    }
     col_list, col_summary = st.columns([1, 1])
 
-    # ---------------------------- 뉴스 목록 열 ---------------------------- #
+    # ================================================================
+    #  🔵  뉴스 목록 렌더링 영역 (좌측)
+    # ================================================================
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
+
         for category_name, company_list in favorite_categories.items():
             companies_with_results = [c for c in company_list if c in results]
             if not companies_with_results:
@@ -1553,31 +1559,46 @@ def render_articles_with_single_summary_and_telegram(
                     articles = results[company]
 
                     with st.expander(f"[{company}] ({len(articles)}건)", expanded=False):
-                        # ✅ 이 회사에 속한 모든 기사 key 수집 (uid=md5)
+
+                        # ------------------------------------------------------------
+                        # 1) 현재 렌더링될 기사들의 key 생성
+                        # ------------------------------------------------------------
                         all_article_keys = []
-                        for article in articles:
-                            uid = make_uid(article["link"])
+                        for art in articles:
+                            uid = make_uid(art["link"])
                             key = f"{company}_{uid}"
                             all_article_keys.append(key)
 
-                        # ✅ 현재 렌더링 목록에 없는 과거 체크 상태(stale) 제거
                         current_key_set = set(all_article_keys)
+
+                        # ------------------------------------------------------------
+                        # 2) Stale 제거 (과거 키를 모두 삭제)
+                        # ------------------------------------------------------------
+                        # article_checked
                         for k in list(st.session_state.article_checked.keys()):
                             if k.startswith(f"{company}_") and k not in current_key_set:
                                 st.session_state.article_checked[k] = False
+
+                        # article_checked_left + 해당 위젯 제거
                         for k in list(st.session_state.article_checked_left.keys()):
                             if k.startswith(f"{company}_") and k not in current_key_set:
                                 st.session_state.article_checked_left[k] = False
                                 st.session_state.pop(f"news_{k}", None)
 
-                        # ✅ 마스터 체크박스 key 유일화
+                        # 🔥 핵심: Streamlit 위젯 자체의 상태도 제거해야 함
+                        for sk in list(st.session_state.keys()):
+                            if sk.startswith("news_"):
+                                tail = sk[len("news_"):]  # 회사_uid
+                                if tail.startswith(f"{company}_") and tail not in current_key_set:
+                                    st.session_state.pop(sk, None)
+
+                        # ------------------------------------------------------------
+                        # 3) 마스터 체크박스(전체 선택/해제)
+                        # ------------------------------------------------------------
                         slug = re.sub(r"\W+", "", f"{category_name}_{company}")
                         master_key = f"left_master_{slug}_select_all"
 
-                        prev_value = all(
-                            st.session_state.article_checked.get(k, False)
-                            for k in all_article_keys
-                        )
+                        prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
 
                         select_all = st.checkbox(
                             f"전체 기사 선택/해제 ({company})",
@@ -1585,17 +1606,27 @@ def render_articles_with_single_summary_and_telegram(
                             key=master_key,
                         )
 
-                        # 마스터 체크박스 값 변동 시
                         if select_all != prev_value:
+
+                            # 회사 관련 모든 과거 위젯/상태 정리
+                            for sk in list(st.session_state.keys()):
+                                if sk.startswith("news_"):
+                                    tail = sk[len("news_"):]
+                                    if tail.startswith(f"{company}_") and tail not in current_key_set:
+                                        st.session_state.pop(sk, None)
+
                             for k in all_article_keys:
                                 st.session_state.article_checked[k] = select_all
                                 st.session_state.article_checked_left[k] = select_all
                                 st.session_state[f"news_{k}"] = select_all
+
                             st.rerun()
 
-                        # 개별 기사 표시
-                        for article in articles:
-                            uid = make_uid(article["link"])
+                        # ------------------------------------------------------------
+                        # 4) 개별 기사 출력
+                        # ------------------------------------------------------------
+                        for art in articles:
+                            uid = make_uid(art["link"])
                             key = f"{company}_{uid}"
                             cache_key = f"summary_{key}"
 
@@ -1613,71 +1644,83 @@ def render_articles_with_single_summary_and_telegram(
                                     _, _, sentiment, _, _, _ = st.session_state[cache_key]
 
                                 badge_html = (
-                                    f"<span class='sentiment-badge "
-                                    f"{SENTIMENT_CLASS.get(sentiment, 'sentiment-neutral')}'>{sentiment}</span>"
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(sentiment,'sentiment-neutral')}'>{sentiment}</span>"
                                     if sentiment else ""
                                 )
-                                search_word_info = (
-                                    f" | 검색어: {article.get('검색어', '')}"
-                                    if article.get("검색어") else ""
-                                )
-                                llm_score_info = ""
-                                if article.get("llm_score") is not None:
-                                    llm_score_info = f" | LLM점수: {article.get('llm_score')}점"
+
+                                llm_info = f" | LLM점수:{art.get('llm_score')}점" if art.get("llm_score") else ""
+
+                                search_kw = f" | 검색어:{art.get('검색어')}" if art.get('검색어') else ""
 
                                 st.markdown(
-                                    f"<span class='news-title'><a href='{article['link']}' "
-                                    f"target='_blank'>{article['title']}</a></span> "
-                                    f"{badge_html} {article['date']} | {article['source']}{search_word_info}{llm_score_info}",
+                                    f"<span class='news-title'><a href='{art['link']}' target='_blank'>{art['title']}</a></span> "
+                                    f"{badge_html} {art['date']} | {art['source']}{search_kw}{llm_info}",
                                     unsafe_allow_html=True,
                                 )
 
-                            st.session_state.article_checked_left[key] = checked
                             st.session_state.article_checked[key] = checked
+                            st.session_state.article_checked_left[key] = checked
 
-
-    # ---------------------------- 선택 기사 요약/감성분석 열 ---------------------------- #
+    # ================================================================
+    #  🔵  선택된 기사 요약/감성분석 영역 (우측)
+    # ================================================================
     with col_summary:
         st.markdown("### 선택된 기사 요약/감성분석")
         with st.container(border=True):
+
             industry_keywords_all = []
-            if st.session_state.get("use_industry_filter", False):
+            if st.session_state.get("use_industry_filter"):
                 for sublist in st.session_state.industry_major_sub_map.values():
                     industry_keywords_all.extend(sublist)
 
             grouped_selected = {}
-            for cat_name, company_list in favorite_categories.items():
-                for company in company_list:
-                    if company in results:
-                        for article in results[company]:
-                            uid = make_uid(article["link"])
-                            key = f"{company}_{uid}"
-                            if st.session_state.article_checked.get(key, False):
-                                grouped_selected.setdefault(cat_name, {}).setdefault(company, []).append(
-                                    (company, uid, article)
-                                )
 
+            # ------------------------------------------------------------
+            #  선택된 기사 모으기
+            # ------------------------------------------------------------
+            for cat_name, comp_list in favorite_categories.items():
+                for company in comp_list:
+                    if company in results:
+                        for art in results[company]:
+                            uid = make_uid(art["link"])
+                            key = f"{company}_{uid}"
+
+                            if st.session_state.article_checked.get(key, False):
+                                grouped_selected \
+                                    .setdefault(cat_name, {}) \
+                                    .setdefault(company, []) \
+                                    .append((company, uid, art))
+
+            # ------------------------------------------------------------
+            #  요약 처리 함수
+            # ------------------------------------------------------------
             def process_article(item):
-                keyword, uid, art = item
-                key = f"{keyword}_{uid}"
+                company, uid, art = item
+                key = f"{company}_{uid}"
                 cache_key = f"summary_{key}"
 
                 if cache_key in st.session_state:
                     one_line, summary, sentiment, implication, short_implication, full_text = st.session_state[cache_key]
                 else:
                     one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
-                        art["link"], art["title"], do_summary=enable_summary,
-                        target_keyword=keyword, description=art.get("description")
+                        art["link"],
+                        art["title"],
+                        do_summary=enable_summary,
+                        target_keyword=company,
+                        description=art.get("description"),
                     )
-                    st.session_state[cache_key] = (one_line, summary, sentiment, implication, short_implication, full_text)
+                    st.session_state[cache_key] = (
+                        one_line, summary, sentiment, implication, short_implication, full_text
+                    )
 
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
                     ALL_COMMON_FILTER_KEYWORDS,
-                    industry_keywords_all
+                    industry_keywords_all,
                 )
+
                 return {
-                    "키워드": keyword,
+                    "키워드": company,
                     "필터히트": ", ".join(filter_hits),
                     "기사제목": safe_title(art["title"]),
                     "요약": one_line,
@@ -1688,41 +1731,40 @@ def render_articles_with_single_summary_and_telegram(
                     "링크": art["link"],
                     "날짜": art["date"],
                     "출처": art["source"],
-                    "full_text": full_text or "",
+                    "full_text": full_text,
                 }
 
+            # 병렬 요약
             from concurrent.futures import ThreadPoolExecutor
             for cat_name, comp_map in grouped_selected.items():
                 for company, items in comp_map.items():
-                    with ThreadPoolExecutor(max_workers=10) as executor:
-                        grouped_selected[cat_name][company] = list(executor.map(process_article, items))
+                    with ThreadPoolExecutor(max_workers=10) as exe:
+                        grouped_selected[cat_name][company] = list(exe.map(process_article, items))
 
-            total_selected_count = 0
+            # ------------------------------------------------------------
+            #  우측 요약 렌더링
+            # ------------------------------------------------------------
+            total_selected = 0
             for cat_name, comp_map in grouped_selected.items():
                 with st.expander(f"📂 {cat_name}", expanded=True):
                     for company, arts in comp_map.items():
                         with st.expander(f"[{company}] ({len(arts)}건)", expanded=True):
                             for art in arts:
-                                total_selected_count += 1
+                                total_selected += 1
                                 st.markdown(
-                                    f"#### <span class='news-title'><a href='{art['링크']}' target='_blank'>{art['기사제목']}</a></span> "
-                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'], 'sentiment-neutral')}'>{art['감성']}</span>",
-                                    unsafe_allow_html=True
+                                    f"#### <a href='{art['링크']}' target='_blank'>{art['기사제목']}</a> "
+                                    f"<span class='sentiment-badge {SENTIMENT_CLASS.get(art['감성'],'sentiment-neutral')}'>{art['감성']}</span>",
+                                    unsafe_allow_html=True,
                                 )
                                 st.markdown(f"- **검색 키워드:** `{art['키워드']}`")
-                                st.markdown(f"- **필터로 인식된 키워드:** `{art['필터히트'] or '없음'}`")
+                                st.markdown(f"- **필터 히트:** `{art['필터히트'] or '없음'}`")
                                 st.markdown(f"- **날짜/출처:** {art['날짜']} | {art['출처']}")
-                                if enable_summary:
-                                    st.markdown(f"- **한 줄 요약:** {art['요약']}")
-                                    st.markdown(f"- **한 줄 시사점:** {art.get('한줄시사점', '없음')}")
-                                    st.markdown(f"- **시사점:** {art['시사점'] or '없음'}")
-                                st.markdown(f"- **감성분석:** `{art['감성']}`")
+                                st.markdown(f"- **한 줄 요약:** {art['요약']}")
+                                st.markdown(f"- **한 줄 시사점:** {art['한줄시사점']}")
+                                st.markdown(f"- **시사점:** {art['시사점']}")
                                 st.markdown("---")
 
-            st.session_state.selected_articles = [
-                art for comp_map in grouped_selected.values() for arts in comp_map.values() for art in arts
-            ]
-            st.write(f"선택된 기사 개수: {total_selected_count}")
+            st.write(f"선택된 기사 개수: {total_selected}")
 
             col_dl1, col_dl2 = st.columns([0.55, 0.45])
             with col_dl1:
@@ -1732,17 +1774,17 @@ def render_articles_with_single_summary_and_telegram(
                         st.session_state.selected_articles,
                         favorite_categories,
                         excel_company_categories,
-                        st.session_state.search_results
+                        st.session_state.search_results,
                     ).getvalue(),
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             with col_dl2:
                 if st.button("🗑 선택 해제 (전체)"):
-                    for key in list(st.session_state.article_checked.keys()):
-                        st.session_state.article_checked[key] = False
-                    for key in list(st.session_state.article_checked_left.keys()):
-                        st.session_state.article_checked_left[key] = False
+                    for k in list(st.session_state.article_checked.keys()):
+                        st.session_state.article_checked[k] = False
+                    for k in list(st.session_state.article_checked_left.keys()):
+                        st.session_state.article_checked_left[k] = False
                     st.rerun()
 
         render_important_article_review_and_download()
@@ -2241,3 +2283,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
