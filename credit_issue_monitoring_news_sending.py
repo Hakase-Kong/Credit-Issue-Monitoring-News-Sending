@@ -702,7 +702,7 @@ with st.expander("🔍 키워드 필터 옵션"):
         key="use_llm_filter",
         help="강력 필터 결과가 0건인 기업은 확장검색 후 LLM으로 중요 기사만 남깁니다."
     )
-    st.number_input("LLM 평가 후보 cap(최신순)", min_value=10, max_value=100, step=5, key="llm_candidate_cap")
+    st.number_input("LLM 평가 후보 cap(최신순)", min_value=10, max_value=200, step=5, key="llm_candidate_cap")
     st.number_input("LLM 상위 기사 개수(top_k)", min_value=3, max_value=20, step=1, key="llm_top_k")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -2236,3 +2236,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
