@@ -404,8 +404,8 @@ def llm_filter_and_rank_articles(main_kw, articles):
     if not articles:
         return articles
 
-    cap = st.session_state.get("llm_candidate_cap", 30)
-    top_k = st.session_state.get("llm_top_k", 7)
+    cap = st.session_state.get("llm_candidate_cap", 200)
+    top_k = st.session_state.get("llm_top_k", 10)
 
     # 최신 순으로 cap만큼 자르기
     articles_sorted = sorted(
@@ -593,9 +593,9 @@ def init_session_state():
         "keyword_input": "",
 
         # ✅ LLM 필터 관련 기본값 추가
-        "use_llm_filter": False,      # LLM 중요도 필터 사용 여부
-        "llm_candidate_cap": 30,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
-        "llm_top_k": 7,              # LLM 점수 상위 몇 개만 남길지
+        "use_llm_filter": True,      # LLM 중요도 필터 사용 여부
+        "llm_candidate_cap": 200,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
+        "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -751,12 +751,15 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
 대상 기업: "{target_keyword or 'N/A'}"
 
 요구 형식:
-1. [한 줄 요약]: 사실 중심. 누가/무엇을/언제/어떻게 한 일을 한 문장으로.
-2. [심층 시사점]: 신용평가사의 코멘트 형식으로 등급/전망/재무안정성/현금흐름/유동성/사업·규제 환경 영향 분석(3문장 이상, 과도한 일반화 금지).
-3. [한 줄 시사점]: 영향의 핵심 포인트만 압축(예: '차입 확대로 단기유동성 부담 상승').
-4. [감성]: 긍정/부정/중립 중 하나.
-5. [검색 키워드]: 대상 기업명 또는 주요 엔티티 위주로 콤마 구분.
-6. [주요 키워드]: 인물/기업/기관명 중심으로 콤마 구분. 없으면 '없음'.
+- 1. [한 줄 요약]:
+  * 사실 중심(누가/무엇을/언제/어떻게).
+  * **1문장에 집착하지 말고 2~3문장 이내로 핵심 사실을 충분히 요약.**
+  * 추측/평가 금지.
+- 2. [심층 시사점]: 신용평가사의 코멘트 형식으로 등급/전망/재무안정성/현금흐름/유동성/사업·규제 환경 영향 분석(3문장 이상, 과도한 일반화 금지).
+- 3. [한 줄 시사점]: 영향의 핵심 포인트만 압축(예: '차입 확대로 단기유동성 부담 상승').
+- 4. [감성]: 긍정/부정/중립 중 하나.
+- 5. [검색 키워드]: 대상 기업명 또는 주요 엔티티 위주로 콤마 구분.
+- 6. [주요 키워드]: 인물/기업/기관명 중심으로 콤마 구분. 없으면 '없음'.
 
 [기사 본문]
 {text}
@@ -889,21 +892,35 @@ def process_keywords(keyword_list, start_date, end_date, require_keyword_in_titl
 
 # --- OPTIONAL: keep existing function, just ensure fallback args are passed ---
 def summarize_article_from_url(article_url, title, do_summary=True, target_keyword=None, description=None):
-    cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
-    summary_key = f"summary_{cache_key_base}"
+    # URL 기반 uid(16자리)
+    uid = re.sub(r"\W+", "", article_url)[-16:]
+
+    # ✅ 캐시 키를 target_keyword(회사/메인키워드) 포함 형태로 통일
+    if target_keyword and str(target_keyword).strip():
+        summary_key = f"summary_{target_keyword}_{uid}"
+    else:
+        summary_key = f"summary_{uid}"  # target_keyword 없을 때만 fallback
 
     if summary_key in st.session_state:
         return st.session_state[summary_key]
 
     try:
-        full_text = extract_article_text(article_url, fallback_desc=description, fallback_title=title)
+        full_text = extract_article_text(
+            article_url,
+            fallback_desc=description,
+            fallback_title=title
+        )
+
         if full_text.startswith("본문 추출 오류"):
             result = (full_text, "", "감성 추출 실패", "", "", full_text)
         else:
             one_line, summary, sentiment, implication, short_implication, text = summarize_and_sentiment_with_openai(
-                full_text, do_summary=do_summary, target_keyword=target_keyword
+                full_text,
+                do_summary=do_summary,
+                target_keyword=target_keyword
             )
             result = (one_line, summary, sentiment, implication, short_implication, text)
+
     except Exception as e:
         result = (f"요약 오류: {e}", "", "감성 추출 실패", "", "", "")
 
@@ -917,16 +934,18 @@ def or_keyword_filter(article, *keyword_lists):
             return True
     return False
 
-def get_summary_key_from_url(article_url: str) -> str:
-    cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
-    return f"summary_{cache_key_base}"
+def get_summary_key_from_url(article_url: str, target_keyword: str = None) -> str:
+    uid = re.sub(r"\W+", "", article_url)[-16:]
+    if target_keyword and str(target_keyword).strip():
+        return f"summary_{target_keyword}_{uid}"
+    return f"summary_{uid}"
 
 def article_contains_exact_keyword(article, keywords):
     title = article.get("title", "") or ""
     content = ""
 
     link = article.get("link", "") or ""
-    summary_key = get_summary_key_from_url(link)
+    summary_key = get_summary_key_from_url(link, keyword)
 
     if summary_key in st.session_state and isinstance(st.session_state[summary_key], tuple):
         one_line, summary, sentiment, implication, short_imp, full_text = st.session_state[summary_key]
@@ -1278,8 +1297,8 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": guideline}],
-                    max_tokens=600,
-                    temperature=0,
+                    max_tokens=900,
+                    temperature=0.2,
                 )
                 answer = response.choices[0].message.content.strip()
 
@@ -1532,8 +1551,18 @@ def render_articles_with_single_summary_and_telegram(
                         all_article_keys = []
                         for idx, article in enumerate(articles):
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
-                            key = f"{company}_{idx}_{uid}"
+                            key = f"{company}_{uid}"   # ✅ idx 제거 (안정적 키)
                             all_article_keys.append(key)
+                    
+                        # ✅ 현재 렌더링 목록에 없는 과거 체크 상태(stale) 제거
+                        current_key_set = set(all_article_keys)
+                        for k in list(st.session_state.article_checked.keys()):
+                            if k.startswith(f"{company}_") and k not in current_key_set:
+                                st.session_state.article_checked[k] = False
+                        for k in list(st.session_state.article_checked_left.keys()):
+                            if k.startswith(f"{company}_") and k not in current_key_set:
+                                st.session_state.article_checked_left[k] = False
+                                st.session_state.pop(f"news_{k}", None)  # 개별 위젯 상태도 제거
 
                         # ✅ 마스터 체크박스 key 를 완전히 유일하게 생성 (카테고리+회사 기반)
                         slug = re.sub(r"\W+", "", f"{category_name}_{company}")
@@ -1562,7 +1591,7 @@ def render_articles_with_single_summary_and_telegram(
                         # 개별 기사 표시
                         for idx, article in enumerate(articles):
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
-                            key = f"{company}_{idx}_{uid}"
+                            key = f"{company}_{uid}"   # ✅ 위와 동일
                             cache_key = f"summary_{key}"
 
                             cols = st.columns([0.04, 0.96])
@@ -1618,20 +1647,23 @@ def render_articles_with_single_summary_and_telegram(
                     if company in results:
                         for idx, article in enumerate(results[company]):
                             uid = re.sub(r"\W+", "", article["link"])[-16:]
-                            key = f"{company}_{idx}_{uid}"
+                            key = f"{company}_{uid}"
                             if st.session_state.article_checked.get(key, False):
                                 grouped_selected.setdefault(cat_name, {}).setdefault(company, []).append(
-                                    (company, idx, article)
+                                    (company, uid, article)   # idx 대신 uid를 넘기는 편이 안전
                                 )
 
             def process_article(item):
-                keyword, idx, art = item
-                cache_key = f"summary_{keyword}_{idx}_" + re.sub(r"\W+", "", art["link"])[-16:]
+                keyword, uid, art = item
+                key = f"{keyword}_{uid}"
+                cache_key = f"summary_{key}"
+            
                 if cache_key in st.session_state:
                     one_line, summary, sentiment, implication, short_implication, full_text = st.session_state[cache_key]
                 else:
                     one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
-                        art["link"], art["title"], do_summary=enable_summary, target_keyword=keyword
+                        art["link"], art["title"], do_summary=enable_summary, target_keyword=keyword,
+                        description=art.get("description")
                     )
                     st.session_state[cache_key] = (one_line, summary, sentiment, implication, short_implication, full_text)
                 filter_hits = matched_filter_keywords(
@@ -1873,7 +1905,7 @@ def render_important_article_review_and_download():
                     added_count = 0
                     important = st.session_state.get("important_articles_preview", [])
                     for from_key in left_selected_keys:
-                        m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
+                        m = re.match(r"^[^_]+_(.+)$", from_key)
                         if not m:
                             continue
                         key_tail = m.group(1)
@@ -1946,7 +1978,7 @@ def render_important_article_review_and_download():
                     return
                 from_key = left_selected_keys[0]
                 (target_major, target_minor, target_idx) = right_selected_indexes[0]
-                m = re.match(r"^[^_]+_[0-9]+_(.+)$", from_key)
+                m = re.match(r"^[^_]+_(.+)$", from_key)
                 if not m:
                     st.warning("기사 식별자 파싱 실패")
                     return
@@ -2204,4 +2236,3 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
