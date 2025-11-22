@@ -335,14 +335,107 @@ def expand_keywords_with_synonyms(original_keywords):
         expanded_map[kw] = [kw] + synonyms
     return expanded_map
 
+def llm_score_articles_batch(articles, target_keyword=None):
+    """
+    제목+description 기반으로 신용영향 중요도(1~5점) 스코어링.
+    반환: {idx: score}
+    """
+    if not OPENAI_API_KEY:
+        return {i: 3 for i in range(len(articles))}
+
+    prompt_list = "\n".join(
+        [f"{i+1}. {a.get('title','')} || {a.get('description','')}" for i, a in enumerate(articles)]
+    )
+
+    guideline = f"""
+너는 신용평가사 애널리스트다. 아래 기사 제목/요약을 보고
+대상 기업 "{target_keyword or 'N/A'}" 관점에서 신용영향 중요도를 1~5점으로 판단하라.
+
+[신용영향도 기준]
+5점: 등급/전망 변경 가능성, 대규모 자금조달/차입, 유동성 리스크, 회생/부도 등
+4점: 대규모 투자·M&A·자산매각, 레버리지 급변, 유의미한 실적 변화
+3점: 일반적 실적·구조조정·조달 등 중간 수준 이슈
+2점: 영향이 제한적인 사업/마케팅/제휴
+1점: 홍보/행사/ESG 캠페인 등 신용과 무관
+
+[기사 목록]
+{prompt_list}
+
+출력 형식:
+1번: 점수
+2번: 점수
+...
+(설명 금지)
+"""
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "과장 없이 사실 관점으로만 점수화하라."},
+                {"role": "user", "content": guideline},
+            ],
+            max_tokens=300,
+            temperature=0
+        )
+        ans = resp.choices[0].message.content.strip()
+    except Exception:
+        return {i: 3 for i in range(len(articles))}
+
+    score_map = {}
+    for line in ans.splitlines():
+        m = re.match(r"(\d+)번\s*:\s*([1-5])", line.strip())
+        if m:
+            no = int(m.group(1)) - 1
+            score_map[no] = int(m.group(2))
+
+    for i in range(len(articles)):
+        score_map.setdefault(i, 3)
+
+    return score_map
+
+def llm_filter_and_rank_articles(main_kw, articles):
+    """
+    1) 최신 순으로 cap만큼 선정
+    2) LLM batch scoring
+    3) score + date 기준 내림차순 정렬
+    4) 상위 top_k 반환
+    """
+    if not articles:
+        return articles
+
+    cap = st.session_state.get("llm_candidate_cap", 30)
+    top_k = st.session_state.get("llm_top_k", 7)
+
+    # 최신 순으로 cap만큼 자르기
+    articles_sorted = sorted(
+        articles,
+        key=lambda x: x.get("date", ""),
+        reverse=True
+    )[:cap]
+
+    scores = llm_score_articles_batch(articles_sorted, target_keyword=main_kw)
+
+    for i, a in enumerate(articles_sorted):
+        a["llm_score"] = scores.get(i, 3)
+
+    ranked = sorted(
+        articles_sorted,
+        key=lambda x: (x.get("llm_score", 3), x.get("date", "")),
+        reverse=True
+    )
+
+    return ranked[:top_k]
+
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
     """
     1차: 강한 필터(require_keyword_in_title) 그대로 적용
     2차: 메인키워드 기준 강력필터 통과 0건일 때만 fallback 수행
-    3차: fallback 이후 LLM 중요도 필터 적용(옵션)
+    3차: fallback 이후 LLM 중요도 필터 적용(옵션, fallback 기업에만)
     """
     for main_kw, kw_list in favorite_to_expand_map.items():
         all_articles = []
+        did_fallback = False   # ✅ fallback 발생 여부 플래그
 
         # -------------------------
         # 1차 검색
@@ -387,6 +480,7 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
             len(strong_main_articles) == 0
             and st.session_state.get("require_exact_keyword_in_title_or_content", False)
         ):
+            did_fallback = True   # ✅ 여기서만 True
             fallback_articles = []
 
             with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
@@ -419,9 +513,9 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
             all_articles = remove_duplicates(all_articles)
 
         # -------------------------
-        # 🔥 LLM 필터 적용 (옵션)
+        # 🔥 LLM 필터는 "fallback 발생 기업"에만
         # -------------------------
-        if st.session_state.get("use_llm_filter", False):
+        if did_fallback and st.session_state.get("use_llm_filter", False):
             all_articles = llm_filter_and_rank_articles(main_kw, all_articles)
 
         # -------------------------
@@ -496,7 +590,12 @@ def init_session_state():
         "use_industry_filter": True,
         "show_sentiment_badge": False,
         "enable_summary": True,
-        "keyword_input": ""
+        "keyword_input": "",
+
+        # ✅ LLM 필터 관련 기본값 추가
+        "use_llm_filter": False,      # LLM 중요도 필터 사용 여부
+        "llm_candidate_cap": 30,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
+        "llm_top_k": 7,              # LLM 점수 상위 몇 개만 남길지
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -597,6 +696,14 @@ with st.expander("🔍 키워드 필터 옵션"):
         key="filter_allowed_sources_only", 
         help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
     )
+    # ✅ 0건 기업 fallback 결과를 LLM으로 정제
+    st.checkbox(
+        "0건 기업에 한해 LLM 중요도 필터 적용",
+        key="use_llm_filter",
+        help="강력 필터 결과가 0건인 기업은 확장검색 후 LLM으로 중요 기사만 남깁니다."
+    )
+    st.number_input("LLM 평가 후보 cap(최신순)", min_value=10, max_value=100, step=5, key="llm_candidate_cap")
+    st.number_input("LLM 상위 기사 개수(top_k)", min_value=3, max_value=20, step=1, key="llm_top_k")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -810,17 +917,21 @@ def or_keyword_filter(article, *keyword_lists):
             return True
     return False
 
+def get_summary_key_from_url(article_url: str) -> str:
+    cache_key_base = re.sub(r"\W+", "", article_url)[-16:]
+    return f"summary_{cache_key_base}"
+
 def article_contains_exact_keyword(article, keywords):
-    title = article.get("title", "")
+    title = article.get("title", "") or ""
     content = ""
-    cache_key = article.get("link", "")
-    summary_cache_key = None
-    for key in st.session_state.keys():
-        if key.startswith("summary_") and cache_key in key:
-            summary_cache_key = key
-            break
-    if summary_cache_key and isinstance(st.session_state[summary_cache_key], tuple):
-        _, _, _, content = st.session_state[summary_cache_key]
+
+    link = article.get("link", "") or ""
+    summary_key = get_summary_key_from_url(link)
+
+    if summary_key in st.session_state and isinstance(st.session_state[summary_key], tuple):
+        one_line, summary, sentiment, implication, short_imp, full_text = st.session_state[summary_key]
+        content = full_text or ""
+
     for kw in keywords:
         if kw and (kw in title or (content and kw in content)):
             return True
@@ -851,7 +962,7 @@ def article_passes_all_filters(article):
     keyword_passed = article_contains_exact_keyword(article, all_keywords)
 
     # 언론사 도메인 필터링 (특정 언론사만 필터링)
-    if st.session_state.get("filter_allowed_sources_only", True):
+    if st.session_state.get("filter_allowed_sources_only", False):
         source = article.get('source', '').lower()
         if source.startswith("www."):
             source = source[4:]
@@ -903,14 +1014,9 @@ def remove_duplicates(articles):
 
 # 항상 먼저 선언해 에러 방지
 keyword_list = [k.strip() for k in keywords_input.split(",") if k.strip()] if keywords_input else []
-search_clicked = False
 
-if keyword_list:
-        search_clicked = True
-
-if keyword_list and (search_clicked or st.session_state.get("search_triggered")):
+if search_clicked and keyword_list:
     with st.spinner("뉴스 검색 중..."):
-        # 동의어 확장
         expanded = expand_keywords_with_synonyms(sorted(keyword_list))
         process_keywords_with_synonyms(
             expanded,
@@ -919,7 +1025,6 @@ if keyword_list and (search_clicked or st.session_state.get("search_triggered"))
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
     st.session_state.search_triggered = False
-
 
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
@@ -1088,7 +1193,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     import re
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
     result = []
 
     # 섹터별 키워드 파싱 (get_industry_credit_keywords() 기반)
@@ -1169,10 +1274,9 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 [중요1]: (기사번호 또는 없음)
 [중요2]: (기사번호 또는 없음)
 """
-
             try:
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o-mini",
                     messages=[{"role": "user", "content": guideline}],
                     max_tokens=600,
                     temperature=0,
@@ -1197,8 +1301,30 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                     raw_selected.append(int(sel1_match.group(1)))
                 if sel2_match:
                     raw_selected.append(int(sel2_match.group(1)))
-
+                
                 selected_indexes = []
+                for no in raw_selected:
+                    idx0 = no - 1
+                    if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
+                        if idx0 not in selected_indexes:
+                            selected_indexes.append(idx0)
+                
+                # ✅ 5점이 없으면 skip
+                if not selected_indexes:
+                    continue
+                
+                for idx0 in selected_indexes:
+                    a = target_articles[idx0]
+                    result.append({
+                        "키워드": comp,
+                        "기사제목": a.get("title", ""),
+                        "링크": a.get("link", ""),
+                        "날짜": a.get("date", ""),
+                        "출처": a.get("source", ""),
+                        "감성": "",
+                        "시사점": ""
+                    })
+
                 for no in raw_selected:
                     idx0 = no - 1
                     # ✅ 실제 점수가 5점인 것만 유지
@@ -1308,7 +1434,7 @@ def build_important_excel_format(important_articles, favorite_categories, excel_
 
         filtered_articles = []
         for art in all_articles:
-            if article_passes_filters(art):  # 또는 article_passes_filters(art) 함수에 맞게 변경
+            if article_passes_all_filters(art):  # 또는 article_passes_filters(art) 함수에 맞게 변경
                 filtered_articles.append(art)
 
         if 'remove_duplicate_articles' in st.session_state and st.session_state['remove_duplicate_articles']:
@@ -1450,7 +1576,7 @@ def render_articles_with_single_summary_and_telegram(
                             with cols[1]:
                                 sentiment = ""
                                 if show_sentiment_badge and cache_key in st.session_state:
-                                    _, _, sentiment, _, _ = st.session_state[cache_key]
+                                    _, _, sentiment, _, _, _ = st.session_state[cache_key]
 
                                 badge_html = (
                                     f"<span class='sentiment-badge "
@@ -1461,11 +1587,14 @@ def render_articles_with_single_summary_and_telegram(
                                     f" | 검색어: {article.get('검색어', '')}"
                                     if article.get("검색어") else ""
                                 )
-
+                                # ✅ LLM 점수 표시(있는 경우만)
+                                llm_score_info = ""
+                                if article.get("llm_score") is not None:
+                                    llm_score_info = f" | LLM점수: {article.get('llm_score')}점"
                                 st.markdown(
                                     f"<span class='news-title'><a href='{article['link']}' "
                                     f"target='_blank'>{article['title']}</a></span> "
-                                    f"{badge_html} {article['date']} | {article['source']}{search_word_info}",
+                                    f"{badge_html} {article['date']} | {article['source']}{search_word_info}{llm_score_info}",
                                     unsafe_allow_html=True,
                                 )
 
@@ -1661,20 +1790,6 @@ def render_important_article_review_and_download():
                 def get_one_line(args):
                     major, minor, idx, link, title = args
                     one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(link, title, do_summary=True)
-                    return (major, minor, idx), (one_line, summary, sentiment, implication, short_implication, full_text)
-
-                with ThreadPoolExecutor(max_workers=10) as executor:
-                    for key, data_tuple in executor.map(get_one_line, to_summarize):
-                        one_line_map[key] = data_tuple
-
-        new_selection = []
-        if to_summarize:
-            with st.spinner("중요 기사 요약 생성 중."):
-                def get_one_line(args):
-                    major, minor, idx, link, title = args
-                    one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
-                        link, title, do_summary=True
-                    )
                     return (major, minor, idx), (one_line, summary, sentiment, implication, short_implication, full_text)
 
                 with ThreadPoolExecutor(max_workers=10) as executor:
@@ -2034,101 +2149,9 @@ def render_important_article_review_and_download():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-def llm_score_articles_batch(articles, target_keyword=None):
-    """
-    제목+description 기반으로 신용영향 중요도(1~5점) 스코어링.
-    반환: {idx: score}
-    """
-    if not OPENAI_API_KEY:
-        return {i: 3 for i in range(len(articles))}
-
-    prompt_list = "\n".join(
-        [f"{i+1}. {a.get('title','')} || {a.get('description','')}" for i, a in enumerate(articles)]
-    )
-
-    guideline = f"""
-너는 신용평가사 애널리스트다. 아래 기사 제목/요약을 보고
-대상 기업 "{target_keyword or 'N/A'}" 관점에서 신용영향 중요도를 1~5점으로 판단하라.
-
-[신용영향도 기준]
-5점: 등급/전망 변경 가능성, 대규모 자금조달/차입, 유동성 리스크, 회생/부도 등
-4점: 대규모 투자·M&A·자산매각, 레버리지 급변, 유의미한 실적 변화
-3점: 일반적 실적·구조조정·조달 등 중간 수준 이슈
-2점: 영향이 제한적인 사업/마케팅/제휴
-1점: 홍보/행사/ESG 캠페인 등 신용과 무관
-
-[기사 목록]
-{prompt_list}
-
-출력 형식:
-1번: 점수
-2번: 점수
-...
-(설명 금지)
-"""
-
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "과장 없이 사실 관점으로만 점수화하라."},
-                {"role": "user", "content": guideline},
-            ],
-            max_tokens=300,
-            temperature=0
-        )
-        ans = resp.choices[0].message.content.strip()
-    except Exception:
-        return {i: 3 for i in range(len(articles))}
-
-    score_map = {}
-    for line in ans.splitlines():
-        m = re.match(r"(\d+)번\s*:\s*([1-5])", line.strip())
-        if m:
-            no = int(m.group(1)) - 1
-            score_map[no] = int(m.group(2))
-
-    for i in range(len(articles)):
-        score_map.setdefault(i, 3)
-
-    return score_map
-
-def llm_filter_and_rank_articles(main_kw, articles):
-    """
-    1) 최신 순으로 cap만큼 선정
-    2) LLM batch scoring
-    3) score + date 기준 내림차순 정렬
-    4) 상위 top_k 반환
-    """
-    if not articles:
-        return articles
-
-    cap = st.session_state.get("llm_candidate_cap", 30)
-    top_k = st.session_state.get("llm_top_k", 7)
-
-    # 최신 순으로 cap만큼 자르기
-    articles_sorted = sorted(
-        articles,
-        key=lambda x: x.get("date", ""),
-        reverse=True
-    )[:cap]
-
-    scores = llm_score_articles_batch(articles_sorted, target_keyword=main_kw)
-
-    for i, a in enumerate(articles_sorted):
-        a["llm_score"] = scores.get(i, 3)
-
-    ranked = sorted(
-        articles_sorted,
-        key=lambda x: (x.get("llm_score", 3), x.get("date", "")),
-        reverse=True
-    )
-
-    return ranked[:top_k]
-
 if st.session_state.get("search_results"):
     filtered_results = {}
-    for keyword, articles in st.session_state["search_results"].items():
+    for keyword, articles in list(st.session_state["search_results"].items()):
         # 1차 최종 필터
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
@@ -2140,10 +2163,11 @@ if st.session_state.get("search_results"):
             expanded_map = expand_keywords_with_synonyms([keyword])  # keyword 1개만 확장
             process_keywords_with_synonyms(
                 expanded_map,
-                st.session_state.start_date,
-                st.session_state.end_date,
-                require_keyword_in_title=False  # ★ 강력 필터 해제
+                st.session_state["start_date"],
+                st.session_state["end_date"],
+                require_keyword_in_title=False
             )
+
             articles = st.session_state["search_results"].get(keyword, [])
             filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
@@ -2177,7 +2201,3 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
-
-
-
