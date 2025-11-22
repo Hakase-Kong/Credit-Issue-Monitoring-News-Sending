@@ -2152,15 +2152,13 @@ def render_important_article_review_and_download():
 if st.session_state.get("search_results"):
     filtered_results = {}
     for keyword, articles in list(st.session_state["search_results"].items()):
-        # 1차 최종 필터
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
-        # ✅ (2차 원인 대응) 최종이 0건이면: 해당 keyword에 한해 강력 필터 해제 재검색 → 다시 필터
         if (
             len(filtered_articles) == 0
             and st.session_state.get("require_exact_keyword_in_title_or_content", False)
         ):
-            expanded_map = expand_keywords_with_synonyms([keyword])  # keyword 1개만 확장
+            expanded_map = expand_keywords_with_synonyms([keyword])
             process_keywords_with_synonyms(
                 expanded_map,
                 st.session_state["start_date"],
@@ -2169,6 +2167,11 @@ if st.session_state.get("search_results"):
             )
 
             articles = st.session_state["search_results"].get(keyword, [])
+
+            # ✅ 추가: 최종 0건 fallback 기업이면 LLM 정제
+            if st.session_state.get("use_llm_filter", False):
+                articles = llm_filter_and_rank_articles(keyword, articles)
+
             filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
         if st.session_state.get("remove_duplicate_articles", False):
@@ -2201,3 +2204,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
