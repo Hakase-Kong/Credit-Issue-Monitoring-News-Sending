@@ -529,6 +529,9 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
         # -------------------------
         st.session_state.search_results[main_kw] = all_articles
 
+        # ✅ 추가: 이 기업이 fallback을 했는지 기록
+        st.session_state.fallback_done[main_kw] = did_fallback
+        
         if main_kw not in st.session_state.show_limit:
             st.session_state.show_limit[main_kw] = 5
 
@@ -602,6 +605,9 @@ def init_session_state():
         "use_llm_filter": True,      # LLM 중요도 필터 사용 여부
         "llm_candidate_cap": 200,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
         "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
+
+        # ✅ 추가: 기업별 fallback 수행 여부 기록
+        "fallback_done": {},   # {메인키워드: True/False}
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -2230,12 +2236,17 @@ def render_important_article_review_and_download():
 
 if st.session_state.get("search_results"):
     filtered_results = {}
+
+    fallback_done_map = st.session_state.get("fallback_done", {})
+
     for keyword, articles in list(st.session_state["search_results"].items()):
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
+        # ✅ 수정: "이미 fallback+LLM이 적용됐던 기업"은 재검색으로 덮어쓰기 금지
         if (
             len(filtered_articles) == 0
             and st.session_state.get("require_exact_keyword_in_title_or_content", False)
+            and not fallback_done_map.get(keyword, False)   # <-- 핵심 조건
         ):
             expanded_map = expand_keywords_with_synonyms([keyword])
             process_keywords_with_synonyms(
@@ -2247,7 +2258,6 @@ if st.session_state.get("search_results"):
 
             articles = st.session_state["search_results"].get(keyword, [])
 
-            # ✅ 추가: 최종 0건 fallback 기업이면 LLM 정제
             if st.session_state.get("use_llm_filter", False):
                 articles = llm_filter_and_rank_articles(keyword, articles)
 
@@ -2283,4 +2293,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
