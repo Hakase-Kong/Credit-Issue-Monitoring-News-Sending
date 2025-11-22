@@ -338,13 +338,20 @@ def expand_keywords_with_synonyms(original_keywords):
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
     """
     1차: require_keyword_in_title 플래그(체크박스 설정)에 따라 강한 필터로 검색
-    2차: 기업(main_kw)별 결과가 0건인 경우에만
+    2차: 기업(main_kw)별로 '메인 키워드 기준' 강력 필터 통과 결과가 0건인 경우에만
          -> 해당 기업에 한해 '제목/본문 키워드 포함' 조건을 해제하고 재검색(Fallback)
+
+    ※ 기존 버그:
+       - 동의어로 원본 기사(all_articles)가 몇 건 잡히면 최종이 0건이어도 Fallback이 안 도는 문제
+       - 그래서 "0건 기업인데도 강력 필터 해제 안 됨"처럼 보였음
     """
+
     for main_kw, kw_list in favorite_to_expand_map.items():
         all_articles = []
 
-        # 🔹 1차 검색: 현재 설정(require_keyword_in_title)을 그대로 적용
+        # -----------------------------------------
+        # 1차 검색: 현재 설정(require_keyword_in_title)을 그대로 적용
+        # -----------------------------------------
         with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
             futures = {
                 executor.submit(
@@ -356,6 +363,7 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                 ): search_kw
                 for search_kw in kw_list
             }
+
             for future in as_completed(futures):
                 search_kw = futures[future]
                 try:
@@ -366,11 +374,28 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                 except Exception as e:
                     st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
 
+        # -----------------------------------------
+        # ✅ (중요) "메인 키워드(main_kw) 기준"으로 강력 필터 통과 기사만 집계
+        #  - 동의어로 잡힌 기사 때문에 all_articles>0이 되어
+        #    Fallback이 막히는 문제를 해결하기 위한 실제 0건 판정 기준
+        # -----------------------------------------
+        def passes_strong_filter_for_main(article):
+            if st.session_state.get("require_exact_keyword_in_title_or_content", False):
+                title = (article.get("title") or "")
+                desc = (article.get("description") or "")
+                # 강력 필터 ON일 때의 기준을 main_kw로 재적용
+                return (main_kw in title) or (main_kw in desc)
+            return True
+
+        strong_main_articles = [a for a in all_articles if passes_strong_filter_for_main(a)]
+
+        # -----------------------------------------
         # 🔸 Fallback 조건:
-        #  - 1차 검색 결과가 0건이고
+        #  - 메인 키워드 기준 강력 필터 통과 결과가 0건이고
         #  - 전역 체크박스(키워드가 제목 또는 본문에 포함…)가 켜져 있을 때만
+        # -----------------------------------------
         if (
-            len(all_articles) == 0
+            len(strong_main_articles) == 0
             and st.session_state.get("require_exact_keyword_in_title_or_content", False)
         ):
             fallback_articles = []
@@ -383,10 +408,11 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                         search_kw,
                         start_date,
                         end_date,
-                        require_keyword_in_title=False   # ★ 필터 해제
+                        require_keyword_in_title=False  # ★ 필터 해제
                     ): search_kw
                     for search_kw in kw_list
                 }
+
                 for future in as_completed(futures):
                     search_kw = futures[future]
                     try:
@@ -398,11 +424,15 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
 
             all_articles = fallback_articles
 
-        # 🔹 중복 기사 제거 옵션 적용
+        # -----------------------------------------
+        # 중복 기사 제거 옵션 적용
+        # -----------------------------------------
         if st.session_state.get("remove_duplicate_articles", False):
             all_articles = remove_duplicates(all_articles)
 
-        # 🔹 최종 결과 저장
+        # -----------------------------------------
+        # 최종 결과 저장
+        # -----------------------------------------
         st.session_state.search_results[main_kw] = all_articles
         if main_kw not in st.session_state.show_limit:
             st.session_state.show_limit[main_kw] = 5
@@ -2044,4 +2074,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
