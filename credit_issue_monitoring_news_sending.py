@@ -341,9 +341,7 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
     2차: 기업(main_kw)별로 '메인 키워드 기준' 강력 필터 통과 결과가 0건인 경우에만
          -> 해당 기업에 한해 '제목/본문 키워드 포함' 조건을 해제하고 재검색(Fallback)
 
-    ※ 기존 버그:
-       - 동의어로 원본 기사(all_articles)가 몇 건 잡히면 최종이 0건이어도 Fallback이 안 도는 문제
-       - 그래서 "0건 기업인데도 강력 필터 해제 안 됨"처럼 보였음
+    ※ 동의어 때문에 all_articles>0이 되어 Fallback이 막히는 버그를 해결한 버전
     """
 
     for main_kw, kw_list in favorite_to_expand_map.items():
@@ -368,31 +366,25 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                 search_kw = futures[future]
                 try:
                     fetched = future.result()
-                    # 각 기사에 검색어 정보 추가
                     fetched = [{**a, "검색어": search_kw} for a in fetched]
                     all_articles.extend(fetched)
                 except Exception as e:
                     st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
 
         # -----------------------------------------
-        # ✅ (중요) "메인 키워드(main_kw) 기준"으로 강력 필터 통과 기사만 집계
-        #  - 동의어로 잡힌 기사 때문에 all_articles>0이 되어
-        #    Fallback이 막히는 문제를 해결하기 위한 실제 0건 판정 기준
+        # ✅ "메인 키워드(main_kw) 기준" 강력 필터 통과 기사만 집계
         # -----------------------------------------
         def passes_strong_filter_for_main(article):
             if st.session_state.get("require_exact_keyword_in_title_or_content", False):
                 title = (article.get("title") or "")
                 desc = (article.get("description") or "")
-                # 강력 필터 ON일 때의 기준을 main_kw로 재적용
                 return (main_kw in title) or (main_kw in desc)
             return True
 
         strong_main_articles = [a for a in all_articles if passes_strong_filter_for_main(a)]
 
         # -----------------------------------------
-        # 🔸 Fallback 조건:
-        #  - 메인 키워드 기준 강력 필터 통과 결과가 0건이고
-        #  - 전역 체크박스(키워드가 제목 또는 본문에 포함…)가 켜져 있을 때만
+        # 🔸 Fallback 조건을 "메인 기준 0건"으로 변경
         # -----------------------------------------
         if (
             len(strong_main_articles) == 0
@@ -400,7 +392,6 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
         ):
             fallback_articles = []
 
-            # 2차 검색: 이 main_kw(기업)에 한해서만 제목/본문 키워드 필터 해제
             with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
                 futures = {
                     executor.submit(
@@ -2042,7 +2033,23 @@ def render_important_article_review_and_download():
 if st.session_state.get("search_results"):
     filtered_results = {}
     for keyword, articles in st.session_state["search_results"].items():
+        # 1차 최종 필터
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
+
+        # ✅ (2차 원인 대응) 최종이 0건이면: 해당 keyword에 한해 강력 필터 해제 재검색 → 다시 필터
+        if (
+            len(filtered_articles) == 0
+            and st.session_state.get("require_exact_keyword_in_title_or_content", False)
+        ):
+            expanded_map = expand_keywords_with_synonyms([keyword])  # keyword 1개만 확장
+            process_keywords_with_synonyms(
+                expanded_map,
+                st.session_state.start_date,
+                st.session_state.end_date,
+                require_keyword_in_title=False  # ★ 강력 필터 해제
+            )
+            articles = st.session_state["search_results"].get(keyword, [])
+            filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
@@ -2074,5 +2081,6 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
