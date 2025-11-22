@@ -2234,19 +2234,38 @@ def render_important_article_review_and_download():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+# --- 렌더 직전 필터링 로직 완전 교체 ---
 if st.session_state.get("search_results"):
     filtered_results = {}
-
     fallback_done_map = st.session_state.get("fallback_done", {})
 
-    for keyword, articles in list(st.session_state["search_results"].items()):
+    for keyword, articles in st.session_state["search_results"].items():
+
+        # ------------------------------------------------------------
+        # 1) fallback + LLM 기업은 article_passes_all_filters 를 적용하면 안됨
+        #    → LLM 이 확정한 결과 그대로 사용해야 함
+        # ------------------------------------------------------------
+        if fallback_done_map.get(keyword, False):
+            # 이미 fallback + LLM 필터를 거친 articles 그대로 사용
+            filtered_articles = articles
+
+            # 단, 중복 제거 옵션이 켜져 있으면 적용
+            if st.session_state.get("remove_duplicate_articles", False):
+                filtered_articles = remove_duplicates(filtered_articles)
+
+            filtered_results[keyword] = filtered_articles
+            continue
+
+        # ------------------------------------------------------------
+        # 2) 일반 기업은 기존 필터(article_passes_all_filters) 적용
+        # ------------------------------------------------------------
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
-        # ✅ 수정: "이미 fallback+LLM이 적용됐던 기업"은 재검색으로 덮어쓰기 금지
+        # 만약 필터 적용 후 0건이고 강력필터 ON이고 fallback이 아직 안된 기업이면 fallback 다시 시도
         if (
             len(filtered_articles) == 0
             and st.session_state.get("require_exact_keyword_in_title_or_content", False)
-            and not fallback_done_map.get(keyword, False)   # <-- 핵심 조건
+            and not fallback_done_map.get(keyword, False)
         ):
             expanded_map = expand_keywords_with_synonyms([keyword])
             process_keywords_with_synonyms(
@@ -2255,7 +2274,6 @@ if st.session_state.get("search_results"):
                 st.session_state["end_date"],
                 require_keyword_in_title=False
             )
-
             articles = st.session_state["search_results"].get(keyword, [])
 
             if st.session_state.get("use_llm_filter", False):
@@ -2293,5 +2311,3 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
-
