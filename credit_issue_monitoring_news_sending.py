@@ -2566,23 +2566,21 @@ def render_important_article_review_and_download():
         )
 
 # --- 렌더 직전 필터링 로직 (전기업 LLM 적용 버전) ---
-# --- 렌더 직전 필터링 로직 (전기업 LLM 적용 버전) ---
 if st.session_state.get("search_results"):
     filtered_results = {}
     top_k = st.session_state.get("llm_top_k", 10)
 
-    for keyword, articles in st.session_state["search_results"].items():
-
-        # 1) 기존 필터 적용
+    # ---- 기업 단위 병렬 처리 함수 ----
+    def process_company(keyword, articles):
+        # 1) 기존 필터
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
         # 2) 중복 제거
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
 
-        # 3) ✅ 렌더 직전 LLM “최종 보증”
+        # 3) LLM 필터 적용
         if st.session_state.get("use_llm_filter", False):
-            # 이미 LLM 점수 포함 + 길이 <= top_k 이면 재호출 방지
             already_llm = (
                 len(filtered_articles) <= top_k and
                 all(("llm_score" in a) for a in filtered_articles)
@@ -2590,9 +2588,24 @@ if st.session_state.get("search_results"):
             if not already_llm:
                 filtered_articles = llm_filter_and_rank_articles(keyword, filtered_articles)
 
-        if filtered_articles:
-            filtered_results[keyword] = filtered_articles
+        return keyword, filtered_articles
 
+
+    # ---- 병렬 실행 (기업 단위) ----
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [
+            executor.submit(process_company, kw, arts)
+            for kw, arts in st.session_state["search_results"].items()
+        ]
+
+        for future in as_completed(futures):
+            kw, processed_articles = future.result()
+            if processed_articles:
+                filtered_results[kw] = processed_articles
+
+    # ---- 렌더링 ----
     render_articles_with_single_summary_and_telegram(
         filtered_results,
         st.session_state.show_limit,
@@ -2613,19 +2626,3 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
