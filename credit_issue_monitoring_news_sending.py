@@ -1798,6 +1798,7 @@ def render_articles_with_single_summary_and_telegram(
         "긍정": "sentiment-positive",
         "부정": "sentiment-negative",
     }
+
     col_list, col_summary = st.columns([1, 1])
 
     # ================================================================
@@ -1818,7 +1819,7 @@ def render_articles_with_single_summary_and_telegram(
 
                 major_pool = build_industry_major_article_pool(results)
                 cache = {}
-                
+
                 if major_pool:
                     with ThreadPoolExecutor(max_workers=min(8, len(major_pool))) as exe:
                         futures = {
@@ -1843,32 +1844,35 @@ def render_articles_with_single_summary_and_telegram(
                         with st.expander(f"🏭 {major_name} ({len(major_top)}건)", expanded=False):
                             for art in major_top:
                                 uid = make_uid(art["link"])
-                            
+
                                 company_tag = (art.get("키워드") or "").strip()
-                                # ✅ 기업 기사 key와 동일한 포맷으로 통일
+                                # ✅ 공통 상태 key (회사_uid) 유지
                                 key = f"{company_tag}_{uid}" if company_tag else f"industry_{major_name}_{uid}"
-                            
+
                                 cols = st.columns([0.04, 0.96])
                                 with cols[0]:
+                                    # ✅ 위젯 key는 산업군 전용 namespace 부여
+                                    widget_key = f"news_major_{key}"
                                     checked = st.checkbox(
                                         "",
                                         value=st.session_state.article_checked.get(key, False),
-                                        key=f"news_{key}",
+                                        key=widget_key,
                                     )
-                            
+
                                 with cols[1]:
                                     llm_info = (
                                         f" | LLM점수:{art.get('llm_score')}점"
                                         if art.get("llm_score") else ""
                                     )
                                     company_info = f" | 기업:{company_tag}" if company_tag else ""
-                            
+
                                     st.markdown(
                                         f"<span class='news-title'><a href='{art['link']}' target='_blank'>{art['title']}</a></span> "
                                         f"{art['date']} | {art['source']}{company_info}{llm_info}",
                                         unsafe_allow_html=True,
                                     )
-                            
+
+                                # ✅ 공통 상태 반영
                                 st.session_state.article_checked[key] = checked
                                 st.session_state.article_checked_left[key] = checked
             else:
@@ -1889,12 +1893,12 @@ def render_articles_with_single_summary_and_telegram(
                     with st.expander(f"[{company}] ({len(articles)}건)", expanded=False):
 
                         # ------------------------------------------------------------
-                        # 1) 현재 렌더링될 기사들의 key 생성
+                        # 1) 현재 렌더링될 기사들의 key 생성 (공통 상태용)
                         # ------------------------------------------------------------
                         all_article_keys = []
                         for art in articles:
                             uid = make_uid(art["link"])
-                            key = f"{company}_{uid}"
+                            key = f"{company}_{uid}"   # ✅ 공통 상태 key
                             all_article_keys.append(key)
 
                         current_key_set = set(all_article_keys)
@@ -1909,11 +1913,13 @@ def render_articles_with_single_summary_and_telegram(
                         for k in list(st.session_state.article_checked_left.keys()):
                             if k.startswith(f"{company}_") and k not in current_key_set:
                                 st.session_state.article_checked_left[k] = False
-                                st.session_state.pop(f"news_{k}", None)
+                                # ✅ 기업 리스트 위젯 prefix 반영
+                                st.session_state.pop(f"news_left_{k}", None)
 
+                        # ✅ 기업 리스트 위젯만 정리 (news_left_)
                         for sk in list(st.session_state.keys()):
-                            if sk.startswith("news_"):
-                                tail = sk[len("news_"):]
+                            if sk.startswith("news_left_"):
+                                tail = sk[len("news_left_"):]
                                 if tail.startswith(f"{company}_") and tail not in current_key_set:
                                     st.session_state.pop(sk, None)
 
@@ -1936,16 +1942,18 @@ def render_articles_with_single_summary_and_telegram(
 
                         if select_all != prev_value:
 
+                            # stale 위젯 재정리 (news_left_)
                             for sk in list(st.session_state.keys()):
-                                if sk.startswith("news_"):
-                                    tail = sk[len("news_"):]
+                                if sk.startswith("news_left_"):
+                                    tail = sk[len("news_left_"):]
                                     if tail.startswith(f"{company}_") and tail not in current_key_set:
                                         st.session_state.pop(sk, None)
 
                             for k in all_article_keys:
                                 st.session_state.article_checked[k] = select_all
                                 st.session_state.article_checked_left[k] = select_all
-                                st.session_state[f"news_{k}"] = select_all
+                                # ✅ 기업 리스트 위젯 prefix
+                                st.session_state[f"news_left_{k}"] = select_all
 
                             st.rerun()
 
@@ -1954,7 +1962,7 @@ def render_articles_with_single_summary_and_telegram(
                         # ------------------------------------------------------------
                         for art in articles:
                             uid = make_uid(art["link"])
-                            key = f"{company}_{uid}"
+                            key = f"{company}_{uid}"   # ✅ 공통 상태 key
 
                             cache_key = get_summary_key_from_url(
                                 art["link"], target_keyword=company
@@ -1962,10 +1970,12 @@ def render_articles_with_single_summary_and_telegram(
 
                             cols = st.columns([0.04, 0.96])
                             with cols[0]:
+                                # ✅ 위젯 key는 기업 리스트 전용 namespace
+                                widget_key = f"news_left_{key}"
                                 checked = st.checkbox(
                                     "",
                                     value=st.session_state.article_checked.get(key, False),
-                                    key=f"news_{key}",
+                                    key=widget_key,
                                 )
 
                             with cols[1]:
@@ -1993,9 +2003,9 @@ def render_articles_with_single_summary_and_telegram(
                                     unsafe_allow_html=True,
                                 )
 
+                            # ✅ 공통 상태 반영
                             st.session_state.article_checked[key] = checked
                             st.session_state.article_checked_left[key] = checked
-
 
     # ================================================================
     #  🔵  선택된 기사 요약/감성분석 영역 (우측)
@@ -2012,7 +2022,7 @@ def render_articles_with_single_summary_and_telegram(
             grouped_selected = {}
 
             # ------------------------------------------------------------
-            #  선택된 기사 모으기
+            #  선택된 기사 모으기 (기업 리스트 기준)
             # ------------------------------------------------------------
             for cat_name, comp_list in favorite_categories.items():
                 for company in comp_list:
@@ -2028,7 +2038,7 @@ def render_articles_with_single_summary_and_telegram(
                                     .append((company, uid, art))
 
             # ------------------------------------------------------------
-            #  ✅ 산업군별 주요이슈(top_k)에서 체크된 기사도 우측 요약 대상에 포함
+            #  ✅ 산업군별 주요이슈(top_k)에서 체크된 기사도 포함
             # ------------------------------------------------------------
             cached_major_top = st.session_state.get("industry_major_top_cache", {})
             for major_name, major_top in cached_major_top.items():
@@ -2038,7 +2048,7 @@ def render_articles_with_single_summary_and_telegram(
                         continue
                     uid = make_uid(art["link"])
                     key = f"{company}_{uid}"
-            
+
                     if st.session_state.article_checked.get(key, False):
                         grouped_selected \
                             .setdefault("산업군별 주요이슈", {}) \
@@ -2096,13 +2106,14 @@ def render_articles_with_single_summary_and_telegram(
                 for company, items in comp_map.items():
                     with ThreadPoolExecutor(max_workers=10) as exe:
                         grouped_selected[cat_name][company] = list(exe.map(process_article, items))
+
             # ✅ 우측에서 선택/요약된 기사들을 엑셀용으로 저장
             flattened = []
             for _cat, comp_map in grouped_selected.items():
                 for _comp, arts in comp_map.items():
                     flattened.extend(arts)
             st.session_state.selected_articles = flattened
-            
+
             # ------------------------------------------------------------
             #  우측 요약 렌더링
             # ------------------------------------------------------------
@@ -2671,4 +2682,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
