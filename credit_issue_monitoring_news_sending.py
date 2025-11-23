@@ -934,18 +934,39 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
     short_implication = extract_group("한 줄 시사점") or "한 줄 시사점 요약 실패"
 
     # ✅ LLM 잔여 번호/라인 정리
-    def clean_llm_text(t: str) -> str:
-        if not t:
-            return t
-        cleaned_lines = []
-        for ln in t.splitlines():
-            ln = re.sub(r"^\s*\d+\.\s*", "", ln).strip()  # "2. 뭐뭐" 제거
-            if not ln:
+    def clean_llm_text(text: str) -> str:
+        if not text:
+            return ""
+    
+        # 1) 앞머리 불릿/번호 제거
+        lines = []
+        for ln in text.splitlines():
+            ln = ln.strip()
+    
+            # - • ▶ → · 같은 불릿 제거
+            ln = re.sub(r"^[\-\*\•\▶\→\·\▪\●\◦\—\–]+\s*", "", ln)
+    
+            # 1. / 1) / (1) / ① 같은 번호 제거
+            ln = re.sub(r"^\(?\d+\)?[.)]\s*", "", ln)
+    
+            # 2) LLM이 넣은 라벨 제거 (한 줄 요약:, 시사점:, 요약:)
+            ln = re.sub(
+                r"^(한\s*줄\s*요약|한\s*줄\s*시사점|요약|시사점|요약본|심층\s*시사점)\s*[:：]\s*",
+                "",
+                ln
+            )
+    
+            # 단독 숫자 라인 제거
+            if re.fullmatch(r"\d+", ln):
                 continue
-            if re.fullmatch(r"\d+", ln):  # "2" 같은 단독 숫자 제거
-                continue
-            cleaned_lines.append(ln)
-        return "\n".join(cleaned_lines).strip()
+    
+            if ln:
+                lines.append(ln)
+    
+        # 3) 공백 정리
+        cleaned = "\n".join(lines).strip()
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned
 
     one_line = clean_llm_text(one_line)
     detailed_implication = clean_llm_text(detailed_implication)
@@ -2480,6 +2501,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
