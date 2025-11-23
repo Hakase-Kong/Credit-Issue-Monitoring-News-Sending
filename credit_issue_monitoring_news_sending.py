@@ -1424,22 +1424,19 @@ def get_excel_download_with_favorite_and_excel_company_col(summary_data, favorit
         # 해당 회사 관련 모든 기사 리스트 추출
         search_articles = search_results.get(company, [])
 
-        # ✅ UI와 동일한 최종 필터 적용
-        filtered_articles = [a for a in search_articles if article_passes_all_filters(a)]
+        # 공통 필터와 산업별 필터 통과 기사만 필터링 (필요시 산업별 필터 조건 추가)
+        filtered_articles = []
+        for article in search_articles:
+            passes_common = any(kw in (article.get("title", "") + article.get("description", "")) for kw in ALL_COMMON_FILTER_KEYWORDS)
+            passes_industry = True
+            # 필요 시 산업별 필터링 로직 추가 가능
 
-        # ✅ 중복 제거
+            if passes_common and passes_industry:
+                filtered_articles.append(article)
+
+        # 중복 기사 제거 옵션 적용
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
-
-        # ✅ LLM 최종 top_k 보증(켜져 있을 때만)
-        if st.session_state.get("use_llm_filter", False):
-            top_k = st.session_state.get("llm_top_k", 10)
-            already_llm = (
-                len(filtered_articles) <= top_k and
-                all(("llm_score" in a) for a in filtered_articles)
-            )
-            if not already_llm:
-                filtered_articles = llm_filter_and_rank_articles(company, filtered_articles)
 
         total_count = len(filtered_articles)
 
@@ -1499,68 +1496,75 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     OpenAI를 이용해 '신용평가 관점에서 중요한 기사'를 자동 선정.
     - 각 기사에 대해 신용영향도(1~5점)를 평가하게 하고
     - 반드시 5점 기사만 자동 선정 대상으로 사용.
+    - 결과는 기사 번호 기반으로 파싱하여 원본 기사(dict)를 반환.
     """
-    import os, re
+    import os
     from openai import OpenAI
+    import re
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
     result = []
 
-    # ✅ favorites(대분류)별로 industry_keywords(선택된 소분류)를 매핑해 쓰고 싶으면
-    # category별로 industry_keywords를 그대로 쓰되, 없으면 빈 리스트 처리
-    ind_kw_by_cat = {cat: industry_keywords for cat in favorites.keys()}
+    industry_credit_dict = parse_industry_credit_keywords()
 
+    # ---- 각 카테고리(섹터) / 회사별로 중요 기사 선정 ----
     for category, companies in favorites.items():
-        sector_keywords = ind_kw_by_cat.get(category, [])
+        sector_keywords = industry_keywords_dict.get(category, [])
 
         for comp in companies:
             articles = search_results.get(comp, [])
             if not articles:
                 continue
 
-            # 1) 섹터 키워드/공통키워드가 제목/설명에 어느 정도 포함된 기사만 후보
+            # 섹터 키워드가 제목/설명에 어느 정도 포함된 기사만 1차 필터
             target_articles = []
             for a in articles:
                 text = (a.get("title", "") + " " + a.get("description", "")).lower()
-                has_sector = any(kw.lower() in text for kw in sector_keywords) if sector_keywords else True
-                has_common = any(kw.lower() in text for kw in common_keywords) if common_keywords else True
-                if has_sector and has_common:
+                if sector_keywords and any(kw.lower() in text for kw in sector_keywords):
+                    target_articles.append(a)
+                elif not sector_keywords:
+                    # 섹터 키워드가 정의되지 않은 경우에는 전부 후보로 사용
                     target_articles.append(a)
 
             if not target_articles:
                 continue
 
-            # 2) 후보 기사 목록을 번호로 구성 (✅ target_articles 기준)
+            # 기사 목록을 "번호. 제목 - 링크" 형태로 구성
             prompt_list = "\n".join(
                 [
-                    f"{i+1}. [기업:{comp}] {a.get('title','')} || {a.get('description','')}"
-                    for i, a in enumerate(target_articles)
+                    f"{i+1}. [기업:{target_keyword}] {a.get('title','')} || {a.get('description','')}"
+                    for i, a in enumerate(articles)
                 ]
             )
 
+            # --- 프롬프트: 5점 기사만 자동 선정 ---
             guideline = f"""
 당신은 신용평가사 애널리스트입니다.
 
 [신용영향도 판단 기준]
 5점: 신용등급/전망 변화 가능성, 대규모 자본확충·차입, 유동성 위기, 부도·법정관리·회생 신청, 중대한 규제·제재·소송 등
-4점: 대규모 투자·M&A·지분매각, 실적 급변, 레버리지 급증, 계열사 위험 전이 가능성
-3점: 일반적 실적 개선/악화, 중간 규모 자금조달, 비핵심자산 매각 등
-2점: 신제품/마케팅/제휴 등 영향 제한적 뉴스
-1점: 홍보/행사/ESG 캠페인 등 신용과 무관
+4점: 대규모 투자·M&A·지분매각, 실적 급변(큰 폭의 흑자/적자 변화), 레버리지 급증, 계열사의 신용위험이 본사에 중대한 영향을 줄 가능성
+3점: 일반적인 실적 개선/악화, 중간 규모의 자금조달, 사업 포트폴리오 조정(비핵심자산 매각 등)
+2점: 신제품 출시, 마케팅/프로모션, 제휴·MOU, 일반적인 사업 계획 등 신용도에 미치는 영향이 제한적인 뉴스
+1점: 사회공헌/행사/ESG 홍보, 단순 이미지 제고, 연예·문화·스포츠 등 신용과 거의 무관한 내용
 
 [기사 목록]
 {prompt_list}
 
-분석 초점은 "{comp}"이며 "{category}" 산업 신용관점에서 평가하세요.
+분석의 초점은 반드시 "{comp}" 기업(또는 키워드)이며,
+"{category}" 산업의 신용평가 관점에서 각 뉴스가 신용도에 미치는 영향도를 위 기준으로 평가하십시오.
 
 [지시사항]
-1. 각 기사 번호별로 점수(1~5점)를 한 번씩만 매기십시오.
-2. **5점 기사만** 중요 후보로 간주합니다.
-3. 5점 기사 중 가장 중요한 기사 최대 2건 번호만 선택하십시오.
-4. 5점이 없으면 '없음'으로 표기하십시오.
+1. 각 기사 번호별로 신용영향도 점수(1~5점)를 한 번씩만 매기십시오.
+2. 반드시 **5점인 기사만** '중요 기사 후보'로 간주하십시오.
+3. 5점인 기사 중에서 가장 중요한 기사 최대 2건의 "번호"만 선택하십시오.
+   - 5점 기사 2건 이상이면 그 중에서 상위 2건만 선택하십시오.
+   - 5점 기사 1건이면 그 1건만 선택하십시오.
+   - 5점 기사 0건이면 어떤 기사도 선택하지 마십시오.
+4. 선택된 번호가 없을 수도 있습니다. 이 경우에도 아래 [선정] 형식은 유지하되 '없음'이라고 적으십시오.
 
-출력 형식(설명 금지):
+출력 형식은 반드시 아래 형식만 사용하십시오. 설명 문장은 넣지 마십시오.
 
 [평가]
 1번: (점수)
@@ -1571,7 +1575,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 [중요1]: (기사번호 또는 없음)
 [중요2]: (기사번호 또는 없음)
 """
-
             try:
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -1581,33 +1584,37 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                 )
                 answer = response.choices[0].message.content.strip()
 
-                # 점수 파싱
+                # --- [평가]에서 각 기사 점수 파싱 ---
                 score_map = {}
                 for line in answer.splitlines():
-                    m = re.match(r"(\d+)번\s*:\s*([1-5])", line.strip())
+                    m = re.match(r"(\d+)번\s*:\s*([0-9]+)", line.strip())
                     if m:
                         no = int(m.group(1))
-                        score_map[no] = int(m.group(2))
+                        score = int(m.group(2))
+                        score_map[no] = score
 
-                # 선정 번호 파싱
-                sel1 = re.search(r"\[중요 ?1\]\s*:\s*(\d+)", answer)
-                sel2 = re.search(r"\[중요 ?2\]\s*:\s*(\d+)", answer)
+                # --- 선택된 기사 번호 파싱 ---
+                sel1_match = re.search(r"\[중요 ?1\]\s*:\s*(\d+)", answer)
+                sel2_match = re.search(r"\[중요 ?2\]\s*:\s*(\d+)", answer)
 
                 raw_selected = []
-                if sel1: raw_selected.append(int(sel1.group(1)))
-                if sel2: raw_selected.append(int(sel2.group(1)))
-
-                selected_idx0 = []
+                if sel1_match:
+                    raw_selected.append(int(sel1_match.group(1)))
+                if sel2_match:
+                    raw_selected.append(int(sel2_match.group(1)))
+                
+                selected_indexes = []
                 for no in raw_selected:
                     idx0 = no - 1
                     if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
-                        if idx0 not in selected_idx0:
-                            selected_idx0.append(idx0)
-
-                if not selected_idx0:
+                        if idx0 not in selected_indexes:
+                            selected_indexes.append(idx0)
+                
+                # ✅ 5점이 없으면 skip
+                if not selected_indexes:
                     continue
-
-                for idx0 in selected_idx0:
+                
+                for idx0 in selected_indexes:
                     a = target_articles[idx0]
                     result.append({
                         "키워드": comp,
@@ -1619,7 +1626,19 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                         "시사점": ""
                     })
 
+                for no in raw_selected:
+                    idx0 = no - 1
+                    # ✅ 실제 점수가 5점인 것만 유지
+                    if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
+                        if idx0 not in selected_indexes:
+                            selected_indexes.append(idx0)
+
+                # ✅ 5점이 없으면 skip
+                if not selected_indexes:
+                    continue
+                    
             except Exception:
+                # 에러 시 이 회사에 대해서는 자동선정 건너뜀
                 continue
 
     return result
@@ -1814,23 +1833,14 @@ def render_articles_with_single_summary_and_telegram(
 
             # ✅ 검색 run id가 바뀐 경우에만 재계산
             if st.session_state.industry_major_top_cache_run_id != st.session_state.search_run_id:
-                from concurrent.futures import ThreadPoolExecutor, as_completed
-
                 major_pool = build_industry_major_article_pool(results)
                 cache = {}
-                
-                if major_pool:
-                    with ThreadPoolExecutor(max_workers=min(8, len(major_pool))) as exe:
-                        futures = {
-                            exe.submit(llm_filter_and_rank_industry_major, major_name, major_articles): major_name
-                            for major_name, major_articles in major_pool.items()
-                        }
-                        for fut in as_completed(futures):
-                            major_name = futures[fut]
-                            try:
-                                cache[major_name] = fut.result()
-                            except Exception:
-                                cache[major_name] = []
+
+                for major_name, major_articles in major_pool.items():
+                    major_top = llm_filter_and_rank_industry_major(
+                        major_name, major_articles
+                    )
+                    cache[major_name] = major_top
 
                 st.session_state.industry_major_top_cache = cache
                 st.session_state.industry_major_top_cache_run_id = st.session_state.search_run_id
@@ -1843,11 +1853,8 @@ def render_articles_with_single_summary_and_telegram(
                         with st.expander(f"🏭 {major_name} ({len(major_top)}건)", expanded=False):
                             for art in major_top:
                                 uid = make_uid(art["link"])
-                            
-                                company_tag = (art.get("키워드") or "").strip()
-                                # ✅ 기업 기사 key와 동일한 포맷으로 통일
-                                key = f"{company_tag}_{uid}" if company_tag else f"industry_{major_name}_{uid}"
-                            
+                                key = f"industry_{major_name}_{uid}"
+
                                 cols = st.columns([0.04, 0.96])
                                 with cols[0]:
                                     checked = st.checkbox(
@@ -1855,20 +1862,21 @@ def render_articles_with_single_summary_and_telegram(
                                         value=st.session_state.article_checked.get(key, False),
                                         key=f"news_{key}",
                                     )
-                            
+
                                 with cols[1]:
                                     llm_info = (
                                         f" | LLM점수:{art.get('llm_score')}점"
                                         if art.get("llm_score") else ""
                                     )
+                                    company_tag = art.get("키워드", "")
                                     company_info = f" | 기업:{company_tag}" if company_tag else ""
-                            
+
                                     st.markdown(
                                         f"<span class='news-title'><a href='{art['link']}' target='_blank'>{art['title']}</a></span> "
                                         f"{art['date']} | {art['source']}{company_info}{llm_info}",
                                         unsafe_allow_html=True,
                                     )
-                            
+
                                 st.session_state.article_checked[key] = checked
                                 st.session_state.article_checked_left[key] = checked
             else:
@@ -2026,24 +2034,6 @@ def render_articles_with_single_summary_and_telegram(
                                     .setdefault(cat_name, {}) \
                                     .setdefault(company, []) \
                                     .append((company, uid, art))
-
-            # ------------------------------------------------------------
-            #  ✅ 산업군별 주요이슈(top_k)에서 체크된 기사도 우측 요약 대상에 포함
-            # ------------------------------------------------------------
-            cached_major_top = st.session_state.get("industry_major_top_cache", {})
-            for major_name, major_top in cached_major_top.items():
-                for art in major_top:
-                    company = (art.get("키워드") or "").strip()
-                    if not company:
-                        continue
-                    uid = make_uid(art["link"])
-                    key = f"{company}_{uid}"
-            
-                    if st.session_state.article_checked.get(key, False):
-                        grouped_selected \
-                            .setdefault("산업군별 주요이슈", {}) \
-                            .setdefault(company, []) \
-                            .append((company, uid, art))
 
             # ------------------------------------------------------------
             #  요약 처리 함수
@@ -2543,23 +2533,18 @@ def render_important_article_review_and_download():
             for idx, company in enumerate(sector_list):
                 search_articles = search_results.get(company, [])
 
-                # ✅ UI와 동일한 필터 적용
-                filtered_articles = [a for a in search_articles if article_passes_all_filters(a)]
-                
-                # ✅ 중복 제거
+                filtered_articles = []
+                for article in search_articles:
+                    passes_common = any(kw in (article.get("title", "") + article.get("description", "")) for kw in ALL_COMMON_FILTER_KEYWORDS)
+                    passes_industry = True
+                    # 필요 시 산업별 필터링 로직 추가 가능
+
+                    if passes_common and passes_industry:
+                        filtered_articles.append(article)
+
                 if st.session_state.get("remove_duplicate_articles", False):
                     filtered_articles = remove_duplicates(filtered_articles)
-                
-                # ✅ LLM 최종 top_k 반영(켜져 있을 때만)
-                if st.session_state.get("use_llm_filter", False):
-                    top_k = st.session_state.get("llm_top_k", 10)
-                    already_llm = (
-                        len(filtered_articles) <= top_k and
-                        all(("llm_score" in a) for a in filtered_articles)
-                    )
-                    if not already_llm:
-                        filtered_articles = llm_filter_and_rank_articles(company, filtered_articles)
-                
+
                 total_count = len(filtered_articles)
 
                 filtered_df = df[df.get("키워드", "") == company].sort_values(by='날짜', ascending=False)
@@ -2671,3 +2656,12 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
+
+
+
+
+
+
+
+
