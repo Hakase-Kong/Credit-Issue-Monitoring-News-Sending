@@ -849,7 +849,7 @@ with st.expander("🔍 키워드 필터 옵션"):
         min_value=3, max_value=20, step=1,
         key="llm_top_k",
         help="기업별로 LLM 평가 후 남길 기사 개수를 설정합니다."
-
+    )
     st.checkbox(
         "중요 기사 리뷰/편집 패널 표시",
         key="show_important_review_ui",
@@ -2511,6 +2511,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
