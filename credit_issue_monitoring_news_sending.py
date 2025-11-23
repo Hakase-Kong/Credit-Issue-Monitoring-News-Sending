@@ -718,6 +718,9 @@ def init_session_state():
         "use_llm_filter": True,      # LLM 중요도 필터 사용 여부
         "llm_candidate_cap": 200,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
         "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
+
+        # ✅ 중요기사 리뷰 UI 표시 여부
+        "show_important_review_ui": False
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -846,6 +849,11 @@ with st.expander("🔍 키워드 필터 옵션"):
         min_value=3, max_value=20, step=1,
         key="llm_top_k",
         help="기업별로 LLM 평가 후 남길 기사 개수를 설정합니다."
+
+    st.checkbox(
+        "중요 기사 리뷰/편집 패널 표시",
+        key="show_important_review_ui",
+        help="체크 시 하단에 중요 기사 리뷰 및 편집 UI가 표시됩니다."
     )
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -1996,6 +2004,8 @@ def render_articles_with_single_summary_and_telegram(
                         st.session_state.article_checked_left[k] = False
                     st.rerun()
 
+    # ✅ 중요기사 리뷰 UI는 토글 ON일 때만 렌더
+    if st.session_state.get("show_important_review_ui", False):
         render_important_article_review_and_download()
 
 def render_important_article_review_and_download():
@@ -2501,6 +2511,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
