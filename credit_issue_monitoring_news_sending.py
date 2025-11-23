@@ -76,6 +76,12 @@ def extract_file_url(js_href: str) -> str:
     file_name = args[3]
     return f"https://www.kisrating.com/common/download.do?filename={file_name}"
 
+def get_llm_score_cache_key(company: str, link: str) -> str:
+    """
+    기업(메인키워드) + 기사 링크 단위로 LLM 점수 캐싱
+    """
+    return f"llm_score_{company}_{make_uid(link)}"
+
 def make_uid(url: str, length: int = 16) -> str:
     if not url:
         return "no_url"
@@ -373,6 +379,7 @@ def llm_score_articles_batch(articles, target_keyword=None):
     - 부정적 신용위험: 4~5점
     - 산업 전반 위험 기사(손해율/금리/규제/업황): 4점+
     - 기업명 기사 1순위 유지
+    + (패치) LLM 점수 캐시로 재평가 방지
     """
 
     if not OPENAI_API_KEY:
@@ -382,12 +389,9 @@ def llm_score_articles_batch(articles, target_keyword=None):
     # 0) 즉시 0점 판단 룰
     # -------------------------
     ZERO_KWS = [
-        # 스포츠/행사/스폰서
         "스포츠","리그","경기","대회","결승","우승","준우승","시즌","선수","감독",
         "구단","클럽","kbo","k리그","epl","챔피언스리그","골프대회","마라톤",
         "스폰서","후원","파트너십","공식후원","행사","축제","페스티벌","콘서트",
-
-        # 수상/선정
         "수상","수상을","선정","어워드","award","대상 수상","최우수상",
         "우수상","장관상","금상","은상","동상","1위 선정"
     ]
@@ -398,25 +402,34 @@ def llm_score_articles_batch(articles, target_keyword=None):
         txt = f"{t} {d}"
         return any(kw in txt for kw in ZERO_KWS)
 
+    # -------------------------
+    # ✅ (C) 캐시 우선 + ZERO 선제 제외
+    # -------------------------
+    cached_scores = {}
     zero_fixed = {}
     candidates, cand_map = [], {}
 
     for i, a in enumerate(articles):
         if is_zero_article(a):
             zero_fixed[i] = 0
+            continue
+
+        ck = get_llm_score_cache_key(target_keyword or "", a.get("link", ""))
+        if ck in st.session_state:
+            cached_scores[i] = st.session_state[ck]
         else:
             cand_map[len(candidates)] = i
             candidates.append(a)
 
     if not candidates:
-        return zero_fixed
+        return {i: zero_fixed.get(i, cached_scores.get(i, 0)) for i in range(len(articles))}
 
     # -------------------------
     # 1) 프롬프트 구성
     # -------------------------
     prompt_list = "\n".join(
         f"{j+1}. {a.get('title','')} || {a.get('description','')}"
-        for j,a in enumerate(candidates)
+        for j, a in enumerate(candidates)
     )
 
     guideline = f"""
@@ -453,8 +466,7 @@ def llm_score_articles_batch(articles, target_keyword=None):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system",
-                 "content": "사실 기반으로 신용위험 중요도를 판단하라. "
-                            "스포츠·행사·수상은 0점, 부정 신용위험은 보수적으로 평가."},
+                 "content": "사실 기반으로 신용위험 중요도를 판단하라. 스포츠·행사·수상은 0점, 부정 신용위험은 보수적으로 평가."},
                 {"role": "user", "content": guideline},
             ],
             max_tokens=300,
@@ -464,6 +476,7 @@ def llm_score_articles_batch(articles, target_keyword=None):
     except Exception:
         base = {i: 3 for i in range(len(articles))}
         base.update(zero_fixed)
+        base.update(cached_scores)
         return base
 
     # -------------------------
@@ -481,12 +494,20 @@ def llm_score_articles_batch(articles, target_keyword=None):
         score_map_cand.setdefault(j, 3)
 
     # -------------------------
-    # 3) 원본 인덱스로 복원
+    # 3) 원본 인덱스로 복원 + 캐시 저장
     # -------------------------
     final_scores = {i: zero_fixed.get(i, 3) for i in range(len(articles))}
 
     for cand_j, orig_i in cand_map.items():
-        final_scores[orig_i] = score_map_cand[cand_j]
+        s = score_map_cand[cand_j]
+        final_scores[orig_i] = s
+
+        ck = get_llm_score_cache_key(target_keyword or "", articles[orig_i].get("link", ""))
+        st.session_state[ck] = s  # ✅ 캐시 저장
+
+    # ✅ 캐시 점수 반영(재평가 방지)
+    for orig_i, s in cached_scores.items():
+        final_scores[orig_i] = s
 
     return final_scores
 
@@ -497,32 +518,24 @@ def llm_filter_and_rank_articles(main_kw, articles):
     if not articles:
         return []
 
-    # -------------------------
-    # 파라미터
-    # -------------------------
     topk = st.session_state.get("llm_top_k", 10)
-
-    # ✅ 안전형 동적 cap
-    cap0_1   = st.session_state.get("llm_cap_pr0_1", 40)     # pr0+pr1 합산 최대
-    cap2     = st.session_state.get("llm_cap_pr2", 30)       # pr2 최대
-    cap3_min = st.session_state.get("llm_cap_pr3_min", 5)    # pr3 최소 보장
-    cap_rest = st.session_state.get("llm_cap_rest", 20)      # pr3 초과 + pr4에서 채울 max
+    cap0_1   = st.session_state.get("llm_cap_pr0_1", 40)
+    cap2     = st.session_state.get("llm_cap_pr2", 30)
+    cap3_min = st.session_state.get("llm_cap_pr3_min", 5)
+    cap_rest = st.session_state.get("llm_cap_rest", 20)
 
     main_kw_l = (main_kw or "").lower()
 
-    # 산업/공통 키워드
     common_kws = ALL_COMMON_FILTER_KEYWORDS
     industry_kws = []
     if st.session_state.get("use_industry_filter", False):
         for lst in st.session_state.industry_major_sub_map.values():
             industry_kws.extend(lst)
 
-    # 섹터 키워드
     sec_dict = parse_industry_credit_keywords()
     sector = get_sector_of_company(main_kw)
     sector_kws = sec_dict.get(sector, []) if sector else []
 
-    # 부정적 위험 키워드(제목/설명 모두에서 탐지)
     NEG_KWS = [
         "부실","손실","적자","누적적자","유동성","제재","소송","조사","하락","급락",
         "연체","디폴트","회생","부도","사고","리콜","레버리지","자본확충",
@@ -547,9 +560,7 @@ def llm_filter_and_rank_articles(main_kw, articles):
     def has_kw_title_or_desc(a, kws):
         return has_kw_in_text(a.get("title",""), kws) or has_kw_in_text(a.get("description",""), kws)
 
-    # --------------------------------
-    # 0) ZERO 규칙은 LLM 전에 선제 제거
-    # --------------------------------
+    # 0) ZERO 선제 제거
     pre_filtered = []
     for a in articles:
         txt = f"{a.get('title','')} {a.get('description','')}"
@@ -557,15 +568,11 @@ def llm_filter_and_rank_articles(main_kw, articles):
             continue
         pre_filtered.append(a)
     articles = pre_filtered
-
     if not articles:
         return []
 
-    # --------------------------------
-    # 1) Rule Priority 분류 (설명 기반 위험승격 포함)
-    # --------------------------------
+    # 1) Rule Priority 분류
     buckets = {0:[],1:[],2:[],3:[],4:[]}
-
     for a in articles:
         title = a.get("title","") or ""
         desc  = a.get("description","") or ""
@@ -574,89 +581,70 @@ def llm_filter_and_rank_articles(main_kw, articles):
         company_in_title = (main_kw_l in tl) if main_kw_l else False
         neg_in_title_or_desc = has_kw_title_or_desc(a, NEG_KWS)
 
-        # PRIORITY 0: 기업명 + 위험키워드(제목/설명 어디든)
         if company_in_title and neg_in_title_or_desc:
             a["rule_priority"] = 0
-            buckets[0].append(a)
-            continue
+            buckets[0].append(a); continue
 
-        # PRIORITY 1: 위험키워드(제목 또는 설명) 포함 → ✅ 설명 기반 승격
         if neg_in_title_or_desc:
             a["rule_priority"] = 1
-            buckets[1].append(a)
-            continue
+            buckets[1].append(a); continue
 
-        # PRIORITY 2: 기업명 포함(일반 기사)
         if company_in_title:
             a["rule_priority"] = 2
-            buckets[2].append(a)
-            continue
+            buckets[2].append(a); continue
 
-        # PRIORITY 3: 산업/공통/섹터 키워드(제목 중심)
         if has_kw(title, common_kws) or has_kw(title, industry_kws) or has_kw(title, sector_kws):
             a["rule_priority"] = 3
-            buckets[3].append(a)
-            continue
+            buckets[3].append(a); continue
 
-        # PRIORITY 4: 기타
         a["rule_priority"] = 4
         buckets[4].append(a)
 
-    # 최신순 정렬
+    # ✅ (B) 최신순 + link 타이브레이커
     def sort_newest(lst):
-        return sorted(lst, key=lambda x: x.get("date",""), reverse=True)
+        return sorted(
+            lst,
+            key=lambda x: (x.get("date",""), x.get("link","")),
+            reverse=True
+        )
 
     for k in buckets:
         buckets[k] = sort_newest(buckets[k])
 
-    # --------------------------------
-    # 2) ✅ 안전형 동적 후보 구성
-    # --------------------------------
+    # 2) 안전형 후보 구성
     candidates = []
-
-    # (1) pr0+pr1 합쳐 cap0_1만큼 우선 확보
     for pr in [0, 1]:
         if len(candidates) >= cap0_1:
             break
         space = cap0_1 - len(candidates)
         candidates.extend(buckets[pr][:space])
 
-    # (2) pr2에서 cap2만큼 확보
     if cap2 > 0:
         candidates.extend(buckets[2][:cap2])
 
-    # (3) pr3 최소 5건 보장(중요 산업 리스크 방어)
     if cap3_min > 0:
         candidates.extend(buckets[3][:cap3_min])
 
-    # (4) 부족하면 pr3 잔여 + pr4에서 cap_rest만큼만 채움
     target_total = cap0_1 + cap2 + cap3_min + cap_rest
     for pr in [3, 4]:
         if len(candidates) >= target_total:
             break
         need = target_total - len(candidates)
-        # pr3는 최소분 이후 잔여에서 이어서 채움
         if pr == 3:
             candidates.extend(buckets[3][cap3_min:cap3_min+need])
         else:
             candidates.extend(buckets[4][:need])
 
-    # --------------------------------
     # 3) LLM 스코어링
-    # --------------------------------
     scores = llm_score_articles_batch(candidates, target_keyword=main_kw)
     for i, a in enumerate(candidates):
         a["llm_score"] = scores.get(i,3)
 
-    # 0점 제거(이미 ZERO 제거했지만, LLM이 0 준 건 추가 제거)
     candidates = [a for a in candidates if a.get("llm_score", 0) > 0]
-
     if not candidates:
         return []
 
-    # --------------------------------
-    # 4) 산업 전반 기사 후보(기업명 없음 + 산업/공통/섹터/위험키워드)
-    # --------------------------------
+    # 4) 산업 전반 기사 1건 보장
     def is_industry_overview(a):
         t = (a.get("title") or "").lower()
         if main_kw_l and main_kw_l in t:
@@ -673,23 +661,19 @@ def llm_filter_and_rank_articles(main_kw, articles):
     )
     industry_pick = industry_cands[0] if industry_cands else None
 
-    # --------------------------------
-    # 5) 최종 Rank: rule_priority → llm_score → 최신순
-    # --------------------------------
+    # 5) 최종 Rank
     ranked = sorted(
         candidates,
         key=lambda x: (x["rule_priority"], -x.get("llm_score",3), x.get("date",""))
     )
     ranked_top = ranked[:topk]
 
-    # ✅ 산업 기사 1건 보장(기존 유지)
     if industry_pick and industry_pick not in ranked_top:
         if len(ranked_top) < topk:
             ranked_top.append(industry_pick)
         else:
             ranked_top[-1] = industry_pick
 
-    # 중복 제거
     seen, final = set(), []
     for a in ranked_top:
         uid = make_uid(a.get("link",""))
@@ -701,16 +685,17 @@ def llm_filter_and_rank_articles(main_kw, articles):
 
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
     """
+    (fallback 제거 버전)
     1차: 강한 필터(require_keyword_in_title) 그대로 적용
-    2차: 메인키워드 기준 강력필터 통과 0건일 때만 fallback 수행
-    3차: fallback 이후 LLM 중요도 필터 적용(옵션, fallback 기업에만)
+    2차: 중복 제거
+    3차: LLM 중요도 필터(전체 기업) 적용
+    + (패치) 수집 직후 all_articles 정렬로 결정성 확보
     """
     for main_kw, kw_list in favorite_to_expand_map.items():
         all_articles = []
-        did_fallback = False   # ✅ fallback 발생 여부 플래그
 
         # -------------------------
-        # 1차 검색
+        # 1차 검색 (병렬)
         # -------------------------
         with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
             futures = {
@@ -728,57 +713,19 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                 search_kw = futures[future]
                 try:
                     fetched = future.result()
-                    # ✅ 메인 키워드(기업명) 주입
                     fetched = [{**a, "검색어": search_kw, "키워드": main_kw} for a in fetched]
                     all_articles.extend(fetched)
                 except Exception as e:
                     st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
 
         # -------------------------
-        # 메인 키워드 기준 강력 필터 통과 여부 체크
+        # ✅ (A) 수집 결과 순서 고정
         # -------------------------
-        def passes_strong_filter_for_main(a):
-            if st.session_state.get("require_exact_keyword_in_title_or_content", False):
-                t = a.get("title", "") or ""
-                d = a.get("description", "") or ""
-                return (main_kw in t) or (main_kw in d)
-            return True
-
-        strong_main_articles = [a for a in all_articles if passes_strong_filter_for_main(a)]
-
-        # -------------------------
-        # Fallback 조건 : 메인 기준 0건 + 강력필터 옵션 ON
-        # -------------------------
-        if (
-            len(strong_main_articles) == 0
-            and st.session_state.get("require_exact_keyword_in_title_or_content", False)
-        ):
-            did_fallback = True   # ✅ 여기서만 True
-            fallback_articles = []
-
-            with ThreadPoolExecutor(max_workers=min(5, len(kw_list))) as executor:
-                futures = {
-                    executor.submit(
-                        fetch_naver_news,
-                        search_kw,
-                        start_date,
-                        end_date,
-                        require_keyword_in_title=False
-                    ): search_kw
-                    for search_kw in kw_list
-                }
-
-                for future in as_completed(futures):
-                    search_kw = futures[future]
-                    try:
-                        fetched = future.result()
-                        # ✅ fallback에서도 메인 키워드(기업명) 주입
-                        fetched = [{**a, "검색어": search_kw, "키워드": main_kw} for a in fetched]
-                        fallback_articles.extend(fetched)
-                    except Exception as e:
-                        st.warning(f"[Fallback] {main_kw} - '{search_kw}' 실패: {e}")
-
-            all_articles = fallback_articles
+        all_articles = sorted(
+            all_articles,
+            key=lambda x: (x.get("date",""), x.get("link","")),
+            reverse=True
+        )
 
         # -------------------------
         # 중복 제거
@@ -787,7 +734,7 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
             all_articles = remove_duplicates(all_articles)
 
         # -------------------------
-        # ✅ LLM 필터는 "전체 기업"에 적용
+        # LLM 중요도 필터(전체 기업)
         # -------------------------
         if st.session_state.get("use_llm_filter", False):
             all_articles = llm_filter_and_rank_articles(main_kw, all_articles)
@@ -796,7 +743,7 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
         # 최종 저장
         # -------------------------
         st.session_state.search_results[main_kw] = all_articles
-        
+
         if main_kw not in st.session_state.show_limit:
             st.session_state.show_limit[main_kw] = 5
 
@@ -2683,4 +2630,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
