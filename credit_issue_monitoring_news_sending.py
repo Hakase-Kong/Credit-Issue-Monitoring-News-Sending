@@ -751,7 +751,7 @@ def init_session_state():
         "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
 
         # ✅ 산업군(대분류) 단위 이슈 LLM 필터
-        "use_industry_issue_llm": False,      # 산업군별 이슈 LLM 필터 ON/OFF
+        "use_industry_issue_llm": True,       # 산업군별 이슈 LLM 필터 ON/OFF
         "industry_issue_cap": 300,            # 산업군별 LLM 후보 cap
         "industry_issue_top_k": 8,            # 산업군별 남길 top_k
     }
@@ -1760,7 +1760,7 @@ def render_articles_with_single_summary_and_telegram(
         #  🟣 산업 대분류(major)별 주요 이슈(top_k)
         #  - 이미 results(기업별 최종 기사)만 재활용
         # ================================================================
-        if st.session_state.get("use_industry_issue_llm", False):
+        if st.session_state.get("use_industry_issue_llm", True):
             major_pool = build_industry_major_article_pool(results)
 
             if major_pool:
@@ -2572,6 +2572,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
