@@ -366,10 +366,10 @@ def expand_keywords_with_synonyms(original_keywords):
         expanded_map[kw] = [kw] + synonyms
     return expanded_map
 
-def llm_score_articles_batch(articles, target_keyword=None):
+def llm_score_articles_batch(articles, target_keyword=None, mode="company"):
     """
-    제목+description 기반으로 신용영향 중요도(1~5점) 스코어링.
-    반환: {idx: score}
+    mode="company": 기존 기업 신용영향도(1~5)
+    mode="industry": 산업 전반 영향도(1~5)
     """
     if not OPENAI_API_KEY:
         return {i: 3 for i in range(len(articles))}
@@ -378,7 +378,39 @@ def llm_score_articles_batch(articles, target_keyword=None):
         [f"{i+1}. {a.get('title','')} || {a.get('description','')}" for i, a in enumerate(articles)]
     )
 
-    guideline = f"""
+    if mode == "industry":
+        guideline = f"""
+너는 신용평가사 산업 애널리스트다. 아래 기사 제목/요약을 보고
+산업 대분류 "{target_keyword or 'N/A'}" 관점에서 **산업 전반에 미치는 영향도/구조적 중요도**를 1~5점으로 평가하라.
+
+[산업 영향도 기준]
+5점: 산업 구조/규제/정책/금융여건/수요·공급/가격결정 구조/경쟁구도 변화처럼 **다수 기업에 장기·구조적으로 영향**.  
+     (예: 감독규제 변경, 산업 수익성 사이클 전환, 시장 침체/회복 신호, 대규모 부실 확산, 산업 전반 자금조달 경색)
+4점: 산업 내 **상당수 기업에 중기적 영향**이 예상되는 사건·트렌드.  
+     (예: 업권 전반 실적 급변, 대규모 M&A/구조조정이 업계 재편으로 이어짐, 주요 원가/금리/환율 충격)
+3점: 산업 내 일부 기업군에 영향이 있으나 **파급범위/지속성이 제한적**.  
+     (예: 선도기업의 실적/전략 변화가 동종업계에 부분적 신호 제공)
+2점: **특정 기업 1곳의 단일 이슈**로 산업 전반 파급이 약함.  
+     (예: 개별 회사 실적, 내부 이벤트, 단일 제휴/프로모션)
+1점: 홍보/행사/CSR/브랜드/개별 서비스 출시 등 **산업 신용·구조와 무관**.
+
+[강제 규칙]
+- 기사 내용이 특정 기업 한 곳의 이벤트에 머물면 **최대 2점**을 넘기지 말 것.
+- 산업 전체 흐름/규제/수급/가격/경쟁구도/리스크 확산/업권 실적 사이클을 다루면 고점 부여.
+- 제목/요약만 보고 판단하되, 과장하지 말고 산업적 파급 범위에만 집중.
+
+[기사 목록]
+{prompt_list}
+
+출력 형식:
+1번: 점수
+2번: 점수
+...
+(설명 금지)
+"""
+    else:
+        # 기존 company rubric (지금 쓰는 guideline 그대로 유지)
+        guideline = f"""
 너는 신용평가사 애널리스트다. 아래 기사 제목/요약을 보고
 대상 기업 "{target_keyword or 'N/A'}" 관점에서 신용영향 중요도를 1~5점으로 판단하라.
 
@@ -403,7 +435,7 @@ def llm_score_articles_batch(articles, target_keyword=None):
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "과장 없이 사실 관점으로만 점수화하라."},
+                {"role": "system", "content": "사실 기반으로 점수화하라. 산업의 파급 범위를 과장하지 말 것."},
                 {"role": "user", "content": guideline},
             ],
             max_tokens=300,
@@ -516,35 +548,44 @@ def llm_filter_and_rank_articles(main_kw, articles):
     return ranked[:top_k]
 
 def build_industry_major_article_pool(results_by_company):
-    """
-    results_by_company: {company: [articles]}
-    return: {industry_major: [articles merged]}
-    - favorite_to_industry_major 맵 기반으로 기업→산업대분류 매핑
-    - 이미 fetch된 기사만 합산
-    """
     favorite_to_industry_major = config.get("favorite_to_industry_major", {})
     major_pool = {}
 
+    industry_credit_dict = parse_industry_credit_keywords()
+
     for company, arts in results_by_company.items():
-        # company가 속한 major들
         majors = []
         for cat, comps in favorite_categories.items():
             if company in comps:
                 majors.extend(favorite_to_industry_major.get(cat, []))
-
-        majors = list(dict.fromkeys(majors))  # 중복 제거
+        majors = list(dict.fromkeys(majors))
         if not majors:
             continue
 
         for m in majors:
+            sector_kws = industry_credit_dict.get(m, [])  # 대분류명 기준으로 산업키워드 잡기(없으면 빈 리스트)
             major_pool.setdefault(m, [])
-            # 기사에 company 정보가 없을 수도 있으니 보강
             for a in arts:
-                major_pool[m].append({**a, "키워드": company})
+                title = (a.get("title","") or "").lower()
 
-    # major별 최신순 정렬 + 중복제거(옵션)
+                has_sector_kw = any(kw.lower() in title for kw in sector_kws)
+                has_common_kw = any(kw.lower() in title for kw in ALL_COMMON_FILTER_KEYWORDS)
+
+                if has_sector_kw or has_common_kw:
+                    pr = 1   # 산업성 강함
+                elif company.lower() in title:
+                    pr = 2   # 기업 단일
+                else:
+                    pr = 3
+
+                major_pool[m].append({**a, "키워드": company, "industry_rule_priority": pr})
+
     for m in major_pool:
-        major_pool[m] = sorted(major_pool[m], key=lambda x: x.get("date",""), reverse=True)
+        major_pool[m] = sorted(
+            major_pool[m],
+            key=lambda x: (x.get("industry_rule_priority",3), x.get("date","")),
+            reverse=False
+        )
         if st.session_state.get("remove_duplicate_articles", False):
             major_pool[m] = remove_duplicates(major_pool[m])
 
@@ -564,7 +605,7 @@ def llm_filter_and_rank_industry_major(major_name, articles):
 
     candidates = articles[:cap]
 
-    scores = llm_score_articles_batch(candidates, target_keyword=major_name)
+    scores = llm_score_articles_batch(candidates, target_keyword=major_name, mode="industry")
     for i, a in enumerate(candidates):
         a["llm_score"] = scores.get(i, 3)
         a["rule_priority"] = 2  # major 단위는 기존 rule_priority와 구분용(큰 의미는 없음)
@@ -2572,6 +2613,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
