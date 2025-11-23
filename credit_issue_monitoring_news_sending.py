@@ -38,6 +38,12 @@ ALL_COMMON_FILTER_KEYWORDS = []
 for keywords in common_filter_categories.values():
     ALL_COMMON_FILTER_KEYWORDS.extend(keywords)
 
+def get_sector_of_company(company: str):
+    for sector, comps in favorite_categories.items():
+        if company in comps:
+            return sector
+    return None
+
 def extract_file_url(js_href: str) -> str:
     if not js_href or not js_href.startswith("javascript:fn_file"):
         return ""
@@ -402,10 +408,11 @@ def llm_score_articles_batch(articles, target_keyword=None):
 
 def llm_filter_and_rank_articles(main_kw, articles):
     """
-    1) 최신 순으로 cap만큼 선정
-    2) LLM batch scoring
-    3) score + date 기준 내림차순 정렬
-    4) 상위 top_k 반환
+    (개선)
+    0) 규칙 기반 Priority 1/2/3 풀 생성
+    1) Priority 1 → 2 → 3 순서로 cap까지 후보 구성
+    2) 그 후보에 대해서만 LLM 스코어링
+    3) score + date로 정렬 후 top_k 반환
     """
     if not articles:
         return articles
@@ -413,22 +420,80 @@ def llm_filter_and_rank_articles(main_kw, articles):
     cap = st.session_state.get("llm_candidate_cap", 200)
     top_k = st.session_state.get("llm_top_k", 10)
 
-    # 최신 순으로 cap만큼 자르기
-    articles_sorted = sorted(
-        articles,
-        key=lambda x: x.get("date", ""),
-        reverse=True
-    )[:cap]
+    # --- 사전 준비 ---
+    main_kw_lower = (main_kw or "").lower()
 
-    scores = llm_score_articles_batch(articles_sorted, target_keyword=main_kw)
+    common_title_kws = ALL_COMMON_FILTER_KEYWORDS  # 공통 필터
+    selected_industry_sub_kws = []
+    if st.session_state.get("use_industry_filter", False):
+        for sublist in st.session_state.industry_major_sub_map.values():
+            selected_industry_sub_kws.extend(sublist)
 
-    for i, a in enumerate(articles_sorted):
+    industry_credit_dict = parse_industry_credit_keywords()
+    sector = get_sector_of_company(main_kw)  # 예: "보험사"
+    sector_credit_kws = industry_credit_dict.get(sector, []) if sector else []
+
+    def title_has_any_kw(title, kw_list):
+        t = (title or "").lower()
+        return any((kw or "").lower() in t for kw in kw_list if kw)
+
+    # --- Priority 풀 분리 ---
+    p1, p2, p3 = [], [], []
+
+    for a in articles:
+        title = a.get("title", "") or ""
+        t_lower = title.lower()
+
+        # Priority 1: 제목에 기업명
+        if main_kw_lower and main_kw_lower in t_lower:
+            p1.append(a)
+            continue
+
+        # Priority 2: 제목에 공통/산업별/섹터 신용키워드
+        if (
+            title_has_any_kw(title, common_title_kws) or
+            title_has_any_kw(title, selected_industry_sub_kws) or
+            title_has_any_kw(title, sector_credit_kws)
+        ):
+            p2.append(a)
+            continue
+
+        # Priority 3
+        p3.append(a)
+
+    # 최신순 정렬(각 풀 내부)
+    def sort_newest(lst):
+        return sorted(lst, key=lambda x: x.get("date", ""), reverse=True)
+
+    p1 = sort_newest(p1)
+    p2 = sort_newest(p2)
+    p3 = sort_newest(p3)
+
+    # Priority 1 → 2 → 3 순으로 cap까지 후보 구성
+    candidates = (p1 + p2 + p3)[:cap]
+
+    # --- LLM 스코어링(후보만) ---
+    scores = llm_score_articles_batch(candidates, target_keyword=main_kw)
+    for i, a in enumerate(candidates):
         a["llm_score"] = scores.get(i, 3)
 
+        # 디버깅/가시성용 rule_priority 저장(원하면 UI 출력)
+        if a in p1:
+            a["rule_priority"] = 1
+        elif a in p2:
+            a["rule_priority"] = 2
+        else:
+            a["rule_priority"] = 3
+
+    # --- 최종 정렬 ---
     ranked = sorted(
-        articles_sorted,
-        key=lambda x: (x.get("llm_score", 3), x.get("date", "")),
-        reverse=True
+        candidates,
+        key=lambda x: (
+            -(x.get("rule_priority", 3)),      # 1순위가 먼저
+            x.get("llm_score", 3),             # LLM 점수 높을수록
+            x.get("date", ""),                 # 최신
+        ),
+        reverse=False
     )
 
     return ranked[:top_k]
@@ -1230,16 +1295,17 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     result = []
 
     # 섹터별 키워드 파싱 (get_industry_credit_keywords() 기반)
-    def parse_industry_keywords():
+    def parse_industry_credit_keywords():
         raw_text = get_industry_credit_keywords()
         industry_dict = {}
         for line in raw_text.strip().split("\n"):
             if ":" in line:
-                sector, keywords = line.split(":", 1)
+                sector, kws = line.split(":", 1)
                 industry_dict[sector.strip()] = [
-                    kw.strip() for kw in keywords.split(",") if kw.strip()
+                    kw.strip() for kw in kws.split(",") if kw.strip()
                 ]
         return industry_dict
+
 
     industry_keywords_dict = parse_industry_keywords()
 
@@ -2315,4 +2381,5 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
