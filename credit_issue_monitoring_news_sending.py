@@ -44,6 +44,25 @@ def get_sector_of_company(company: str):
             return sector
     return None
 
+def parse_industry_credit_keywords():
+    """
+    get_industry_credit_keywords() 문자열을
+    {섹터명: [키워드,...]} dict로 변환
+    """
+    raw_text = get_industry_credit_keywords()
+    industry_dict = {}
+
+    for line in raw_text.strip().split("\n"):
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        sector, kws = line.split(":", 1)
+        industry_dict[sector.strip()] = [
+            kw.strip() for kw in kws.split(",") if kw.strip()
+        ]
+
+    return industry_dict
+
 def extract_file_url(js_href: str) -> str:
     if not js_href or not js_href.startswith("javascript:fn_file"):
         return ""
@@ -1294,20 +1313,7 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
     client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
     result = []
 
-    # 섹터별 키워드 파싱 (get_industry_credit_keywords() 기반)
-    def parse_industry_credit_keywords():
-        raw_text = get_industry_credit_keywords()
-        industry_dict = {}
-        for line in raw_text.strip().split("\n"):
-            if ":" in line:
-                sector, kws = line.split(":", 1)
-                industry_dict[sector.strip()] = [
-                    kw.strip() for kw in kws.split(",") if kw.strip()
-                ]
-        return industry_dict
-
-
-    industry_keywords_dict = parse_industry_keywords()
+    industry_credit_dict = parse_industry_credit_keywords()
 
     # ---- 각 카테고리(섹터) / 회사별로 중요 기사 선정 ----
     for category, companies in favorites.items():
@@ -2381,5 +2387,6 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
