@@ -707,10 +707,16 @@ with st.expander("🔍 키워드 필터 옵션"):
     st.checkbox(
         "LLM 중요도 필터 적용(전체 기업)",
         key="use_llm_filter",
-        help="모든 기업의 기사 중 LLM 기준 상위 기사만 남깁니다."
+        help=(
+            "각 기업별로 최신 기사 cap건을 대상으로 LLM이 신용영향도(1~5점)를 평가한 뒤, "
+            "점수 상위 top_k건만 보존합니다. (5점=등급/유동성/차입 등 핵심 이슈)"
+        )
     )
-    st.number_input("LLM 평가 후보 cap(최신순)", min_value=10, max_value=200, step=5, key="llm_candidate_cap")
-    st.number_input("LLM 상위 기사 개수(top_k)", min_value=3, max_value=20, step=1, key="llm_top_k")
+    st.number_input("LLM 평가 후보 cap(최신순)", min_value=10, max_value=200, step=5, key="llm_candidate_cap",
+                    help="기업별로 최신 몇 건까지 LLM 평가에 포함할지 설정합니다.")
+    st.number_input("LLM 상위 기사 개수(top_k)", min_value=3, max_value=20, step=1, key="llm_top_k",
+                    help="기업별로 LLM 평가 후 남길 기사 개수를 설정합니다.")
+
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -2262,8 +2268,10 @@ def render_important_article_review_and_download():
         )
 
 # --- 렌더 직전 필터링 로직 (전기업 LLM 적용 버전) ---
+# --- 렌더 직전 필터링 로직 (전기업 LLM 적용 버전) ---
 if st.session_state.get("search_results"):
     filtered_results = {}
+    top_k = st.session_state.get("llm_top_k", 10)
 
     for keyword, articles in st.session_state["search_results"].items():
 
@@ -2274,8 +2282,15 @@ if st.session_state.get("search_results"):
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
 
-        # 3) ✅ LLM은 process 단계에서 이미 기업별 top_k로 끝났으므로
-        #    여기서는 추가 LLM 호출/재정렬 금지
+        # 3) ✅ 렌더 직전 LLM “최종 보증”
+        if st.session_state.get("use_llm_filter", False):
+            # 이미 LLM 점수 포함 + 길이 <= top_k 이면 재호출 방지
+            already_llm = (
+                len(filtered_articles) <= top_k and
+                all(("llm_score" in a) for a in filtered_articles)
+            )
+            if not already_llm:
+                filtered_articles = llm_filter_and_rank_articles(keyword, filtered_articles)
 
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
@@ -2300,3 +2315,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
