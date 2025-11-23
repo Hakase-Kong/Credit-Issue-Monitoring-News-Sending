@@ -1036,7 +1036,7 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
     detailed_implication = extract_group("심층 시사점") or "시사점 추출 실패"
     short_implication = extract_group("한 줄 시사점") or "한 줄 시사점 요약 실패"
 
-        # ✅ LLM 잔여 번호/라인 정리
+    # ✅ LLM 잔여 번호/라인 정리
     def clean_llm_text(t: str) -> str:
         if not t:
             return t
@@ -1337,16 +1337,19 @@ if category_search_clicked and selected_categories:
         keywords = set()
         for cat in selected_categories:
             keywords.update(favorite_categories[cat])
-    st.session_state.search_run_id += 1   # ✅ 새로운 검색 실행
-    
+
+        st.session_state.search_run_id += 1   # ✅ 새로운 검색 실행
+
         expanded = expand_keywords_with_synonyms(sorted(keywords))
         process_keywords_with_synonyms(
             expanded,
             st.session_state["start_date"],
             st.session_state["end_date"],
-            require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
+            require_keyword_in_title=st.session_state.get(
+                "require_exact_keyword_in_title_or_content", False
+            )
         )
-
+        
 def safe_title(val):
     if pd.isnull(val) or str(val).strip() == "" or str(val).lower() == "nan" or str(val) == "0":
         return "제목없음"
@@ -2653,6 +2656,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
