@@ -572,11 +572,9 @@ def build_industry_major_article_pool(results_by_company):
                 has_common_kw = any(kw.lower() in title for kw in ALL_COMMON_FILTER_KEYWORDS)
 
                 if has_sector_kw or has_common_kw:
-                    pr = 1   # 산업성 강함
-                elif company.lower() in title:
-                    pr = 2   # 기업 단일
+                    pr = 1   # 산업/공통 키워드 포함 → 1순위
                 else:
-                    pr = 3
+                    pr = 2   # 그 외는 전부 동일 후보(기업명 포함 여부로 차등 X)
 
                 major_pool[m].append({**a, "키워드": company, "industry_rule_priority": pr})
 
@@ -2613,6 +2611,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
