@@ -492,13 +492,21 @@ def llm_score_articles_batch(articles, target_keyword=None):
 
 def llm_filter_and_rank_articles(main_kw, articles):
     """
-    확장된 Rule Priority + LLM 스코어 기반 기사 선정 Top-K
+    안전형 동적 cap + pr3 최소보장 + 설명기반 위험승격 + LLM 스코어 Top-K
     """
     if not articles:
         return []
 
-    cap  = st.session_state.get("llm_candidate_cap", 200)
+    # -------------------------
+    # 파라미터
+    # -------------------------
     topk = st.session_state.get("llm_top_k", 10)
+
+    # ✅ 안전형 동적 cap
+    cap0_1   = st.session_state.get("llm_cap_pr0_1", 40)     # pr0+pr1 합산 최대
+    cap2     = st.session_state.get("llm_cap_pr2", 30)       # pr2 최대
+    cap3_min = st.session_state.get("llm_cap_pr3_min", 5)    # pr3 최소 보장
+    cap_rest = st.session_state.get("llm_cap_rest", 20)      # pr3 초과 + pr4에서 채울 max
 
     main_kw_l = (main_kw or "").lower()
 
@@ -514,48 +522,77 @@ def llm_filter_and_rank_articles(main_kw, articles):
     sector = get_sector_of_company(main_kw)
     sector_kws = sec_dict.get(sector, []) if sector else []
 
-    # 부정적 위험 키워드
+    # 부정적 위험 키워드(제목/설명 모두에서 탐지)
     NEG_KWS = [
         "부실","손실","적자","누적적자","유동성","제재","소송","조사","하락","급락",
         "연체","디폴트","회생","부도","사고","리콜","레버리지","자본확충",
-        "금리","손해율","업황","규제","감독","압박"
+        "금리","손해율","업황","규제","감독","압박","리파이낸싱","차환","디레버리징"
     ]
 
-    def has_kw(title, kws):
-        t = (title or "").lower()
-        for k in kws:
-            if k.lower() in t:
-                return True
-        return False
+    ZERO_KWS = [
+        "스포츠","리그","경기","대회","결승","우승","준우승","시즌","선수","감독",
+        "구단","클럽","kbo","k리그","epl","챔피언스리그","골프대회","마라톤",
+        "스폰서","후원","파트너십","공식후원","행사","축제","페스티벌","콘서트",
+        "수상","수상을","선정","어워드","award","대상 수상","최우수상",
+        "우수상","장관상","금상","은상","동상","1위 선정"
+    ]
 
-    # -------------------------
-    # 1) Rule Priority 분류
-    # -------------------------
+    def has_kw_in_text(text, kws):
+        t = (text or "").lower()
+        return any(k.lower() in t for k in kws)
+
+    def has_kw(title, kws):
+        return has_kw_in_text(title, kws)
+
+    def has_kw_title_or_desc(a, kws):
+        return has_kw_in_text(a.get("title",""), kws) or has_kw_in_text(a.get("description",""), kws)
+
+    # --------------------------------
+    # 0) ZERO 규칙은 LLM 전에 선제 제거
+    # --------------------------------
+    pre_filtered = []
+    for a in articles:
+        txt = f"{a.get('title','')} {a.get('description','')}"
+        if has_kw_in_text(txt, ZERO_KWS):
+            continue
+        pre_filtered.append(a)
+    articles = pre_filtered
+
+    if not articles:
+        return []
+
+    # --------------------------------
+    # 1) Rule Priority 분류 (설명 기반 위험승격 포함)
+    # --------------------------------
     buckets = {0:[],1:[],2:[],3:[],4:[]}
 
     for a in articles:
         title = a.get("title","") or ""
+        desc  = a.get("description","") or ""
         tl = title.lower()
 
-        # PRIORITY 0: 기업명 + 부정 키워드
-        if main_kw_l and (main_kw_l in tl) and has_kw(title, NEG_KWS):
+        company_in_title = (main_kw_l in tl) if main_kw_l else False
+        neg_in_title_or_desc = has_kw_title_or_desc(a, NEG_KWS)
+
+        # PRIORITY 0: 기업명 + 위험키워드(제목/설명 어디든)
+        if company_in_title and neg_in_title_or_desc:
             a["rule_priority"] = 0
             buckets[0].append(a)
             continue
 
-        # PRIORITY 1: 산업 위험(손해율/금리/규제/업황 등)
-        if has_kw(title, NEG_KWS):
+        # PRIORITY 1: 위험키워드(제목 또는 설명) 포함 → ✅ 설명 기반 승격
+        if neg_in_title_or_desc:
             a["rule_priority"] = 1
             buckets[1].append(a)
             continue
 
         # PRIORITY 2: 기업명 포함(일반 기사)
-        if main_kw_l and (main_kw_l in tl):
+        if company_in_title:
             a["rule_priority"] = 2
             buckets[2].append(a)
             continue
 
-        # PRIORITY 3: 산업/공통 키워드
+        # PRIORITY 3: 산업/공통/섹터 키워드(제목 중심)
         if has_kw(title, common_kws) or has_kw(title, industry_kws) or has_kw(title, sector_kws):
             a["rule_priority"] = 3
             buckets[3].append(a)
@@ -572,36 +609,59 @@ def llm_filter_and_rank_articles(main_kw, articles):
     for k in buckets:
         buckets[k] = sort_newest(buckets[k])
 
-    # -------------------------
-    # 2) 후보 CAP
-    # -------------------------
+    # --------------------------------
+    # 2) ✅ 안전형 동적 후보 구성
+    # --------------------------------
     candidates = []
-    for pr in [0,1,2,3,4]:
-        for a in buckets[pr]:
-            if len(candidates) < cap:
-                candidates.append(a)
 
-    # -------------------------
+    # (1) pr0+pr1 합쳐 cap0_1만큼 우선 확보
+    for pr in [0, 1]:
+        if len(candidates) >= cap0_1:
+            break
+        space = cap0_1 - len(candidates)
+        candidates.extend(buckets[pr][:space])
+
+    # (2) pr2에서 cap2만큼 확보
+    if cap2 > 0:
+        candidates.extend(buckets[2][:cap2])
+
+    # (3) pr3 최소 5건 보장(중요 산업 리스크 방어)
+    if cap3_min > 0:
+        candidates.extend(buckets[3][:cap3_min])
+
+    # (4) 부족하면 pr3 잔여 + pr4에서 cap_rest만큼만 채움
+    target_total = cap0_1 + cap2 + cap3_min + cap_rest
+    for pr in [3, 4]:
+        if len(candidates) >= target_total:
+            break
+        need = target_total - len(candidates)
+        # pr3는 최소분 이후 잔여에서 이어서 채움
+        if pr == 3:
+            candidates.extend(buckets[3][cap3_min:cap3_min+need])
+        else:
+            candidates.extend(buckets[4][:need])
+
+    # --------------------------------
     # 3) LLM 스코어링
-    # -------------------------
+    # --------------------------------
     scores = llm_score_articles_batch(candidates, target_keyword=main_kw)
     for i, a in enumerate(candidates):
         a["llm_score"] = scores.get(i,3)
 
-    # 0점 기사 제거
-    candidates = [a for a in candidates if a["llm_score"] > 0]
+    # 0점 제거(이미 ZERO 제거했지만, LLM이 0 준 건 추가 제거)
+    candidates = [a for a in candidates if a.get("llm_score", 0) > 0]
 
     if not candidates:
         return []
 
-    # -------------------------
-    # 4) 산업 전반 기사 후보(기업명 없음 + 산업/공통 키워드)
-    # -------------------------
+    # --------------------------------
+    # 4) 산업 전반 기사 후보(기업명 없음 + 산업/공통/섹터/위험키워드)
+    # --------------------------------
     def is_industry_overview(a):
         t = (a.get("title") or "").lower()
-        if main_kw_l in t:
+        if main_kw_l and main_kw_l in t:
             return False
-        return has_kw(a.get("title"), NEG_KWS) or \
+        return has_kw_title_or_desc(a, NEG_KWS) or \
                has_kw(a.get("title"), common_kws) or \
                has_kw(a.get("title"), industry_kws) or \
                has_kw(a.get("title"), sector_kws)
@@ -609,22 +669,25 @@ def llm_filter_and_rank_articles(main_kw, articles):
     industry_cands = [a for a in candidates if is_industry_overview(a)]
     industry_cands = sorted(
         industry_cands,
-        key=lambda x: (-x["llm_score"], x.get("date",""))
+        key=lambda x: (-x.get("llm_score",3), x.get("date",""))
     )
     industry_pick = industry_cands[0] if industry_cands else None
 
-    # -------------------------
+    # --------------------------------
     # 5) 최종 Rank: rule_priority → llm_score → 최신순
-    # -------------------------
+    # --------------------------------
     ranked = sorted(
         candidates,
-        key=lambda x: (x["rule_priority"], -x["llm_score"], x.get("date",""))
+        key=lambda x: (x["rule_priority"], -x.get("llm_score",3), x.get("date",""))
     )
     ranked_top = ranked[:topk]
 
-    # 산업 기사 1건 보장
+    # ✅ 산업 기사 1건 보장(기존 유지)
     if industry_pick and industry_pick not in ranked_top:
-        ranked_top[-1] = industry_pick
+        if len(ranked_top) < topk:
+            ranked_top.append(industry_pick)
+        else:
+            ranked_top[-1] = industry_pick
 
     # 중복 제거
     seen, final = set(), []
@@ -809,7 +872,14 @@ def init_session_state():
         "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
 
         # ✅ 중요기사 리뷰 UI 표시 여부
-        "show_important_review_ui": False
+        "show_important_review_ui": False,
+
+        # init_session_state() defaults dict에 추가
+        "llm_cap_pr0_1": 40,   # 안전형: pr0+pr1 후보 최대
+        "llm_cap_pr2": 30,     # 안전형: pr2 후보 최대
+        "llm_cap_pr3_min": 5,  # pr3 최소 포함 보장
+        "llm_cap_rest": 20,    # pr3 초과/ pr4에서 추가로 채울 max
+
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -2613,3 +2683,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
