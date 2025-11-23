@@ -793,6 +793,10 @@ def init_session_state():
         "use_industry_issue_llm": True,       # 산업군별 이슈 LLM 필터 ON/OFF
         "industry_issue_cap": 300,            # 산업군별 LLM 후보 cap
         "industry_issue_top_k": 8,            # 산업군별 남길 top_k
+
+        "search_run_id": 0,                     # ✅ 검색 실행 식별자
+        "industry_major_top_cache": {},         # ✅ 산업군별 주요이슈 캐시
+        "industry_major_top_cache_run_id": -1,  # ✅ 캐시가 만들어진 run id
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -1031,6 +1035,25 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
     one_line = extract_group("한 줄 요약") or "요약 추출 실패"
     detailed_implication = extract_group("심층 시사점") or "시사점 추출 실패"
     short_implication = extract_group("한 줄 시사점") or "한 줄 시사점 요약 실패"
+
+        # ✅ LLM 잔여 번호/라인 정리
+    def clean_llm_text(t: str) -> str:
+        if not t:
+            return t
+        cleaned_lines = []
+        for ln in t.splitlines():
+            ln = re.sub(r"^\s*\d+\.\s*", "", ln).strip()  # "2. 뭐뭐" 제거
+            if not ln:
+                continue
+            if re.fullmatch(r"\d+", ln):  # "2" 같은 단독 숫자 제거
+                continue
+            cleaned_lines.append(ln)
+        return "\n".join(cleaned_lines).strip()
+
+    one_line = clean_llm_text(one_line)
+    detailed_implication = clean_llm_text(detailed_implication)
+    short_implication = clean_llm_text(short_implication)
+
     sentiment = extract_group("감성") or "감성 추출 실패"
     keywords = extract_group("검색 키워드") or ""
     key_entities = extract_group("주요 키워드") or ""
@@ -1045,6 +1068,8 @@ def summarize_and_sentiment_with_openai(text, do_summary=True, target_keyword=No
         sentiment = "중립"
     else:
         sentiment = "감성 추출 실패"
+
+
 
     return one_line, keywords, sentiment, detailed_implication, short_implication, text
 
@@ -1305,13 +1330,15 @@ if search_clicked and keyword_list:
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
     st.session_state.search_triggered = False
+    st.session_state.search_run_id += 1   # ✅ 새로운 검색 실행
 
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
         keywords = set()
         for cat in selected_categories:
             keywords.update(favorite_categories[cat])
-
+    st.session_state.search_run_id += 1   # ✅ 새로운 검색 실행
+    
         expanded = expand_keywords_with_synonyms(sorted(keywords))
         process_keywords_with_synonyms(
             expanded,
@@ -1800,16 +1827,26 @@ def render_articles_with_single_summary_and_telegram(
         #  - 이미 results(기업별 최종 기사)만 재활용
         # ================================================================
         if st.session_state.get("use_industry_issue_llm", True):
-            major_pool = build_industry_major_article_pool(results)
 
-            if major_pool:
+            # ✅ 검색 run id가 바뀐 경우에만 재계산
+            if st.session_state.industry_major_top_cache_run_id != st.session_state.search_run_id:
+                major_pool = build_industry_major_article_pool(results)
+                cache = {}
+
+                for major_name, major_articles in major_pool.items():
+                    major_top = llm_filter_and_rank_industry_major(
+                        major_name, major_articles
+                    )
+                    cache[major_name] = major_top
+
+                st.session_state.industry_major_top_cache = cache
+                st.session_state.industry_major_top_cache_run_id = st.session_state.search_run_id
+
+            cached_major_top = st.session_state.get("industry_major_top_cache", {})
+
+            if cached_major_top:
                 with st.expander("🟣 산업군별 주요 이슈(top_k)", expanded=True):
-                    for major_name, major_articles in major_pool.items():
-
-                        major_top = llm_filter_and_rank_industry_major(
-                            major_name, major_articles
-                        )
-
+                    for major_name, major_top in cached_major_top.items():
                         with st.expander(f"🏭 {major_name} ({len(major_top)}건)", expanded=False):
                             for art in major_top:
                                 uid = make_uid(art["link"])
@@ -1841,7 +1878,6 @@ def render_articles_with_single_summary_and_telegram(
                                 st.session_state.article_checked_left[key] = checked
             else:
                 st.info("산업군별 주요 이슈를 만들 결과가 없습니다.")
-
 
         # ================================================================
         #  🔵 기존 기업/카테고리별 기사 리스트
@@ -2047,7 +2083,13 @@ def render_articles_with_single_summary_and_telegram(
                 for company, items in comp_map.items():
                     with ThreadPoolExecutor(max_workers=10) as exe:
                         grouped_selected[cat_name][company] = list(exe.map(process_article, items))
-
+            # ✅ 우측에서 선택/요약된 기사들을 엑셀용으로 저장
+            flattened = []
+            for _cat, comp_map in grouped_selected.items():
+                for _comp, arts in comp_map.items():
+                    flattened.extend(arts)
+            st.session_state.selected_articles = flattened
+            
             # ------------------------------------------------------------
             #  우측 요약 렌더링
             # ------------------------------------------------------------
@@ -2611,6 +2653,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
