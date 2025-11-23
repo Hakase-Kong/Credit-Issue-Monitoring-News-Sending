@@ -519,18 +519,15 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
             all_articles = remove_duplicates(all_articles)
 
         # -------------------------
-        # 🔥 LLM 필터는 "fallback 발생 기업"에만
+        # ✅ LLM 필터는 "전체 기업"에 적용
         # -------------------------
-        if did_fallback and st.session_state.get("use_llm_filter", False):
+        if st.session_state.get("use_llm_filter", False):
             all_articles = llm_filter_and_rank_articles(main_kw, all_articles)
 
         # -------------------------
         # 최종 저장
         # -------------------------
         st.session_state.search_results[main_kw] = all_articles
-
-        # ✅ 추가: 이 기업이 fallback을 했는지 기록
-        st.session_state.fallback_done[main_kw] = did_fallback
         
         if main_kw not in st.session_state.show_limit:
             st.session_state.show_limit[main_kw] = 5
@@ -606,8 +603,6 @@ def init_session_state():
         "llm_candidate_cap": 200,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
         "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
 
-        # ✅ 추가: 기업별 fallback 수행 여부 기록
-        "fallback_done": {},   # {메인키워드: True/False}
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -708,11 +703,11 @@ with st.expander("🔍 키워드 필터 옵션"):
         key="filter_allowed_sources_only", 
         help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
     )
-    # ✅ 0건 기업 fallback 결과를 LLM으로 정제
+    # ✅ 전체 기업 LLM 중요도 필터
     st.checkbox(
-        "0건 기업에 한해 LLM 중요도 필터 적용",
+        "LLM 중요도 필터 적용(전체 기업)",
         key="use_llm_filter",
-        help="강력 필터 결과가 0건인 기업은 확장검색 후 LLM으로 중요 기사만 남깁니다."
+        help="모든 기업의 기사 중 LLM 기준 상위 기사만 남깁니다."
     )
     st.number_input("LLM 평가 후보 cap(최신순)", min_value=10, max_value=200, step=5, key="llm_candidate_cap")
     st.number_input("LLM 상위 기사 개수(top_k)", min_value=3, max_value=20, step=1, key="llm_top_k")
@@ -2266,51 +2261,21 @@ def render_important_article_review_and_download():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# --- 렌더 직전 필터링 로직 완전 교체 ---
+# --- 렌더 직전 필터링 로직 (전기업 LLM 적용 버전) ---
 if st.session_state.get("search_results"):
     filtered_results = {}
-    fallback_done_map = st.session_state.get("fallback_done", {})
 
     for keyword, articles in st.session_state["search_results"].items():
 
-        # ------------------------------------------------------------
-        # 1) fallback + LLM 기업은 article_passes_all_filters 를 적용하면 안됨
-        #    → LLM 이 확정한 결과 그대로 사용해야 함
-        # ------------------------------------------------------------
-        if fallback_done_map.get(keyword, False):
-            filtered_articles = [a for a in articles if or_keyword_filter(a, ALL_COMMON_FILTER_KEYWORDS)]
-            if st.session_state.get("remove_duplicate_articles", False):
-                filtered_articles = remove_duplicates(filtered_articles)
-            filtered_results[keyword] = filtered_articles
-            continue
-
-        # ------------------------------------------------------------
-        # 2) 일반 기업은 기존 필터(article_passes_all_filters) 적용
-        # ------------------------------------------------------------
+        # 1) 기존 필터 적용
         filtered_articles = [a for a in articles if article_passes_all_filters(a)]
 
-        # 만약 필터 적용 후 0건이고 강력필터 ON이고 fallback이 아직 안된 기업이면 fallback 다시 시도
-        if (
-            len(filtered_articles) == 0
-            and st.session_state.get("require_exact_keyword_in_title_or_content", False)
-            and not fallback_done_map.get(keyword, False)
-        ):
-            expanded_map = expand_keywords_with_synonyms([keyword])
-            process_keywords_with_synonyms(
-                expanded_map,
-                st.session_state["start_date"],
-                st.session_state["end_date"],
-                require_keyword_in_title=False
-            )
-            articles = st.session_state["search_results"].get(keyword, [])
-
-            if st.session_state.get("use_llm_filter", False):
-                articles = llm_filter_and_rank_articles(keyword, articles)
-
-            filtered_articles = [a for a in articles if article_passes_all_filters(a)]
-
+        # 2) 중복 제거
         if st.session_state.get("remove_duplicate_articles", False):
             filtered_articles = remove_duplicates(filtered_articles)
+
+        # 3) ✅ LLM은 process 단계에서 이미 기업별 top_k로 끝났으므로
+        #    여기서는 추가 LLM 호출/재정렬 금지
 
         if filtered_articles:
             filtered_results[keyword] = filtered_articles
@@ -2322,21 +2287,16 @@ if st.session_state.get("search_results"):
         enable_summary=st.session_state.get("enable_summary", True)
     )
 
+    # 이하 fetch_and_display_reports 호출부는 기존 유지
     selected_companies = []
     for cat in st.session_state.get("cat_multi", []):
         selected_companies.extend(favorite_categories.get(cat, []))
     selected_companies = list(set(selected_companies))
 
-    # kiscd_map과 cmpCD_map 모두에서 회사명에 매칭되는 키 값 가져오기
     kiscd_filtered = {c: kiscd_map[c] for c in selected_companies if c in kiscd_map}
     cmpcd_filtered = {c: config.get("cmpCD_map", {}).get(c, "") for c in selected_companies}
-
-    # 두 맵을 합치는 함수 (kiscd_filtered 기본에 cmpcd_filtered도 합칠 수 있도록)
-    # fetch_and_display_reports가 kiscd만 받으므로 확장 필요
-    # 여기서는 kiscd_filtered 넘기고, fetch_and_display_reports 내부에서 cmpCD_map 참조 권장
 
     fetch_and_display_reports(kiscd_filtered)
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
-
