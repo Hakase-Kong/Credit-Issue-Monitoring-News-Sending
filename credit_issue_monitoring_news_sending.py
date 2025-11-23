@@ -515,6 +515,69 @@ def llm_filter_and_rank_articles(main_kw, articles):
     )
     return ranked[:top_k]
 
+def build_industry_major_article_pool(results_by_company):
+    """
+    results_by_company: {company: [articles]}
+    return: {industry_major: [articles merged]}
+    - favorite_to_industry_major 맵 기반으로 기업→산업대분류 매핑
+    - 이미 fetch된 기사만 합산
+    """
+    favorite_to_industry_major = config.get("favorite_to_industry_major", {})
+    major_pool = {}
+
+    for company, arts in results_by_company.items():
+        # company가 속한 major들
+        majors = []
+        for cat, comps in favorite_categories.items():
+            if company in comps:
+                majors.extend(favorite_to_industry_major.get(cat, []))
+
+        majors = list(dict.fromkeys(majors))  # 중복 제거
+        if not majors:
+            continue
+
+        for m in majors:
+            major_pool.setdefault(m, [])
+            # 기사에 company 정보가 없을 수도 있으니 보강
+            for a in arts:
+                major_pool[m].append({**a, "키워드": company})
+
+    # major별 최신순 정렬 + 중복제거(옵션)
+    for m in major_pool:
+        major_pool[m] = sorted(major_pool[m], key=lambda x: x.get("date",""), reverse=True)
+        if st.session_state.get("remove_duplicate_articles", False):
+            major_pool[m] = remove_duplicates(major_pool[m])
+
+    return major_pool
+
+def llm_filter_and_rank_industry_major(major_name, articles):
+    """
+    산업 대분류 단위 LLM 중요이슈 필터.
+    - 이미 수집된 articles에서 최신 cap만 후보로 잡고
+    - LLM 스코어링 → top_k만 반환
+    """
+    if not articles:
+        return articles
+
+    cap = st.session_state.get("industry_issue_cap", 300)
+    top_k = st.session_state.get("industry_issue_top_k", 8)
+
+    candidates = articles[:cap]
+
+    scores = llm_score_articles_batch(candidates, target_keyword=major_name)
+    for i, a in enumerate(candidates):
+        a["llm_score"] = scores.get(i, 3)
+        a["rule_priority"] = 2  # major 단위는 기존 rule_priority와 구분용(큰 의미는 없음)
+
+    ranked = sorted(
+        candidates,
+        key=lambda x: (
+            -x.get("llm_score", 3),
+            x.get("date", "")
+        )
+    )
+    return ranked[:top_k]
+
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
     """
     1차: 강한 필터(require_keyword_in_title) 그대로 적용
@@ -687,6 +750,10 @@ def init_session_state():
         "llm_candidate_cap": 200,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
         "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
 
+        # ✅ 산업군(대분류) 단위 이슈 LLM 필터
+        "use_industry_issue_llm": False,      # 산업군별 이슈 LLM 필터 ON/OFF
+        "industry_issue_cap": 300,            # 산업군별 LLM 후보 cap
+        "industry_issue_top_k": 8,            # 산업군별 남길 top_k
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -780,13 +847,21 @@ with st.expander("🏭 산업별 필터 옵션 (대분류별 소분류 필터링
     
 # --- 중복 기사 제거 기능 체크박스 포함된 키워드 필터 옵션 ---
 with st.expander("🔍 키워드 필터 옵션"):
-    require_exact_keyword_in_title_or_content = st.checkbox("키워드가 제목 또는 본문에 포함된 기사만 보기", key="require_exact_keyword_in_title_or_content")
-    remove_duplicate_articles = st.checkbox("중복 기사 제거", key="remove_duplicate_articles", help="키워드 검색 후 중복 기사를 제거합니다.")
+    require_exact_keyword_in_title_or_content = st.checkbox(
+        "키워드가 제목 또는 본문에 포함된 기사만 보기",
+        key="require_exact_keyword_in_title_or_content"
+    )
+    remove_duplicate_articles = st.checkbox(
+        "중복 기사 제거",
+        key="remove_duplicate_articles",
+        help="키워드 검색 후 중복 기사를 제거합니다."
+    )
     filter_allowed_sources_only = st.checkbox(
-        "특정 언론사만 검색", 
-        key="filter_allowed_sources_only", 
+        "특정 언론사만 검색",
+        key="filter_allowed_sources_only",
         help="선택된 메이저 언론사만 필터링하고, 그 외 언론은 제외합니다."
     )
+
     # ✅ 전체 기업 LLM 중요도 필터
     st.checkbox(
         "LLM 중요도 필터 적용(전체 기업)",
@@ -796,11 +871,42 @@ with st.expander("🔍 키워드 필터 옵션"):
             "점수 상위 top_k건만 보존합니다. (5점=등급/유동성/차입 등 핵심 이슈)"
         )
     )
-    st.number_input("LLM 평가 후보 cap(최신순)", min_value=10, max_value=200, step=5, key="llm_candidate_cap",
-                    help="기업별로 최신 몇 건까지 LLM 평가에 포함할지 설정합니다.")
-    st.number_input("LLM 상위 기사 개수(top_k)", min_value=3, max_value=20, step=1, key="llm_top_k",
-                    help="기업별로 LLM 평가 후 남길 기사 개수를 설정합니다.")
+    st.number_input(
+        "LLM 평가 후보 cap(최신순)",
+        min_value=10, max_value=200, step=5,
+        key="llm_candidate_cap",
+        help="기업별로 최신 몇 건까지 LLM 평가에 포함할지 설정합니다."
+    )
+    st.number_input(
+        "LLM 상위 기사 개수(top_k)",
+        min_value=3, max_value=20, step=1,
+        key="llm_top_k",
+        help="기업별로 LLM 평가 후 남길 기사 개수를 설정합니다."
+    )
 
+    st.markdown("---")
+
+    # ✅ 산업군별 주요이슈 LLM 필터(대분류 단위)
+    st.checkbox(
+        "산업군별 주요이슈 LLM 필터 적용",
+        key="use_industry_issue_llm",
+        help=(
+            "이미 수집된 기업별 기사를 산업 대분류(보험사/은행/에너지 등) 단위로 합쳐서 "
+            "그 안에서 LLM이 주요 이슈 기사만 top_k로 추립니다."
+        )
+    )
+    st.number_input(
+        "산업군별 LLM 후보 cap(최신순)",
+        min_value=50, max_value=500, step=10,
+        key="industry_issue_cap",
+        help="산업군별로 최신 몇 건까지 LLM 평가 후보로 올릴지 설정합니다."
+    )
+    st.number_input(
+        "산업군별 LLM 상위 기사 개수(top_k)",
+        min_value=3, max_value=20, step=1,
+        key="industry_issue_top_k",
+        help="산업군별 LLM 평가 후 남길 기사 개수를 설정합니다."
+    )
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -1650,6 +1756,57 @@ def render_articles_with_single_summary_and_telegram(
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
 
+        # ================================================================
+        #  🟣 산업 대분류(major)별 주요 이슈(top_k)
+        #  - 이미 results(기업별 최종 기사)만 재활용
+        # ================================================================
+        if st.session_state.get("use_industry_issue_llm", False):
+            major_pool = build_industry_major_article_pool(results)
+
+            if major_pool:
+                with st.expander("🟣 산업군별 주요 이슈(top_k)", expanded=True):
+                    for major_name, major_articles in major_pool.items():
+
+                        major_top = llm_filter_and_rank_industry_major(
+                            major_name, major_articles
+                        )
+
+                        with st.expander(f"🏭 {major_name} ({len(major_top)}건)", expanded=False):
+                            for art in major_top:
+                                uid = make_uid(art["link"])
+                                key = f"industry_{major_name}_{uid}"
+
+                                cols = st.columns([0.04, 0.96])
+                                with cols[0]:
+                                    checked = st.checkbox(
+                                        "",
+                                        value=st.session_state.article_checked.get(key, False),
+                                        key=f"news_{key}",
+                                    )
+
+                                with cols[1]:
+                                    llm_info = (
+                                        f" | LLM점수:{art.get('llm_score')}점"
+                                        if art.get("llm_score") else ""
+                                    )
+                                    company_tag = art.get("키워드", "")
+                                    company_info = f" | 기업:{company_tag}" if company_tag else ""
+
+                                    st.markdown(
+                                        f"<span class='news-title'><a href='{art['link']}' target='_blank'>{art['title']}</a></span> "
+                                        f"{art['date']} | {art['source']}{company_info}{llm_info}",
+                                        unsafe_allow_html=True,
+                                    )
+
+                                st.session_state.article_checked[key] = checked
+                                st.session_state.article_checked_left[key] = checked
+            else:
+                st.info("산업군별 주요 이슈를 만들 결과가 없습니다.")
+
+
+        # ================================================================
+        #  🔵 기존 기업/카테고리별 기사 리스트
+        # ================================================================
         for category_name, company_list in favorite_categories.items():
             companies_with_results = [c for c in company_list if c in results]
             if not companies_with_results:
@@ -1675,21 +1832,18 @@ def render_articles_with_single_summary_and_telegram(
                         # ------------------------------------------------------------
                         # 2) Stale 제거 (과거 키를 모두 삭제)
                         # ------------------------------------------------------------
-                        # article_checked
                         for k in list(st.session_state.article_checked.keys()):
                             if k.startswith(f"{company}_") and k not in current_key_set:
                                 st.session_state.article_checked[k] = False
 
-                        # article_checked_left + 해당 위젯 제거
                         for k in list(st.session_state.article_checked_left.keys()):
                             if k.startswith(f"{company}_") and k not in current_key_set:
                                 st.session_state.article_checked_left[k] = False
                                 st.session_state.pop(f"news_{k}", None)
 
-                        # 🔥 핵심: Streamlit 위젯 자체의 상태도 제거해야 함
                         for sk in list(st.session_state.keys()):
                             if sk.startswith("news_"):
-                                tail = sk[len("news_"):]  # 회사_uid
+                                tail = sk[len("news_"):]
                                 if tail.startswith(f"{company}_") and tail not in current_key_set:
                                     st.session_state.pop(sk, None)
 
@@ -1699,7 +1853,10 @@ def render_articles_with_single_summary_and_telegram(
                         slug = re.sub(r"\W+", "", f"{category_name}_{company}")
                         master_key = f"left_master_{slug}_select_all"
 
-                        prev_value = all(st.session_state.article_checked.get(k, False) for k in all_article_keys)
+                        prev_value = all(
+                            st.session_state.article_checked.get(k, False)
+                            for k in all_article_keys
+                        )
 
                         select_all = st.checkbox(
                             f"전체 기사 선택/해제 ({company})",
@@ -1709,7 +1866,6 @@ def render_articles_with_single_summary_and_telegram(
 
                         if select_all != prev_value:
 
-                            # 회사 관련 모든 과거 위젯/상태 정리
                             for sk in list(st.session_state.keys()):
                                 if sk.startswith("news_"):
                                     tail = sk[len("news_"):]
@@ -1728,10 +1884,12 @@ def render_articles_with_single_summary_and_telegram(
                         # ------------------------------------------------------------
                         for art in articles:
                             uid = make_uid(art["link"])
-                            key = f"{company}_{uid}"  # ✅ 반드시 다시 정의
-                        
-                            cache_key = get_summary_key_from_url(art["link"], target_keyword=company)
-                        
+                            key = f"{company}_{uid}"
+
+                            cache_key = get_summary_key_from_url(
+                                art["link"], target_keyword=company
+                            )
+
                             cols = st.columns([0.04, 0.96])
                             with cols[0]:
                                 checked = st.checkbox(
@@ -1750,9 +1908,14 @@ def render_articles_with_single_summary_and_telegram(
                                     if sentiment else ""
                                 )
 
-                                llm_info = f" | LLM점수:{art.get('llm_score')}점" if art.get("llm_score") else ""
-
-                                search_kw = f" | 검색어:{art.get('검색어')}" if art.get('검색어') else ""
+                                llm_info = (
+                                    f" | LLM점수:{art.get('llm_score')}점"
+                                    if art.get("llm_score") else ""
+                                )
+                                search_kw = (
+                                    f" | 검색어:{art.get('검색어')}"
+                                    if art.get('검색어') else ""
+                                )
 
                                 st.markdown(
                                     f"<span class='news-title'><a href='{art['link']}' target='_blank'>{art['title']}</a></span> "
@@ -1762,6 +1925,7 @@ def render_articles_with_single_summary_and_telegram(
 
                             st.session_state.article_checked[key] = checked
                             st.session_state.article_checked_left[key] = checked
+
 
     # ================================================================
     #  🔵  선택된 기사 요약/감성분석 영역 (우측)
@@ -1798,10 +1962,11 @@ def render_articles_with_single_summary_and_telegram(
             # ------------------------------------------------------------
             def process_article(item):
                 company, uid, art = item
-            
-                # ✅ 캐시 키 통일
-                cache_key = get_summary_key_from_url(art["link"], target_keyword=company)
-            
+
+                cache_key = get_summary_key_from_url(
+                    art["link"], target_keyword=company
+                )
+
                 if cache_key in st.session_state:
                     one_line, summary, sentiment, implication, short_implication, full_text = st.session_state[cache_key]
                 else:
@@ -1812,17 +1977,16 @@ def render_articles_with_single_summary_and_telegram(
                         target_keyword=company,
                         description=art.get("description"),
                     )
-                    # ✅ 저장도 동일 키로
                     st.session_state[cache_key] = (
                         one_line, summary, sentiment, implication, short_implication, full_text
                     )
-            
+
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
                     ALL_COMMON_FILTER_KEYWORDS,
                     industry_keywords_all,
                 )
-            
+
                 return {
                     "키워드": company,
                     "필터히트": ", ".join(filter_hits),
@@ -2408,6 +2572,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
