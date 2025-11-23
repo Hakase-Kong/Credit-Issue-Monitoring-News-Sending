@@ -838,7 +838,8 @@ class Telegram:
         
 def filter_by_issues(title, desc, selected_keywords, require_keyword_in_title=False):
     if require_keyword_in_title and selected_keywords:
-        if not any(kw.lower() in title.lower() for kw in selected_keywords):
+        text = (title + " " + desc).lower()
+        if not any(kw.lower() in text for kw in selected_keywords):
             return False
     return True
 
@@ -952,15 +953,15 @@ def get_summary_key_from_url(article_url: str, target_keyword: str = None) -> st
         return f"summary_{target_keyword}_{uid}"
     return f"summary_{uid}"
 
-def article_contains_exact_keyword(article, keywords):
+def article_contains_exact_keyword(article, keywords, target_keyword=None):
     title = article.get("title", "") or ""
     content = ""
 
     link = article.get("link", "") or ""
-    summary_key = get_summary_key_from_url(link, keyword)
+    summary_key = get_summary_key_from_url(link, target_keyword)
 
     if summary_key in st.session_state and isinstance(st.session_state[summary_key], tuple):
-        one_line, summary, sentiment, implication, short_imp, full_text = st.session_state[summary_key]
+        _, _, _, _, _, full_text = st.session_state[summary_key]
         content = full_text or ""
 
     for kw in keywords:
@@ -990,7 +991,7 @@ def article_passes_all_filters(article):
             all_keywords.extend(favorite_categories.get(cat, []))
 
     # 키워드 필터(입력 및 카테고리 키워드) 통과 여부
-    keyword_passed = article_contains_exact_keyword(article, all_keywords)
+    keyword_passed = article_contains_exact_keyword(article, all_keywords, target_keyword=article.get("키워드"))
 
     # 언론사 도메인 필터링 (특정 언론사만 필터링)
     if st.session_state.get("filter_allowed_sources_only", False):
@@ -1029,7 +1030,7 @@ def article_passes_all_filters(article):
     return True
 
 # --- 중복 기사 제거 함수 ---
-def is_similar(title1, title2, threshold=0.5):
+def is_similar(title1, title2, threshold=0.75):
     ratio = difflib.SequenceMatcher(None, title1, title2).ratio()
     return ratio >= threshold
 
@@ -1474,7 +1475,7 @@ def build_important_excel_format(important_articles, favorite_categories, excel_
         total_count = len(filtered_articles)
 
         # 해당 회사의 선택된 중요기사 요약 데이터(이미 중복 제거, 필터링된)를 가져옴
-        filtered_df = df[df['기업명'] == company].sort_values(by='날짜', ascending=False)
+        filtered_df = df[df['키워드'] == company].sort_values(by='날짜', ascending=False)
 
         hl_news = []
         for i, art in enumerate(filtered_df.itertuples()):
@@ -1633,9 +1634,10 @@ def render_articles_with_single_summary_and_telegram(
                         # ------------------------------------------------------------
                         for art in articles:
                             uid = make_uid(art["link"])
-                            key = f"{company}_{uid}"
-                            cache_key = f"summary_{key}"
-
+                            key = f"{company}_{uid}"  # ✅ 반드시 다시 정의
+                        
+                            cache_key = get_summary_key_from_url(art["link"], target_keyword=company)
+                        
                             cols = st.columns([0.04, 0.96])
                             with cols[0]:
                                 checked = st.checkbox(
@@ -1702,9 +1704,10 @@ def render_articles_with_single_summary_and_telegram(
             # ------------------------------------------------------------
             def process_article(item):
                 company, uid, art = item
-                key = f"{company}_{uid}"
-                cache_key = f"summary_{key}"
-
+            
+                # ✅ 캐시 키 통일
+                cache_key = get_summary_key_from_url(art["link"], target_keyword=company)
+            
                 if cache_key in st.session_state:
                     one_line, summary, sentiment, implication, short_implication, full_text = st.session_state[cache_key]
                 else:
@@ -1715,16 +1718,17 @@ def render_articles_with_single_summary_and_telegram(
                         target_keyword=company,
                         description=art.get("description"),
                     )
+                    # ✅ 저장도 동일 키로
                     st.session_state[cache_key] = (
                         one_line, summary, sentiment, implication, short_implication, full_text
                     )
-
+            
                 filter_hits = matched_filter_keywords(
                     {"title": art["title"], "요약본": summary, "요약": one_line, "full_text": full_text},
                     ALL_COMMON_FILTER_KEYWORDS,
                     industry_keywords_all,
                 )
-
+            
                 return {
                     "키워드": company,
                     "필터히트": ", ".join(filter_hits),
@@ -1814,10 +1818,15 @@ def render_important_article_review_and_download():
                     if filtered_articles:
                         filtered_results_for_important[keyword] = filtered_articles
 
+                industry_keywords_all = []
+                if st.session_state.get("use_industry_filter", False):
+                    for sublist in st.session_state.industry_major_sub_map.values():
+                        industry_keywords_all.extend(sublist)
+                
                 important_articles = generate_important_article_list(
                     search_results=filtered_results_for_important,
                     common_keywords=ALL_COMMON_FILTER_KEYWORDS,
-                    industry_keywords=st.session_state.get("industry_sub", []),
+                    industry_keywords=industry_keywords_all,   # ✅ 실제 선택값 전달
                     favorites=favorite_categories
                 )
                 # key 명 통일 및 시사점 필드 포함 (시사점은 빈 문자열로 초기화, 필요 시 OpenAI 결과 반영 가능)
@@ -1859,21 +1868,28 @@ def render_important_article_review_and_download():
             for minor, arts in minor_map.items():
                 for idx, article in enumerate(arts):
                     link = article.get("링크", "")
-                    cleaned_id = make_uid(link) if link else ""
-                    cache_hit = False
-                    for k, v in st.session_state.items():
-                        if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                            one_line_map[(major, minor, idx)] = v
-                            cache_hit = True
-                            break
-                    if not cache_hit and link:
-                        to_summarize.append((major, minor, idx, link, article.get("기사제목", "")))
+                    cache_key = get_summary_key_from_url(link, target_keyword=minor)  # minor=회사명
+                    if cache_key in st.session_state and isinstance(st.session_state[cache_key], tuple):
+                        one_line_map[(major, minor, idx)] = st.session_state[cache_key]
+                    else:
+                        if link:
+                            to_summarize.append((major, minor, idx, link, article.get("기사제목", "")))
+
 
         if to_summarize:
             with st.spinner("중요 기사 요약 생성 중..."):
                 def get_one_line(args):
                     major, minor, idx, link, title = args
-                    one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(link, title, do_summary=True)
+                
+                    # ✅ summarize_article_from_url 내부에서 동일 캐시 키로 저장됨
+                    one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
+                        link, title, do_summary=True, target_keyword=minor
+                    )
+                
+                    # ✅ 혹시 내부 저장이 실패해도 여기서 한번 더 고정 저장
+                    cache_key = get_summary_key_from_url(link, target_keyword=minor)
+                    st.session_state[cache_key] = (one_line, summary, sentiment, implication, short_implication, full_text)
+                
                     return (major, minor, idx), (one_line, summary, sentiment, implication, short_implication, full_text)
 
                 with ThreadPoolExecutor(max_workers=10) as executor:
@@ -1965,7 +1981,8 @@ def render_important_article_review_and_download():
                         selected_article, article_link = None, None
                         for kw, arts in st.session_state.search_results.items():
                             for art in arts:
-                                uid = re.sub(r'\W+', '', art['link'])[-16:]
+                                uid = make_uid(art["link"])
+                                
                                 if uid == key_tail:
                                     selected_article = art
                                     article_link = art["link"]
@@ -1978,13 +1995,19 @@ def render_important_article_review_and_download():
                         keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                         cleaned_id = make_uid(selected_article['link'])
                         sentiment = None
-                        for k in st.session_state.keys():
-                            if k.startswith("summary_") and cleaned_id in k:
-                                sentiment = st.session_state[k][2]
-                                break
+                        cache_key = get_summary_key_from_url(selected_article["link"], target_keyword=keyword)
+                        
+                        if cache_key in st.session_state:
+                            sentiment = st.session_state[cache_key][2]
+                        else:
+                            _, _, sentiment, _, _, _ = summarize_article_from_url(
+                                selected_article["link"],
+                                selected_article["title"],
+                                target_keyword=keyword
+                            )
                         if not sentiment:
-                            _, _, sentiment, _, _ = summarize_article_from_url(
-                                selected_article["link"], selected_article["title"]
+                            _, _, sentiment, _, _, _ = summarize_article_from_url(
+                                selected_article["link"], selected_article["title"], target_keyword=keyword
                             )
                         new_article = {
                             "키워드": keyword,
@@ -2039,7 +2062,8 @@ def render_important_article_review_and_download():
                 selected_article, article_link = None, None
                 for kw, art_list in st.session_state.search_results.items():
                     for art in art_list:
-                        uid = re.sub(r'\W+', '', art['link'])[-16:]
+                        uid = make_uid(art["link"])
+                        
                         if uid == key_tail:
                             selected_article = art
                             article_link = art["link"]
@@ -2053,13 +2077,19 @@ def render_important_article_review_and_download():
                 keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
                 cleaned_id = make_uid(link) if link else ""
                 sentiment = None
-                for k in st.session_state.keys():
-                    if k.startswith("summary_") and cleaned_id in k:
-                        sentiment = st.session_state[k][2]
-                        break
+                cache_key = get_summary_key_from_url(selected_article["link"], target_keyword=keyword)
+                
+                if cache_key in st.session_state:
+                    sentiment = st.session_state[cache_key][2]
+                else:
+                    _, _, sentiment, _, _, _ = summarize_article_from_url(
+                        selected_article["link"],
+                        selected_article["title"],
+                        target_keyword=keyword
+                    )
                 if not sentiment:
-                    _, _, sentiment, _, _ = summarize_article_from_url(
-                        selected_article["link"], selected_article["title"]
+                    _, _, sentiment, _, _, _ = summarize_article_from_url(
+                        selected_article["link"], selected_article["title"], target_keyword=keyword
                     )
                 important = st.session_state.get("important_articles_preview", [])
                 remove_link = major_map[target_major][target_minor][target_idx]["링크"]
@@ -2092,14 +2122,16 @@ def render_important_article_review_and_download():
         def enrich_article_for_excel(raw_article):
             link = raw_article.get("링크", "")
             keyword = raw_article.get("키워드", "")
-            cleaned_id = make_uid(link) if link else ""
-
             one_line, summary, sentiment, implication, short_implication, full_text = None, None, None, None, None, None
+            cache_key = get_summary_key_from_url(link, target_keyword=keyword)
 
-            for k, v in st.session_state.items():
-                if k.startswith("summary_") and cleaned_id in k and isinstance(v, tuple):
-                    one_line, summary, sentiment, implication, short_implication, full_text = v
-                    break
+            if cache_key in st.session_state and isinstance(st.session_state[cache_key], tuple):
+                one_line, summary, sentiment, implication, short_implication, full_text = st.session_state[cache_key]
+            else:
+                one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
+                    link, raw_article.get("기사제목", ""), target_keyword=keyword
+                )
+                st.session_state[cache_key] = (one_line, summary, sentiment, implication, short_implication, full_text)
 
             if not sentiment:
                 one_line, summary, sentiment, implication, short_implication, full_text = summarize_article_from_url(
@@ -2246,13 +2278,9 @@ if st.session_state.get("search_results"):
         #    → LLM 이 확정한 결과 그대로 사용해야 함
         # ------------------------------------------------------------
         if fallback_done_map.get(keyword, False):
-            # 이미 fallback + LLM 필터를 거친 articles 그대로 사용
-            filtered_articles = articles
-
-            # 단, 중복 제거 옵션이 켜져 있으면 적용
+            filtered_articles = [a for a in articles if or_keyword_filter(a, ALL_COMMON_FILTER_KEYWORDS)]
             if st.session_state.get("remove_duplicate_articles", False):
                 filtered_articles = remove_duplicates(filtered_articles)
-
             filtered_results[keyword] = filtered_articles
             continue
 
@@ -2311,3 +2339,4 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
