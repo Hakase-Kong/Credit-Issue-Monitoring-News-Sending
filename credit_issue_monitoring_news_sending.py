@@ -547,76 +547,6 @@ def llm_filter_and_rank_articles(main_kw, articles):
     )
     return ranked[:top_k]
 
-def build_industry_major_article_pool(results_by_company):
-    favorite_to_industry_major = config.get("favorite_to_industry_major", {})
-    major_pool = {}
-
-    industry_credit_dict = parse_industry_credit_keywords()
-
-    for company, arts in results_by_company.items():
-        majors = []
-        for cat, comps in favorite_categories.items():
-            if company in comps:
-                majors.extend(favorite_to_industry_major.get(cat, []))
-        majors = list(dict.fromkeys(majors))
-        if not majors:
-            continue
-
-        for m in majors:
-            sector_kws = industry_credit_dict.get(m, [])  # 대분류명 기준으로 산업키워드 잡기(없으면 빈 리스트)
-            major_pool.setdefault(m, [])
-            for a in arts:
-                title = (a.get("title","") or "").lower()
-
-                has_sector_kw = any(kw.lower() in title for kw in sector_kws)
-                has_common_kw = any(kw.lower() in title for kw in ALL_COMMON_FILTER_KEYWORDS)
-
-                if has_sector_kw or has_common_kw:
-                    pr = 1   # 산업/공통 키워드 포함 → 1순위
-                else:
-                    pr = 2   # 그 외는 전부 동일 후보(기업명 포함 여부로 차등 X)
-
-                major_pool[m].append({**a, "키워드": company, "industry_rule_priority": pr})
-
-    for m in major_pool:
-        major_pool[m] = sorted(
-            major_pool[m],
-            key=lambda x: (x.get("industry_rule_priority",3), x.get("date","")),
-            reverse=False
-        )
-        if st.session_state.get("remove_duplicate_articles", False):
-            major_pool[m] = remove_duplicates(major_pool[m])
-
-    return major_pool
-
-def llm_filter_and_rank_industry_major(major_name, articles):
-    """
-    산업 대분류 단위 LLM 중요이슈 필터.
-    - 이미 수집된 articles에서 최신 cap만 후보로 잡고
-    - LLM 스코어링 → top_k만 반환
-    """
-    if not articles:
-        return articles
-
-    cap = st.session_state.get("industry_issue_cap", 300)
-    top_k = st.session_state.get("industry_issue_top_k", 8)
-
-    candidates = articles[:cap]
-
-    scores = llm_score_articles_batch(candidates, target_keyword=major_name, mode="industry")
-    for i, a in enumerate(candidates):
-        a["llm_score"] = scores.get(i, 3)
-        a["rule_priority"] = 2  # major 단위는 기존 rule_priority와 구분용(큰 의미는 없음)
-
-    ranked = sorted(
-        candidates,
-        key=lambda x: (
-            -x.get("llm_score", 3),
-            x.get("date", "")
-        )
-    )
-    return ranked[:top_k]
-
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
     """
     1차: 강한 필터(require_keyword_in_title) 그대로 적용
@@ -788,15 +718,6 @@ def init_session_state():
         "use_llm_filter": True,      # LLM 중요도 필터 사용 여부
         "llm_candidate_cap": 200,      # LLM에 태울 최대 후보 기사 수(최신순 cap)
         "llm_top_k": 10,              # LLM 점수 상위 몇 개만 남길지
-
-        # ✅ 산업군(대분류) 단위 이슈 LLM 필터
-        "use_industry_issue_llm": True,       # 산업군별 이슈 LLM 필터 ON/OFF
-        "industry_issue_cap": 300,            # 산업군별 LLM 후보 cap
-        "industry_issue_top_k": 8,            # 산업군별 남길 top_k
-
-        "search_run_id": 0,                     # ✅ 검색 실행 식별자
-        "industry_major_top_cache": {},         # ✅ 산업군별 주요이슈 캐시
-        "industry_major_top_cache_run_id": -1,  # ✅ 캐시가 만들어진 run id
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -925,30 +846,6 @@ with st.expander("🔍 키워드 필터 옵션"):
         min_value=3, max_value=20, step=1,
         key="llm_top_k",
         help="기업별로 LLM 평가 후 남길 기사 개수를 설정합니다."
-    )
-
-    st.markdown("---")
-
-    # ✅ 산업군별 주요이슈 LLM 필터(대분류 단위)
-    st.checkbox(
-        "산업군별 주요이슈 LLM 필터 적용",
-        key="use_industry_issue_llm",
-        help=(
-            "이미 수집된 기업별 기사를 산업 대분류(보험사/은행/에너지 등) 단위로 합쳐서 "
-            "그 안에서 LLM이 주요 이슈 기사만 top_k로 추립니다."
-        )
-    )
-    st.number_input(
-        "산업군별 LLM 후보 cap(최신순)",
-        min_value=50, max_value=500, step=10,
-        key="industry_issue_cap",
-        help="산업군별로 최신 몇 건까지 LLM 평가 후보로 올릴지 설정합니다."
-    )
-    st.number_input(
-        "산업군별 LLM 상위 기사 개수(top_k)",
-        min_value=3, max_value=20, step=1,
-        key="industry_issue_top_k",
-        help="산업군별 LLM 평가 후 남길 기사 개수를 설정합니다."
     )
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -1330,15 +1227,12 @@ if search_clicked and keyword_list:
             require_keyword_in_title=st.session_state.get("require_exact_keyword_in_title_or_content", False)
         )
     st.session_state.search_triggered = False
-    st.session_state.search_run_id += 1   # ✅ 새로운 검색 실행
 
 if category_search_clicked and selected_categories:
     with st.spinner("뉴스 검색 중..."):
         keywords = set()
         for cat in selected_categories:
             keywords.update(favorite_categories[cat])
-
-        st.session_state.search_run_id += 1   # ✅ 새로운 검색 실행
 
         expanded = expand_keywords_with_synonyms(sorted(keywords))
         process_keywords_with_synonyms(
@@ -1824,64 +1718,6 @@ def render_articles_with_single_summary_and_telegram(
     # ================================================================
     with col_list:
         st.markdown("### 🔍 뉴스 검색 결과")
-
-        # ================================================================
-        #  🟣 산업 대분류(major)별 주요 이슈(top_k)
-        #  - 이미 results(기업별 최종 기사)만 재활용
-        # ================================================================
-        if st.session_state.get("use_industry_issue_llm", True):
-
-            # ✅ 검색 run id가 바뀐 경우에만 재계산
-            if st.session_state.industry_major_top_cache_run_id != st.session_state.search_run_id:
-                major_pool = build_industry_major_article_pool(results)
-                cache = {}
-
-                for major_name, major_articles in major_pool.items():
-                    major_top = llm_filter_and_rank_industry_major(
-                        major_name, major_articles
-                    )
-                    cache[major_name] = major_top
-
-                st.session_state.industry_major_top_cache = cache
-                st.session_state.industry_major_top_cache_run_id = st.session_state.search_run_id
-
-            cached_major_top = st.session_state.get("industry_major_top_cache", {})
-
-            if cached_major_top:
-                with st.expander("🟣 산업군별 주요 이슈(top_k)", expanded=True):
-                    for major_name, major_top in cached_major_top.items():
-                        with st.expander(f"🏭 {major_name} ({len(major_top)}건)", expanded=False):
-                            for art in major_top:
-                                uid = make_uid(art["link"])
-                                key = f"industry_{major_name}_{uid}"
-
-                                cols = st.columns([0.04, 0.96])
-                                with cols[0]:
-                                    checked = st.checkbox(
-                                        "",
-                                        value=st.session_state.article_checked.get(key, False),
-                                        key=f"news_{key}",
-                                    )
-
-                                with cols[1]:
-                                    llm_info = (
-                                        f" | LLM점수:{art.get('llm_score')}점"
-                                        if art.get("llm_score") else ""
-                                    )
-                                    company_tag = art.get("키워드", "")
-                                    company_info = f" | 기업:{company_tag}" if company_tag else ""
-
-                                    st.markdown(
-                                        f"<span class='news-title'><a href='{art['link']}' target='_blank'>{art['title']}</a></span> "
-                                        f"{art['date']} | {art['source']}{company_info}{llm_info}",
-                                        unsafe_allow_html=True,
-                                    )
-
-                                st.session_state.article_checked[key] = checked
-                                st.session_state.article_checked_left[key] = checked
-            else:
-                st.info("산업군별 주요 이슈를 만들 결과가 없습니다.")
-
         # ================================================================
         #  🔵 기존 기업/카테고리별 기사 리스트
         # ================================================================
@@ -2126,7 +1962,7 @@ def render_articles_with_single_summary_and_telegram(
                         st.session_state.selected_articles,
                         favorite_categories,
                         excel_company_categories,
-                        st.session_state.search_results,
+                        filtered_results,   # ✅ 최종 남은 기사 풀
                     ).getvalue(),
                     file_name="뉴스요약_맞춤형.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2531,21 +2367,9 @@ def render_important_article_review_and_download():
 
             rows = []
             for idx, company in enumerate(sector_list):
-                search_articles = search_results.get(company, [])
-
-                filtered_articles = []
-                for article in search_articles:
-                    passes_common = any(kw in (article.get("title", "") + article.get("description", "")) for kw in ALL_COMMON_FILTER_KEYWORDS)
-                    passes_industry = True
-                    # 필요 시 산업별 필터링 로직 추가 가능
-
-                    if passes_common and passes_industry:
-                        filtered_articles.append(article)
-
-                if st.session_state.get("remove_duplicate_articles", False):
-                    filtered_articles = remove_duplicates(filtered_articles)
-
-                total_count = len(filtered_articles)
+                # ✅ search_results 자체가 이미 "최종 남은 기사 풀"이라고 가정
+                final_articles = search_results.get(company, [])
+                total_count = len(final_articles)
 
                 filtered_df = df[df.get("키워드", "") == company].sort_values(by='날짜', ascending=False)
 
@@ -2656,6 +2480,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
