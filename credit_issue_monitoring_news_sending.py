@@ -508,13 +508,11 @@ def llm_filter_and_rank_articles(main_kw, articles):
     ranked = sorted(
         candidates,
         key=lambda x: (
-            -(x.get("rule_priority", 3)),      # 1순위가 먼저
-            x.get("llm_score", 3),             # LLM 점수 높을수록
-            x.get("date", ""),                 # 최신
-        ),
-        reverse=False
+            x.get("rule_priority", 3),   # 1이 먼저
+            -x.get("llm_score", 3),      # ✅ 점수 높을수록 먼저
+            x.get("date", ""),           # 최신
+        )
     )
-
     return ranked[:top_k]
 
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
@@ -546,7 +544,8 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                 search_kw = futures[future]
                 try:
                     fetched = future.result()
-                    fetched = [{**a, "검색어": search_kw} for a in fetched]
+                    # ✅ 메인 키워드(기업명) 주입
+                    fetched = [{**a, "검색어": search_kw, "키워드": main_kw} for a in fetched]
                     all_articles.extend(fetched)
                 except Exception as e:
                     st.warning(f"{main_kw} - '{search_kw}' 검색 실패: {e}")
@@ -589,7 +588,8 @@ def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date,
                     search_kw = futures[future]
                     try:
                         fetched = future.result()
-                        fetched = [{**a, "검색어": search_kw} for a in fetched]
+                        # ✅ fallback에서도 메인 키워드(기업명) 주입
+                        fetched = [{**a, "검색어": search_kw, "키워드": main_kw} for a in fetched]
                         fallback_articles.extend(fetched)
                     except Exception as e:
                         st.warning(f"[Fallback] {main_kw} - '{search_kw}' 실패: {e}")
@@ -1055,6 +1055,24 @@ def article_contains_exact_keyword(article, keywords, target_keyword=None):
     return False
 
 def article_passes_all_filters(article):
+    # ✅ 메인 기업(키워드) 식별자 없으면 탈락
+    main_kw = (article.get("키워드") or "").strip()
+    if not main_kw:
+        return False
+
+    # ✅ 동의어까지 포함한 기업 언급 여부 체크
+    main_kws = [main_kw] + SYNONYM_MAP.get(main_kw, [])
+    title = article.get("title", "") or ""
+    desc  = article.get("description", "") or ""
+    text_short = f"{title} {desc}"
+
+    company_mentioned = any(k in text_short for k in main_kws)
+
+    # 기존 강력필터 옵션 ON일 때: 기업 언급 필수
+    if st.session_state.get("require_exact_keyword_in_title_or_content", False):
+        if not company_mentioned:
+            return False
+            
     # 제목에 제외 키워드가 포함되면 제외
     if exclude_by_title_keywords(article.get('title', ''), EXCLUDE_TITLE_KEYWORDS):
         return False
@@ -1339,7 +1357,10 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
             # 기사 목록을 "번호. 제목 - 링크" 형태로 구성
             prompt_list = "\n".join(
-                [f"{i+1}. {a['title']} - {a['link']}" for i, a in enumerate(target_articles)]
+                [
+                    f"{i+1}. [기업:{target_keyword}] {a.get('title','')} || {a.get('description','')}"
+                    for i, a in enumerate(articles)
+                ]
             )
 
             # --- 프롬프트: 5점 기사만 자동 선정 ---
@@ -2387,6 +2408,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
