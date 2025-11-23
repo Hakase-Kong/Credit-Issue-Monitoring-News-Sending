@@ -366,60 +366,105 @@ def expand_keywords_with_synonyms(original_keywords):
         expanded_map[kw] = [kw] + synonyms
     return expanded_map
 
-def llm_score_articles_batch(articles, target_keyword=None, mode="company"):
+def llm_score_articles_batch(articles, target_keyword=None):
     """
-    mode="company": 기존 기업 신용영향도(1~5)
-    mode="industry": 산업 전반 영향도(1~5)
+    통합 신용영향도 스코어링 (0~5점)
+    - 스포츠/스폰서/후원/대회/리그/선수 관련 기사: 0점(무조건 제외)
+    - 기업 '수상/어워드/선정' 단독 기사: 0점(무조건 제외)
+    - 산업 전반 구조/규제/수급/사이클 진단 기사는 기업명 없어도 고득점 가능
+    - 부정적 뉘앙스(특히 지주/금융지주 계열사 부정 이슈) 누락 방지 → 최소 3점 이상 유도
     """
+
+    # -------------------------
+    # 0) API 키 없으면 중립 반환
+    # -------------------------
     if not OPENAI_API_KEY:
         return {i: 3 for i in range(len(articles))}
 
+    # -------------------------
+    # 1) 프리-룰 기반 즉시 0점 컷
+    #    (LLM 태우기 전에 비용/오류 줄이기)
+    # -------------------------
+    sports_award_zero_kws = [
+        # 스포츠/스폰서/후원
+        "스포츠", "경기", "리그", "대회", "토너먼트", "시즌", "결승", "우승", "준우승",
+        "선수", "감독", "구단", "클럽", "팀", "프로야구", "KBO", "K리그", "NBA", "EPL",
+        "후원", "스폰서", "스폰서십", "파트너십", "공식후원", "공식 파트너",
+        "마라톤", "골프대회", "배구", "농구", "야구", "축구", "e스포츠",
+
+        # 수상/award/선정
+        "수상", "수상을", "수상한", "수여", "어워드", "award", "선정", "선정돼",
+        "선정됐다", "선정된", "대상 수상", "최우수상", "우수상", "대통령상",
+        "장관상", "금상", "은상", "동상", "1위 선정"
+    ]
+
+    def is_zero_point_article(a):
+        title = (a.get("title") or "").lower()
+        desc  = (a.get("description") or "").lower()
+        text = f"{title} {desc}"
+
+        # 스포츠/스폰서/후원/대회류 키워드가 강하게 잡히면 0점
+        if any(kw.lower() in text for kw in sports_award_zero_kws):
+            return True
+        return False
+
+    # 0점 확정 기사 분리
+    zero_fixed = {}
+    candidates = []
+    cand_index_map = {}  # candidates idx -> original idx
+
+    for i, a in enumerate(articles):
+        if is_zero_point_article(a):
+            zero_fixed[i] = 0
+        else:
+            cand_index_map[len(candidates)] = i
+            candidates.append(a)
+
+    # 전부 0점이면 그대로 반환
+    if not candidates:
+        return {i: zero_fixed.get(i, 0) for i in range(len(articles))}
+
+    # -------------------------
+    # 2) LLM 평가 대상 프롬프트 구성
+    # -------------------------
     prompt_list = "\n".join(
-        [f"{i+1}. {a.get('title','')} || {a.get('description','')}" for i, a in enumerate(articles)]
+        [f"{j+1}. {a.get('title','')} || {a.get('description','')}" for j, a in enumerate(candidates)]
     )
 
-    if mode == "industry":
-        guideline = f"""
-너는 신용평가사 산업 애널리스트다. 아래 기사 제목/요약을 보고
-산업 대분류 "{target_keyword or 'N/A'}" 관점에서 **산업 전반에 미치는 영향도/구조적 중요도**를 1~5점으로 평가하라.
+    guideline = f"""
+너는 신용평가사 애널리스트다. 아래 기사 제목/요약만 보고
+대상 기업/산업 "{target_keyword or 'N/A'}" 관점에서 신용영향 중요도를 0~5점으로 평가하라.
 
-[산업 영향도 기준]
-5점: 산업 구조/규제/정책/금융여건/수요·공급/가격결정 구조/경쟁구도 변화처럼 **다수 기업에 장기·구조적으로 영향**.  
-     (예: 감독규제 변경, 산업 수익성 사이클 전환, 시장 침체/회복 신호, 대규모 부실 확산, 산업 전반 자금조달 경색)
-4점: 산업 내 **상당수 기업에 중기적 영향**이 예상되는 사건·트렌드.  
-     (예: 업권 전반 실적 급변, 대규모 M&A/구조조정이 업계 재편으로 이어짐, 주요 원가/금리/환율 충격)
-3점: 산업 내 일부 기업군에 영향이 있으나 **파급범위/지속성이 제한적**.  
-     (예: 선도기업의 실적/전략 변화가 동종업계에 부분적 신호 제공)
-2점: **특정 기업 1곳의 단일 이슈**로 산업 전반 파급이 약함.  
-     (예: 개별 회사 실적, 내부 이벤트, 단일 제휴/프로모션)
-1점: 홍보/행사/CSR/브랜드/개별 서비스 출시 등 **산업 신용·구조와 무관**.
+[스코어 기준]
+5점:
+- 산업 구조/규제/정책/수급/금융여건 변화 등 **산업 전반에 장기·구조적으로 영향**
+- 유동성 위기, 대규모 부실/디폴트, 회생/부도, 감독당국 중대 제재/규제
+- 지주/금융지주의 경우 **계열사 대규모 부정 이슈가 그룹 신용에 전이될 사건**
+
+4점:
+- 산업 전반 실적 급변/손해율 상승/시장 위축/자금조달 경색 등 중기적 파급
+- 주요 기업의 대규모 투자·M&A·차입·자본확충, 재무레버리지 급변
+
+3점:
+- 일반적인 실적/조달/구조조정/사업 재편 등 **중간 수준 신용영향**
+
+2점:
+- 특정 기업의 제한적 사업/서비스/제휴/마케팅(파급 범위 제한)
+
+1점:
+- 홍보/행사/CSR/브랜드 캠페인 등 **신용과 무관한 내용**
+
+0점(무조건):
+- 스포츠/리그/대회/선수/구단/경기 + 스폰서/후원/파트너십 관련 기사
+- 기업이 **무슨 상을 받았다/어워드 수상/선정** 같은 단독 홍보 기사
 
 [강제 규칙]
-- 기사 내용이 특정 기업 한 곳의 이벤트에 머물면 **최대 2점**을 넘기지 말 것.
-- 산업 전체 흐름/규제/수급/가격/경쟁구도/리스크 확산/업권 실적 사이클을 다루면 고점 부여.
-- 제목/요약만 보고 판단하되, 과장하지 말고 산업적 파급 범위에만 집중.
-
-[기사 목록]
-{prompt_list}
-
-출력 형식:
-1번: 점수
-2번: 점수
-...
-(설명 금지)
-"""
-    else:
-        # 기존 company rubric (지금 쓰는 guideline 그대로 유지)
-        guideline = f"""
-너는 신용평가사 애널리스트다. 아래 기사 제목/요약을 보고
-대상 기업 "{target_keyword or 'N/A'}" 관점에서 신용영향 중요도를 1~5점으로 판단하라.
-
-[신용영향도 기준]
-5점: 등급/전망 변경 가능성, 대규모 자금조달/차입, 유동성 리스크, 회생/부도 등
-4점: 대규모 투자·M&A·자산매각, 레버리지 급변, 유의미한 실적 변화
-3점: 일반적 실적·구조조정·조달 등 중간 수준 이슈
-2점: 영향이 제한적인 사업/마케팅/제휴
-1점: 홍보/행사/ESG 캠페인 등 신용과 무관
+- 기사에 없는 연도/수치/사실을 만들지 말 것.
+- 제목/요약에 **부정적 뉘앙스(예: 손실, 부실, 유동성, 제재, 적자, 하락, 디폴트, 회생, 소송, 사고 등)**가 있으면
+  **최소 3점 이상**을 부여하라. (지주/금융지주는 계열사 부정도 포함)
+- 산업 전반 진단/구조/규제/수급/사이클 기사라면
+  기업명이 제목에 없더라도 **4~5점 가능**.
+- 단순 홍보·행사·수상·스포츠는 0~1점만.
 
 [기사 목록]
 {prompt_list}
@@ -435,7 +480,14 @@ def llm_score_articles_batch(articles, target_keyword=None, mode="company"):
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "사실 기반으로 점수화하라. 산업의 파급 범위를 과장하지 말 것."},
+                {
+                    "role": "system",
+                    "content": (
+                        "사실 기반으로만 점수화하라. "
+                        "스포츠/스폰서/수상 홍보 기사면 0점을 부여하라. "
+                        "부정 뉘앙스 기사는 누락하지 말고 보수적으로 고득점 방향으로 평가하라."
+                    )
+                },
                 {"role": "user", "content": guideline},
             ],
             max_tokens=300,
@@ -443,64 +495,82 @@ def llm_score_articles_batch(articles, target_keyword=None, mode="company"):
         )
         ans = resp.choices[0].message.content.strip()
     except Exception:
-        return {i: 3 for i in range(len(articles))}
+        # LLM 실패 시 candidates는 3점, 0점 확정은 유지
+        base = {i: 3 for i in range(len(articles))}
+        base.update(zero_fixed)
+        return base
 
-    score_map = {}
+    # -------------------------
+    # 3) LLM 응답 파싱
+    # -------------------------
+    score_map_candidates = {}
     for line in ans.splitlines():
-        m = re.match(r"(\d+)번\s*:\s*([1-5])", line.strip())
+        m = re.match(r"(\d+)번\s*:\s*([0-5])", line.strip())
         if m:
             no = int(m.group(1)) - 1
-            score_map[no] = int(m.group(2))
+            score_map_candidates[no] = int(m.group(2))
 
-    for i in range(len(articles)):
-        score_map.setdefault(i, 3)
+    # 누락분 기본 3점
+    for j in range(len(candidates)):
+        score_map_candidates.setdefault(j, 3)
 
-    return score_map
+    # -------------------------
+    # 4) 원본 인덱스 기준으로 합치기
+    # -------------------------
+    final_scores = {i: 3 for i in range(len(articles))}
+    final_scores.update(zero_fixed)
+
+    for cand_j, orig_i in cand_index_map.items():
+        final_scores[orig_i] = score_map_candidates.get(cand_j, 3)
+
+    return final_scores
 
 def llm_filter_and_rank_articles(main_kw, articles):
     """
-    (개선)
-    0) 규칙 기반 Priority 1/2/3 풀 생성
-    1) Priority 1 → 2 → 3 순서로 cap까지 후보 구성
-    2) 그 후보에 대해서만 LLM 스코어링
-    3) score + date로 정렬 후 top_k 반환
+    통합 LLM 필터링 + 스코어링 + 랭킹 Top-K 함수 (개선버전)
+    - 0점 기사(스포츠/스폰서/수상) 자동 제외
+    - 기업명이 없어도 산업 전반 구조/규제/실적 기사 1건 이상 포함 보장
+    - rule_priority(제목기업 → 산업/공통키워드 → 기타) + LLM 점수 → 최신순 정렬
     """
+
     if not articles:
         return articles
 
     cap = st.session_state.get("llm_candidate_cap", 200)
     top_k = st.session_state.get("llm_top_k", 10)
 
-    # --- 사전 준비 ---
     main_kw_lower = (main_kw or "").lower()
 
-    common_title_kws = ALL_COMMON_FILTER_KEYWORDS  # 공통 필터
+    # 공통/산업 필터 단어
+    common_title_kws = ALL_COMMON_FILTER_KEYWORDS  
     selected_industry_sub_kws = []
     if st.session_state.get("use_industry_filter", False):
-        for sublist in st.session_state.industry_major_sub_map.values():
-            selected_industry_sub_kws.extend(sublist)
+        for lst in st.session_state.industry_major_sub_map.values():
+            selected_industry_sub_kws.extend(lst)
 
     industry_credit_dict = parse_industry_credit_keywords()
-    sector = get_sector_of_company(main_kw)  # 예: "보험사"
+    sector = get_sector_of_company(main_kw)
     sector_credit_kws = industry_credit_dict.get(sector, []) if sector else []
 
     def title_has_any_kw(title, kw_list):
         t = (title or "").lower()
         return any((kw or "").lower() in t for kw in kw_list if kw)
 
-    # --- Priority 풀 분리 ---
+    # ----------------------------
+    # 1) Priority 분류
+    # ----------------------------
     p1, p2, p3 = [], [], []
 
     for a in articles:
         title = a.get("title", "") or ""
-        t_lower = title.lower()
+        tl = title.lower()
 
         # Priority 1: 제목에 기업명
-        if main_kw_lower and main_kw_lower in t_lower:
+        if main_kw_lower and main_kw_lower in tl:
             p1.append(a)
             continue
 
-        # Priority 2: 제목에 공통/산업별/섹터 신용키워드
+        # Priority 2: 공통/산업/섹터 신용 키워드 일치
         if (
             title_has_any_kw(title, common_title_kws) or
             title_has_any_kw(title, selected_industry_sub_kws) or
@@ -509,26 +579,28 @@ def llm_filter_and_rank_articles(main_kw, articles):
             p2.append(a)
             continue
 
-        # Priority 3
         p3.append(a)
 
-    # 최신순 정렬(각 풀 내부)
-    def sort_newest(lst):
+    # 최신순 정렬
+    def newest(lst):
         return sorted(lst, key=lambda x: x.get("date", ""), reverse=True)
 
-    p1 = sort_newest(p1)
-    p2 = sort_newest(p2)
-    p3 = sort_newest(p3)
+    p1, p2, p3 = newest(p1), newest(p2), newest(p3)
 
-    # Priority 1 → 2 → 3 순으로 cap까지 후보 구성
+    # ----------------------------
+    # 2) 후보 구성 (cap)
+    # ----------------------------
     candidates = (p1 + p2 + p3)[:cap]
 
-    # --- LLM 스코어링(후보만) ---
+    # ----------------------------
+    # 3) LLM 스코어링 수행
+    # ----------------------------
     scores = llm_score_articles_batch(candidates, target_keyword=main_kw)
+
     for i, a in enumerate(candidates):
         a["llm_score"] = scores.get(i, 3)
 
-        # 디버깅/가시성용 rule_priority 저장(원하면 UI 출력)
+        # 정책 우선순위 저장(디버깅/정렬용)
         if a in p1:
             a["rule_priority"] = 1
         elif a in p2:
@@ -536,16 +608,72 @@ def llm_filter_and_rank_articles(main_kw, articles):
         else:
             a["rule_priority"] = 3
 
-    # --- 최종 정렬 ---
+    # ----------------------------
+    # 4) 0점 기사 자동 제외 (스포츠/수상/스폰서)
+    # ----------------------------
+    candidates = [a for a in candidates if a.get("llm_score", 3) > 0]
+
+    if not candidates:
+        return []
+
+    # ----------------------------
+    # 5) 산업 전반 기사 후보군 추출
+    #    (기업명 제목에 없고 신용/산업 키워드 포함)
+    # ----------------------------
+    def is_industry_overview(a):
+        title = (a.get("title", "") or "").lower()
+        if main_kw_lower in title:
+            return False
+        return (
+            title_has_any_kw(title, common_title_kws) or
+            title_has_any_kw(title, selected_industry_sub_kws) or
+            title_has_any_kw(title, sector_credit_kws)
+        )
+
+    industry_cands = [a for a in candidates if is_industry_overview(a)]
+    industry_cands = sorted(
+        industry_cands,
+        key=lambda x: (-x.get("llm_score", 3), x.get("date", "")),
+        reverse=False
+    )
+    industry_pick = industry_cands[0] if industry_cands else None
+
+    # ----------------------------
+    # 6) 최종 랭킹
+    # ----------------------------
     ranked = sorted(
         candidates,
         key=lambda x: (
-            x.get("rule_priority", 3),   # 1이 먼저
-            -x.get("llm_score", 3),      # ✅ 점수 높을수록 먼저
-            x.get("date", ""),           # 최신
+            x.get("rule_priority", 3),      # rule 우선순위
+            -x.get("llm_score", 3),         # 점수 내림차순
+            x.get("date", "")               # 최신 순
         )
     )
-    return ranked[:top_k]
+
+    ranked_top = ranked[:top_k]
+
+    # ----------------------------
+    # 7) 산업 전반 기사 1건 보장
+    # ----------------------------
+    if industry_pick and industry_pick not in ranked_top:
+        if ranked_top:
+            ranked_top[-1] = industry_pick
+        else:
+            ranked_top = [industry_pick]
+
+    # ----------------------------
+    # 8) 중복 제거
+    # ----------------------------
+    seen = set()
+    final = []
+    for a in ranked_top:
+        uid = make_uid(a.get("link", ""))
+        if uid in seen:
+            continue
+        seen.add(uid)
+        final.append(a)
+
+    return final[:top_k]
 
 def process_keywords_with_synonyms(favorite_to_expand_map, start_date, end_date, require_keyword_in_title=False):
     """
@@ -2524,6 +2652,7 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
 
