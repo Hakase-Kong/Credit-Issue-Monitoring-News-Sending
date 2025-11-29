@@ -1546,13 +1546,21 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+    if client is None:
+        return []
+
     result = []
 
+    # 섹터(대분류)별 신용평가 키워드 맵
     industry_credit_dict = parse_industry_credit_keywords()
+    # 선택된 산업 소분류 키워드(전체) → set으로 정리
+    extra_industry_kws = set(industry_keywords or [])
 
     # ---- 각 카테고리(섹터) / 회사별로 중요 기사 선정 ----
     for category, companies in favorites.items():
-        sector_keywords = industry_keywords_dict.get(category, [])
+        # 섹터 기본 키워드 + 사용자가 선택한 추가 산업 키워드
+        sector_base_kws = industry_credit_dict.get(category, [])
+        sector_keywords = set(sector_base_kws) | extra_industry_kws
 
         for comp in companies:
             articles = search_results.get(comp, [])
@@ -1572,12 +1580,10 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
             if not target_articles:
                 continue
 
-            # 기사 목록을 "번호. 제목 - 링크" 형태로 구성
+            # 기사 목록을 "번호. [기업:xxx] 제목 || 설명" 형태로 구성 (필터된 target_articles 기준)
             prompt_list = "\n".join(
-                [
-                    f"{i+1}. [기업:{target_keyword}] {a.get('title','')} || {a.get('description','')}"
-                    for i, a in enumerate(articles)
-                ]
+                f"{i+1}. [기업:{comp}] {a.get('title','')} || {a.get('description','')}"
+                for i, a in enumerate(target_articles)
             )
 
             # --- 프롬프트: 5점 기사만 자동 선정 ---
@@ -1644,18 +1650,19 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                     raw_selected.append(int(sel1_match.group(1)))
                 if sel2_match:
                     raw_selected.append(int(sel2_match.group(1)))
-                
+
+                # 5점인 기사만 최종 선정
                 selected_indexes = []
                 for no in raw_selected:
                     idx0 = no - 1
                     if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
                         if idx0 not in selected_indexes:
                             selected_indexes.append(idx0)
-                
-                # ✅ 5점이 없으면 skip
+
+                # 5점 기사 없으면 skip
                 if not selected_indexes:
                     continue
-                
+
                 for idx0 in selected_indexes:
                     a = target_articles[idx0]
                     result.append({
@@ -1668,17 +1675,6 @@ def generate_important_article_list(search_results, common_keywords, industry_ke
                         "시사점": ""
                     })
 
-                for no in raw_selected:
-                    idx0 = no - 1
-                    # ✅ 실제 점수가 5점인 것만 유지
-                    if score_map.get(no) == 5 and 0 <= idx0 < len(target_articles):
-                        if idx0 not in selected_indexes:
-                            selected_indexes.append(idx0)
-
-                # ✅ 5점이 없으면 skip
-                if not selected_indexes:
-                    continue
-                    
             except Exception:
                 # 에러 시 이 회사에 대해서는 자동선정 건너뜀
                 continue
@@ -2371,7 +2367,7 @@ def render_important_article_review_and_download():
                 important = [a for a in important if a.get("링크") not in remove_links]
                 st.session_state["important_articles_preview"] = important
                 st.session_state["important_selected_index"] = []
-                st.experimental_rerun()
+                st.rerun()
 
         with col_rep:
             if st.button("🔁 선택 기사 교체"):
@@ -2401,9 +2397,9 @@ def render_important_article_review_and_download():
                 if not selected_article:
                     st.warning("왼쪽에서 선택한 기사 정보를 찾을 수 없습니다.")
                     return
-
+        
                 keyword = extract_keyword_from_link(st.session_state.search_results, article_link)
-                cleaned_id = make_uid(link) if link else ""
+                # cleaned_id = make_uid(link) if link else ""   # ← 이 줄만 삭제
                 sentiment = None
                 cache_key = get_summary_key_from_url(selected_article["link"], target_keyword=keyword)
                 
@@ -2437,7 +2433,8 @@ def render_important_article_review_and_download():
                 st.session_state.article_checked[from_key] = False
                 st.session_state["important_selected_index"] = []
                 st.success("중요 기사 교체 완료")
-                st.experimental_rerun()
+                st.rerun()
+
 
         st.markdown("---")
         st.markdown("📥 **리뷰한 중요 기사들을 엑셀로 다운로드하세요.**")
@@ -2630,5 +2627,6 @@ if st.session_state.get("search_results"):
 
 else:
     st.info("뉴스 검색 결과가 없습니다. 먼저 검색을 실행해 주세요.")
+
 
 
